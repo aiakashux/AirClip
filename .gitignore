@@ -1,0 +1,25 @@
+# Environment
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+venv/
+
+# Node / Electron
+node_modules/
+dist/
+
+# Android
+android/.gradle/
+android/build/
+android/local.properties
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
