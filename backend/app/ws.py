@@ -50,7 +50,12 @@ async def authenticate_ws(ws: WebSocket) -> Optional[Tuple[dict, str]]:
     Returns (account, device_id) or None.  The device_id is authoritative
     — no client-supplied device_id is accepted.
     """
-    token = ws.query_params.get("token")
+    token = None
+    auth_header = ws.headers.get("authorization", "").strip()
+    if auth_header.startswith("Bearer "):
+        token = auth_header[7:].strip() or None
+    if not token:
+        token = ws.query_params.get("token")
     if not token:
         return None
     try:

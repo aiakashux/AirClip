@@ -160,11 +160,13 @@ async def run_tests() -> None:
     ciphertext_b64 = base64.b64encode(b"hello").decode()
     nonce_b64 = base64.b64encode(b"nonce").decode()
 
-    # WS URLs use device-scoped JWT only — no device_id param
-    ws_a_url = f"{WS_BASE}/ws?token={dev_a_token}"
-    ws_b_url = f"{WS_BASE}/ws?token={dev_b_token}"
+    # WS auth via Authorization header — no token in URL
+    ws_url = f"{WS_BASE}/ws"
+    ws_a_hdrs = {"Authorization": f"Bearer {dev_a_token}"}
+    ws_b_hdrs = {"Authorization": f"Bearer {dev_b_token}"}
 
-    async with ws_connect(ws_a_url) as ws_a, ws_connect(ws_b_url) as ws_b:
+    async with ws_connect(ws_url, additional_headers=ws_a_hdrs) as ws_a, \
+            ws_connect(ws_url, additional_headers=ws_b_hdrs) as ws_b:
         step("WS connect Device A (device token)", True)
         step("WS connect Device B (device token)", True)
 
@@ -218,7 +220,7 @@ async def run_tests() -> None:
     # -----------------------------------------------------------------------
     print("\n--- Reconnect: no stale pending messages ---")
 
-    async with ws_connect(ws_b_url) as ws_b2:
+    async with ws_connect(ws_url, additional_headers=ws_b_hdrs) as ws_b2:
         step("WS reconnect Device B", True)
         try:
             stale = await asyncio.wait_for(ws_b2.recv(), timeout=2.0)
@@ -232,7 +234,7 @@ async def run_tests() -> None:
     # -----------------------------------------------------------------------
     print("\n--- Offline delivery: queued clipboard ---")
 
-    async with ws_connect(ws_a_url) as ws_a_solo:
+    async with ws_connect(ws_url, additional_headers=ws_a_hdrs) as ws_a_solo:
         step("WS connect Device A (solo)", True)
         await asyncio.sleep(0.2)
 
@@ -248,7 +250,7 @@ async def run_tests() -> None:
         await asyncio.sleep(0.3)
 
     # Connect B — should get the queued message
-    async with ws_connect(ws_b_url) as ws_b3:
+    async with ws_connect(ws_url, additional_headers=ws_b_hdrs) as ws_b3:
         raw = await asyncio.wait_for(ws_b3.recv(), timeout=5.0)
         msg = json.loads(raw)
         step("Device B receives queued deliver_clipboard",
@@ -265,7 +267,7 @@ async def run_tests() -> None:
         step("Device B ACK'd queued message", True)
 
     # Reconnect — queue empty
-    async with ws_connect(ws_b_url) as ws_b4:
+    async with ws_connect(ws_url, additional_headers=ws_b_hdrs) as ws_b4:
         try:
             leftover = await asyncio.wait_for(ws_b4.recv(), timeout=2.0)
             step("No leftover after offline ACK", False,
@@ -283,7 +285,8 @@ async def run_tests() -> None:
     print("\n--- SEC-A: WS rejects account-only token ---")
 
     try:
-        async with ws_connect(f"{WS_BASE}/ws?token={account_token}") as ws_bad:
+        acct_hdrs = {"Authorization": f"Bearer {account_token}"}
+        async with ws_connect(ws_url, additional_headers=acct_hdrs) as ws_bad:
             # If we get here, the server accepted — that's wrong.
             # But it may have accepted then immediately closed; try recv.
             try:
@@ -302,8 +305,8 @@ async def run_tests() -> None:
     print("\n--- SEC-A2: device_id comes from JWT, not query param ---")
 
     # Connect with Device A's token but try to spoof Device B via query param
-    spoofed_url = f"{WS_BASE}/ws?token={dev_a_token}&device_id={dev_b_id}"
-    async with ws_connect(spoofed_url) as ws_spoof:
+    spoofed_url = f"{WS_BASE}/ws?device_id={dev_b_id}"
+    async with ws_connect(spoofed_url, additional_headers=ws_a_hdrs) as ws_spoof:
         # Connection should succeed (token is valid), but identity = A not B
         # Send clipboard "from B" — if spoofing worked, this would look like
         # it came from B.  Instead the server should use A's device_id.
@@ -318,7 +321,7 @@ async def run_tests() -> None:
         step("WS connection accepted with valid device token", True)
 
     # Connect B and see if a message arrived with from_device_id = A (not B)
-    async with ws_connect(ws_b_url) as ws_b_check:
+    async with ws_connect(ws_url, additional_headers=ws_b_hdrs) as ws_b_check:
         try:
             raw = await asyncio.wait_for(ws_b_check.recv(), timeout=3.0)
             msg = json.loads(raw)
@@ -356,11 +359,11 @@ async def run_tests() -> None:
              dev_c["trust_status"] == "pending",
              f"got '{dev_c['trust_status']}'")
 
-    ws_c_url = f"{WS_BASE}/ws?token={dev_c_token}"
+    ws_c_hdrs = {"Authorization": f"Bearer {dev_c_token}"}
 
     # C tries to send clipboard to A — should be silently dropped
-    async with ws_connect(ws_a_url) as ws_a_listen, \
-            ws_connect(ws_c_url) as ws_c:
+    async with ws_connect(ws_url, additional_headers=ws_a_hdrs) as ws_a_listen, \
+            ws_connect(ws_url, additional_headers=ws_c_hdrs) as ws_c:
         step("WS connect pending Device C", True)
         await asyncio.sleep(0.2)
 
@@ -385,7 +388,7 @@ async def run_tests() -> None:
     # -----------------------------------------------------------------------
     print("\n--- SEC-B2: Pending device cannot self-approve ---")
 
-    async with ws_connect(ws_c_url) as ws_c2:
+    async with ws_connect(ws_url, additional_headers=ws_c_hdrs) as ws_c2:
         await ws_c2.send(json.dumps({
             "type": "approve_device",
             "target_device_id": dev_c_id,
@@ -411,7 +414,7 @@ async def run_tests() -> None:
     print("\n--- SEC-C: ACK authorization ---")
 
     # A sends clipboard to B while B is offline → stored in Redis
-    async with ws_connect(ws_a_url) as ws_a_offline:
+    async with ws_connect(ws_url, additional_headers=ws_a_hdrs) as ws_a_offline:
         await asyncio.sleep(0.2)
         await ws_a_offline.send(json.dumps({
             "type": "send_clipboard",
@@ -430,7 +433,7 @@ async def run_tests() -> None:
         # have A try to ACK it and verify it doesn't get deleted.
 
     # Connect B to receive the pending message and learn message_id
-    async with ws_connect(ws_b_url) as ws_b_peek:
+    async with ws_connect(ws_url, additional_headers=ws_b_hdrs) as ws_b_peek:
         raw = await asyncio.wait_for(ws_b_peek.recv(), timeout=5.0)
         msg = json.loads(raw)
         ack_test_msg_id = msg.get("message_id")
@@ -447,7 +450,7 @@ async def run_tests() -> None:
     # 2. Connect A again, try to ACK with the message_id
     # 3. Connect B → should still receive it (A's ACK was rejected)
 
-    async with ws_connect(ws_a_url) as ws_a_send2:
+    async with ws_connect(ws_url, additional_headers=ws_a_hdrs) as ws_a_send2:
         await asyncio.sleep(0.2)
         await ws_a_send2.send(json.dumps({
             "type": "send_clipboard",
@@ -479,7 +482,7 @@ async def run_tests() -> None:
 
     # Let's do this properly:
     # 1. Send while B offline → stored at msg:{id} + pending queue
-    async with ws_connect(ws_a_url) as ws_a_ack:
+    async with ws_connect(ws_url, additional_headers=ws_a_hdrs) as ws_a_ack:
         await asyncio.sleep(0.2)
         await ws_a_ack.send(json.dumps({
             "type": "send_clipboard",
@@ -492,7 +495,7 @@ async def run_tests() -> None:
         await asyncio.sleep(0.3)
 
     # 2. Connect B, receive the queued message, grab ID, close without ACK
-    async with ws_connect(ws_b_url) as ws_b_grab:
+    async with ws_connect(ws_url, additional_headers=ws_b_hdrs) as ws_b_grab:
         # B may receive multiple pending messages — drain until we find ours
         target_msg_id = None
         target_ct = base64.b64encode(b"ack-auth-real").decode()
@@ -511,7 +514,7 @@ async def run_tests() -> None:
          target_msg_id is not None)
 
     # 3. Connect A and have it try to ACK B's message
-    async with ws_connect(ws_a_url) as ws_a_badack:
+    async with ws_connect(ws_url, additional_headers=ws_a_hdrs) as ws_a_badack:
         await asyncio.sleep(0.2)
         await ws_a_badack.send(json.dumps({
             "type": "ack",
@@ -586,7 +589,8 @@ async def run_tests() -> None:
 
     # (SEC-A already tests this, but let's be explicit with the new token_type label)
     try:
-        async with ws_connect(f"{WS_BASE}/ws?token={account_token}") as ws_acct:
+        acct_hdrs_f = {"Authorization": f"Bearer {account_token}"}
+        async with ws_connect(ws_url, additional_headers=acct_hdrs_f) as ws_acct:
             try:
                 await asyncio.wait_for(ws_acct.recv(), timeout=2.0)
             except Exception:

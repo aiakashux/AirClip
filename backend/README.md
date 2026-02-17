@@ -42,7 +42,11 @@ The server starts at `http://localhost:8000`.
 
 ### WebSocket
 
-Connect to `/ws?token=<jwt>&device_id=<uuid>`.
+Connect to `/ws` with a device-scoped JWT via header:
+
+```
+Authorization: Bearer <device_token>
+```
 
 Client messages: `register_device`, `approve_device`, `send_clipboard`, `ack`
 Server messages: `device_pending`, `deliver_clipboard`

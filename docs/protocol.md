@@ -1,4 +1,4 @@
-# Clipr+ MVP Protocol Specification (v0)
+# Clipr+ MVP Protocol Specification (v1)
 
 ## 1. Scope (MVP Only)
 
@@ -61,7 +61,10 @@ Rules:
 
 * First device for an account is automatically `trusted`.
 * New devices are `pending` until approved.
-* Only `trusted` devices receive clipboard messages.
+* Only `trusted` devices may:
+  * Receive clipboard messages.
+  * Send clipboard messages.
+  * Approve other devices.
 
 ---
 
@@ -71,30 +74,27 @@ Represents a single encrypted clipboard payload.
 
 Server stores only encrypted data.
 
-Fields:
-
-```
 {
-  id: uuid,
-  from_device_id: string,
-  to_device_id: string,
-  created_at: timestamp,
-  ciphertext: binary,
-  nonce: binary,
-  version: 1
+id: uuid,
+from_device_id: string,
+to_device_id: string,
+created_at: timestamp,
+ciphertext: binary,
+nonce: binary,
+version: 1
 }
-```
+
 
 Notes:
 
 * One encrypted message per recipient device.
 * No plaintext is ever stored server-side.
 * Messages expire via TTL (60 seconds).
-* Message deleted after ACK.
+* Message deleted after valid ACK from intended recipient.
 
 ---
 
-# 3. Cryptography Model
+# 3. Cryptography & Identity Model
 
 ## 3.1 Key Generation
 
@@ -119,7 +119,6 @@ When sending clipboard:
 
 1. Sender fetches all `trusted` devices in account.
 2. For each trusted recipient:
-
    * Encrypt plaintext using recipient’s public key.
    * Generate separate ciphertext per recipient.
 3. Send encrypted payloads to server.
@@ -137,26 +136,97 @@ Trust On First Use (TOFU) rules:
 * Existing trusted device must approve.
 * Once approved, public key is pinned.
 * If a device’s public key changes:
-
-  * Treat as new device
+  * Treat as a new device
   * Require approval again
 
-This prevents silent public key substitution attacks.
+### Public Key Uniqueness Guarantee
+
+Before promoting a device from `pending` to `trusted`:
+
+* Server must verify that no other trusted device
+  within the same account has the same `public_key`.
+
+If conflict exists:
+
+* Approval must be rejected (409 Conflict).
+
+This prevents duplicate trusted identities and preserves TOFU integrity.
+
+---
+
+## 3.4 Token Model
+
+Two distinct JWT types exist.
+
+### Account Token
+
+Used for REST endpoints.
+
+Claims:
+
+{
+sub: account_id,
+token_type: "account"
+}
+
+
+Rules:
+
+* Used for:
+  * Device registration
+  * Device approval
+  * Device listing
+* Must NOT be accepted by WebSocket.
+* REST endpoints must reject tokens where `token_type != "account"`.
+
+---
+
+### Device Token
+
+Issued after successful device registration.
+
+Claims:
+
+{
+sub: account_id,
+device_id: device_id,
+token_type: "device"
+}
+
+
+Rules:
+
+* Used exclusively for WebSocket connections.
+* WebSocket must reject tokens where `token_type != "device"`.
+* WebSocket must derive `device_id` only from JWT.
+* Client-provided device_id values must be ignored.
+* Device tokens must NOT be accepted by REST endpoints.
+
+This enforces strict identity separation between:
+- Account-level management
+- Device-level messaging
 
 ---
 
 # 4. Device Approval Flow
 
-1. New device logs in.
+1. User authenticates (account token).
 2. Device registers public key.
 3. Server sets `trust_status = pending`.
-4. Server notifies existing trusted devices.
-5. User approves from trusted device.
-6. Server updates device to `trusted`.
+4. Server returns:
+   * `device_id`
+   * `trust_status`
+   * `device_token`
+5. Existing trusted device approves pending device.
+6. Before promotion:
+   * Server revalidates public_key uniqueness.
+7. If valid:
+   * Device becomes `trusted`.
 
-Only after step 6:
+Only after step 7:
 
-* Device receives clipboard messages.
+* Device may send clipboard.
+* Device may receive clipboard.
 
 ---
 
@@ -164,17 +234,18 @@ Only after step 6:
 
 Transport: WebSocket over TLS (WSS)
 
-Each device:
+WebSocket authentication:
 
-* Authenticates
-* Connects to `/ws`
-* Identified by `device_id`
+* Must use Device Token.
+* Must extract `device_id` from JWT.
+* Must reject account tokens.
+* Must reject tokens missing device_id.
 
-WebSocket must remain persistent.
+WebSocket connection must remain persistent.
 
 Reconnect strategy:
 
-* Auto reconnect on disconnect
+* Auto reconnect
 * Exponential backoff
 
 ---
@@ -185,83 +256,78 @@ All messages JSON-based.
 
 ## 6.1 Client → Server
 
-### Register Device
+### Send Clipboard
 
-```
 {
-  type: "register_device",
-  device_name: "MacBook Pro",
-  platform: "mac",
-  public_key: "base64"
+type: "send_clipboard",
+payloads: [
+{
+to_device_id: "uuid",
+ciphertext: "base64",
+nonce: "base64"
 }
-```
+]
+}
+
+
+Server rules:
+
+* Sender device must be `trusted`.
+* Sender device_id derived from JWT.
+* Messages stored with TTL (60s).
+
+---
 
 ### Approve Device
 
-```
 {
-  type: "approve_device",
-  target_device_id: "uuid"
+type: "approve_device",
+target_device_id: "uuid"
 }
-```
 
-### Send Clipboard
 
-```
-{
-  type: "send_clipboard",
-  payloads: [
-    {
-      to_device_id: "uuid",
-      ciphertext: "base64",
-      nonce: "base64"
-    }
-  ]
-}
-```
+Rules:
+
+* Caller must be `trusted`.
+* Approval must re-check public_key uniqueness.
+
+---
 
 ### ACK
 
-```
 {
-  type: "ack",
-  message_id: "uuid"
+type: "ack",
+message_id: "uuid"
 }
-```
+
+
+Rules:
+
+* Server must load message.
+* Must verify:
+  * `msg.to_device_id == current_device_id`
+* Only then delete message.
 
 ---
 
 ## 6.2 Server → Client
 
-### Device Pending
-
-```
-{
-  type: "device_pending",
-  device_id: "uuid",
-  device_name: "Pixel 7"
-}
-```
-
 ### Clipboard Deliver
 
-```
 {
-  type: "deliver_clipboard",
-  message_id: "uuid",
-  from_device_id: "uuid",
-  ciphertext: "base64",
-  nonce: "base64"
+type: "deliver_clipboard",
+message_id: "uuid",
+from_device_id: "uuid",
+ciphertext: "base64",
+nonce: "base64"
 }
-```
+
 
 ---
 
 # 7. Clipboard Logic (Client-Side)
 
 ## 7.1 Sending Rules
-
-When clipboard changes:
 
 1. If change originated remotely → ignore.
 2. Compute hash of plaintext.
@@ -272,8 +338,6 @@ When clipboard changes:
 ---
 
 ## 7.2 Receiving Rules
-
-When receiving `deliver_clipboard`:
 
 1. If `from_device_id == self` → ignore.
 2. Decrypt ciphertext.
@@ -287,7 +351,7 @@ When receiving `deliver_clipboard`:
 
 Each client maintains:
 
-* `recent_hashes` (small in-memory list, e.g., last 10)
+* `recent_hashes` (e.g., last 10)
 
 Rules:
 
@@ -295,23 +359,22 @@ Rules:
 * Do not process messages from self.
 * Do not resend clipboard change caused by remote update.
 
-This prevents infinite bounce.
-
 ---
 
 # 9. Delivery Semantics
 
-MVP uses:
+MVP behavior:
 
-* Latest-only logic
-* No permanent history
-* Server TTL: 60 seconds
-* Message deleted after ACK
+* Latest-only logic.
+* No permanent history.
+* Server TTL: 60 seconds.
+* Message deleted only after valid ACK.
 
 If recipient offline:
 
-* Message held in Redis until TTL expires
-* Delivered on reconnect
+* Message held in Redis.
+* Delivered upon reconnect.
+* Expires automatically after TTL.
 
 ---
 
@@ -332,13 +395,20 @@ Attacker cannot see:
 * Private keys
 * Decrypted history
 
+Identity spoofing is prevented via:
+
+* Device-bound JWTs
+* Strict token type separation
+* Public key uniqueness enforcement
+* Trust gating on all sensitive actions
+
 ---
 
 # 11. Performance Target
 
 * Clipboard sync latency: <2 seconds
-* WebSocket persistent connection required
-* Android uses foreground service for reliability
+* Persistent WebSocket required
+* Android must use foreground service
 
 ---
 
@@ -350,7 +420,5 @@ Future protocol changes must increment version.
 
 ---
 
-# End of MVP Protocol v0
-
----
+# End of MVP Protocol v1
 

@@ -1,0 +1,122 @@
+import { BACKEND_HTTP_BASE } from "./config";
+
+interface AuthResponse {
+  token: string;
+  account_id: string;
+}
+
+export interface DeviceInfo {
+  device_id: string;
+  device_name: string;
+  platform: string;
+  public_key: string;
+  trust_status: string;
+  created_at: string;
+  last_seen: string;
+}
+
+interface DeviceRegisterResponse extends DeviceInfo {
+  token: string;
+}
+
+async function request<T>(
+  method: string,
+  path: string,
+  body?: Record<string, unknown>,
+  token?: string
+): Promise<T> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+  const res = await fetch(`${BACKEND_HTTP_BASE}${path}`, {
+    method,
+    headers,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`${method} ${path} failed (${res.status}): ${text}`);
+  }
+  return res.json() as Promise<T>;
+}
+
+export async function login(email: string, password: string): Promise<AuthResponse> {
+  return request<AuthResponse>("POST", "/auth/login", { email, password });
+}
+
+export async function register(email: string, password: string): Promise<AuthResponse> {
+  return request<AuthResponse>("POST", "/auth/register", { email, password });
+}
+
+export async function registerDevice(
+  accountToken: string,
+  deviceName: string,
+  platform: string,
+  publicKey_b64: string
+): Promise<DeviceRegisterResponse> {
+  return request<DeviceRegisterResponse>(
+    "POST",
+    "/devices/register",
+    { device_name: deviceName, platform, public_key: publicKey_b64 },
+    accountToken
+  );
+}
+
+export async function getDevices(accountToken: string): Promise<DeviceInfo[]> {
+  return request<DeviceInfo[]>("GET", "/devices/", undefined, accountToken);
+}
+
+// ---------------------------------------------------------------------------
+// Cached wrapper for getDevices (keyed by token for account isolation)
+// ---------------------------------------------------------------------------
+interface CacheEntry {
+  value: DeviceInfo[];
+  ts: number;
+  inflight: Promise<DeviceInfo[]> | null;
+}
+
+const _cache = new Map<string, CacheEntry>();
+
+export async function getDevicesCached(
+  accountToken: string,
+  ttlMs = 10_000,
+  opts?: { force?: boolean; onFetch?: (count: number) => void },
+): Promise<DeviceInfo[]> {
+  const now = Date.now();
+  const force = opts?.force ?? false;
+  let entry = _cache.get(accountToken);
+
+  if (entry && !force && now - entry.ts < ttlMs) {
+    return entry.value;
+  }
+
+  if (entry?.inflight) return entry.inflight;
+
+  if (!entry) {
+    entry = { value: [], ts: 0, inflight: null };
+    _cache.set(accountToken, entry);
+  }
+
+  const e = entry;
+  e.inflight = getDevices(accountToken)
+    .then((devices) => {
+      e.value = devices;
+      e.ts = Date.now();
+      opts?.onFetch?.(devices.length);
+      return devices;
+    })
+    .finally(() => {
+      e.inflight = null;
+    });
+
+  return e.inflight;
+}
+
+export function invalidateDevicesCache(accountToken?: string): void {
+  if (accountToken) {
+    _cache.delete(accountToken);
+  } else {
+    _cache.clear();
+  }
+}
