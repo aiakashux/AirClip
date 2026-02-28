@@ -1,6 +1,6 @@
 import * as fs from "fs";
 import * as path from "path";
-import { STATE_FILE_PATH } from "./config";
+import { app } from "electron";
 
 export interface AppState {
   account_token: string | null;
@@ -22,10 +22,16 @@ const DEFAULT_STATE: AppState = {
 
 let currentState: AppState = { ...DEFAULT_STATE };
 
+function getStateFilePath(): string {
+  const userData = app.getPath("userData");
+  return path.join(userData, "state.json");
+}
+
 export function loadState(): AppState {
   try {
-    if (fs.existsSync(STATE_FILE_PATH)) {
-      const raw = fs.readFileSync(STATE_FILE_PATH, "utf-8");
+    const statePath = getStateFilePath();
+    if (fs.existsSync(statePath)) {
+      const raw = fs.readFileSync(statePath, "utf-8");
       currentState = { ...DEFAULT_STATE, ...JSON.parse(raw) };
     }
   } catch {
@@ -36,11 +42,12 @@ export function loadState(): AppState {
 
 export function saveState(partial: Partial<AppState>): void {
   currentState = { ...currentState, ...partial };
-  const dir = path.dirname(STATE_FILE_PATH);
+  const statePath = getStateFilePath();
+  const dir = path.dirname(statePath);
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
-  fs.writeFileSync(STATE_FILE_PATH, JSON.stringify(currentState, null, 2), "utf-8");
+  fs.writeFileSync(statePath, JSON.stringify(currentState, null, 2), "utf-8");
 }
 
 export function getState(): AppState {
@@ -49,7 +56,8 @@ export function getState(): AppState {
 
 export function clearState(): void {
   currentState = { ...DEFAULT_STATE };
-  if (fs.existsSync(STATE_FILE_PATH)) {
-    fs.unlinkSync(STATE_FILE_PATH);
+  const statePath = getStateFilePath();
+  if (fs.existsSync(statePath)) {
+    fs.unlinkSync(statePath);
   }
 }

@@ -21,13 +21,17 @@ export class WsClient extends EventEmitter {
   private reconnectDelay = 1000;
   private maxReconnectDelay = 30000;
   private shouldReconnect = true;
+  private static instanceCounter = 0;
+  private instanceId: number;
 
   constructor(deviceToken: string) {
     super();
     this.deviceToken = deviceToken;
+    this.instanceId = ++WsClient.instanceCounter;
   }
 
   connect(): void {
+    this.emit("log", `WsClient#${this.instanceId} connect() called (shouldReconnect=${this.shouldReconnect})`);
     this.ws = new WebSocket(BACKEND_WS_BASE, {
       headers: { Authorization: `Bearer ${this.deviceToken}` },
     });
@@ -55,6 +59,10 @@ export class WsClient extends EventEmitter {
 
     this.ws.on("error", (err: Error) => {
       this.emit("log", `WebSocket error: ${err.message}`);
+      if (err.message.includes("403")) {
+        this.shouldReconnect = false;
+        this.emit("auth_forbidden");
+      }
     });
   }
 
@@ -113,6 +121,10 @@ export class WsClient extends EventEmitter {
     if (!this.shouldReconnect) return;
     this.emit("log", `Reconnecting in ${this.reconnectDelay / 1000}s...`);
     setTimeout(() => {
+      if (!this.shouldReconnect) {
+        this.emit("log", `WsClient#${this.instanceId} ghost reconnect suppressed`);
+        return;
+      }
       this.connect();
     }, this.reconnectDelay);
     this.reconnectDelay = Math.min(this.reconnectDelay * 2, this.maxReconnectDelay);

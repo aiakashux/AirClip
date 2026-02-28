@@ -12,11 +12,13 @@ let tray: Tray | null = null;
 let loginWindow: BrowserWindow | null = null;
 let logsWindow: BrowserWindow | null = null;
 let wsClient: WsClient | null = null;
+let wsRecoveryAttempted = false;
 
 // Loop-prevention state (in-memory only)
 let lastLocalHash: string | null = null;
 let lastRemoteHash: string | null = null;
 let clipboardPollTimer: ReturnType<typeof setInterval> | null = null;
+let pollingInFlight = false;
 
 function sha256hex(text: string): string {
   return crypto.createHash("sha256").update(text).digest("hex");
@@ -36,9 +38,19 @@ interface ClipboardItem {
 }
 
 const MAX_CLIPBOARD_ITEMS = 10;
+const CLIPBOARD_ITEM_TTL_MS = 30 * 60 * 1000; // 30 minutes
 let clipboardItems: ClipboardItem[] = [];
+let sessionStartedAt: number | null = null;
+
+function pruneClipboardItems(): void {
+  const cutoff = Date.now() - CLIPBOARD_ITEM_TTL_MS;
+  clipboardItems = clipboardItems
+    .filter((i) => i.ts >= cutoff)
+    .slice(0, MAX_CLIPBOARD_ITEMS);
+}
 
 function upsertClipboardItem(item: Omit<ClipboardItem, "id">): void {
+  pruneClipboardItems();
   const existing = clipboardItems.findIndex((i) => i.hash === item.hash);
   if (existing !== -1) {
     clipboardItems.splice(existing, 1);
@@ -111,6 +123,15 @@ function resetAllState(): void {
   clearState();
 }
 
+function clearDeviceAuth(): void {
+  saveState({
+    device_id: null,
+    device_token: null,
+    public_key_b64: null,
+    private_key_b64: null,
+  });
+}
+
 function setAccountToken(nextToken: string | null): void {
   const prev = getState().account_token;
   if (prev && prev !== nextToken) {
@@ -130,6 +151,14 @@ async function doAuth(action: "login" | "register", email: string, password: str
     setAccountToken(token);
     saveState({ account_id });
     log(`Auth success (${action}). account_id=${account_id}`);
+
+    // Session boundary: clear in-app list and pre-seed lastLocalHash so
+    // clipboard content that existed before login is not added to the list.
+    clipboardItems = [];
+    sessionStartedAt = Date.now();
+    const preLoginText = clipboard.readText();
+    if (preLoginText) lastLocalHash = sha256hex(preLoginText);
+    log("Session boundary set — in-app clipboard list cleared");
 
     await ensureDeviceRegistered();
     connectWs();
@@ -177,9 +206,29 @@ function connectWs(): void {
     wsClient.disconnect();
   }
   stopClipboardPolling();
+  log(
+    `WS connect attempt tokenType=device tokenLen=${state.device_token.length} device_id=${state.device_id?.slice(0, 8) ?? "?"}`
+  );
   wsClient = new WsClient(state.device_token);
 
   wsClient.on("log", (msg: string) => log(msg));
+
+  wsClient.on("auth_forbidden", async () => {
+    if (wsRecoveryAttempted) {
+      log("WS 403: recovery already attempted this launch");
+      return;
+    }
+    wsRecoveryAttempted = true;
+    log("WS 403: attempting device re-register (one-time)");
+    clearDeviceAuth();
+    try {
+      await ensureDeviceRegistered();
+      connectWs();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      log(`WS recovery failed: ${msg}`);
+    }
+  });
 
   wsClient.on("open", () => {
     const st = getState();
@@ -312,36 +361,49 @@ async function sendClipboardContent(text: string): Promise<boolean> {
 }
 
 function startClipboardPolling(): void {
-  if (clipboardPollTimer) return;
+  if (clipboardPollTimer) {
+    log(`Clipboard polling already running (timer=${clipboardPollTimer}) — skipped`);
+    return;
+  }
   clipboardPollTimer = setInterval(async () => {
-    const text = clipboard.readText();
-    if (!text) return;
+    if (pollingInFlight) return;
+    pollingInFlight = true;
+    try {
+      const text = clipboard.readText();
+      if (!text) return;
 
-    const hash = sha256hex(text);
-    if (hash === lastLocalHash) return;
-    if (hash === lastRemoteHash) return;
+      const hash = sha256hex(text);
+      if (hash === lastLocalHash) return;
+      if (hash === lastRemoteHash) return;
 
-    upsertClipboardItem({
-      source_device_label: "This Mac",
-      source_device_id: getState().device_id || "local",
-      text,
-      hash,
-      ts: Date.now(),
-      direction: "local",
-    });
+      // Only record local items that appear after the session started.
+      if (sessionStartedAt === null) return;
 
-    const ok = await sendClipboardContent(text);
-    if (ok) {
-      lastLocalHash = hash;
+      upsertClipboardItem({
+        source_device_label: "This Mac",
+        source_device_id: getState().device_id || "local",
+        text,
+        hash,
+        ts: Date.now(),
+        direction: "local",
+      });
+
+      const ok = await sendClipboardContent(text);
+      if (ok) {
+        lastLocalHash = hash;
+      }
+    } finally {
+      pollingInFlight = false;
     }
   }, 500);
-  log("Clipboard polling started");
+  log(`Clipboard polling started (timer=${clipboardPollTimer})`);
 }
 
 function stopClipboardPolling(): void {
   if (clipboardPollTimer) {
     clearInterval(clipboardPollTimer);
     clipboardPollTimer = null;
+    pollingInFlight = false;
     log("Clipboard polling stopped");
   }
 }
@@ -388,6 +450,11 @@ function buildTrayMenu(): Menu {
 }
 
 app.whenReady().then(async () => {
+    
+  console.log("app.getName() =", app.getName());
+  console.log("userData =", app.getPath("userData"));
+  console.log("appData =", app.getPath("appData"));
+  console.log("statePath =", `${app.getPath("userData")}/state.json`);
   console.log("App ready");
 
   loadState();
@@ -431,10 +498,12 @@ app.whenReady().then(async () => {
   });
 
   ipcMain.handle("get_clipboard_items", () => {
+    pruneClipboardItems();
     return clipboardItems;
   });
 
-  // Auto-connect if we already have a device token
+  // Auto-connect if we already have a device token.
+  // Session boundary is set only on auth success.
   const state = getState();
   if (state.device_token) {
     log("Found existing device token — connecting WS");
