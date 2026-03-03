@@ -31,8 +31,8 @@ class KeyManager {
     fun generateKeypair() {
         val pub = ByteArray(Box.PUBLICKEYBYTES)   // 32 bytes
         val priv = ByteArray(Box.SECRETKEYBYTES)  // 32 bytes
-        val result = Sodium.ls.crypto_box_keypair(pub, priv)
-        check(result == 0) { "crypto_box_keypair failed (result=$result)" }
+        val ok = Sodium.ls.cryptoBoxKeypair(pub, priv)
+        check(ok) { "cryptoBoxKeypair failed" }
         _publicKey = pub
         _privateKey = priv
         // Log public key fingerprint only — private key is never logged

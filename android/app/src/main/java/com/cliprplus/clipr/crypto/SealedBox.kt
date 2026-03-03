@@ -38,10 +38,10 @@ object SealedBox {
 
         // Output ciphertext = plaintext + 48-byte sealed-box overhead
         val ciphertext = ByteArray(plaintext.size + Box.SEALBYTES)
-        val result = Sodium.ls.crypto_box_seal(
+        val ok = Sodium.ls.cryptoBoxSeal(
             ciphertext, plaintext, plaintext.size.toLong(), recipientPubKey
         )
-        check(result == 0) { "crypto_box_seal failed (result=$result)" }
+        check(ok) { "cryptoBoxSeal failed" }
 
         val b64 = Base64.encodeToString(ciphertext, Base64.NO_WRAP)
         RedactingLogger.logCiphertext("sealed_ciphertext_out", b64)  // hash/len only
@@ -65,10 +65,10 @@ object SealedBox {
             "Ciphertext too short to be a valid sealed box"
         }
         val plaintext = ByteArray(ciphertext.size - Box.SEALBYTES)
-        val result = Sodium.ls.crypto_box_seal_open(
+        val ok = Sodium.ls.cryptoBoxSealOpen(
             plaintext, ciphertext, ciphertext.size.toLong(), publicKeyBytes, privateKeyBytes
         )
-        check(result == 0) { "crypto_box_seal_open failed (result=$result) — wrong key or corrupt data" }
+        check(ok) { "cryptoBoxSealOpen failed — wrong key or corrupt data" }
         // Never log plaintext
         RedactingLogger.info("SealedBox.decryptForSelf: ok plaintext_len=${plaintext.size}")
         return plaintext

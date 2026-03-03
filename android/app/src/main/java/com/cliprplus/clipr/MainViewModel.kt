@@ -49,10 +49,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val hasAccount    = TokenStore.accountToken != null
             val hasDevice     = TokenStore.deviceToken  != null
             val approvalState = when (savedApproval) {
-                DeviceApprovalState.Approved.name        -> DeviceApprovalState.Approved
-                DeviceApprovalState.PendingApproval.name -> DeviceApprovalState.PendingApproval
-                DeviceApprovalState.Revoked.name         -> DeviceApprovalState.Revoked
-                else                                     -> DeviceApprovalState.NotRegistered
+                "Approved"        -> DeviceApprovalState.Approved
+                "PendingApproval" -> DeviceApprovalState.PendingApproval
+                "Revoked"         -> DeviceApprovalState.Revoked
+                else              -> DeviceApprovalState.NotRegistered
             }
             _uiState.update {
                 it.copy(
@@ -211,7 +211,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             "pending" -> DeviceApprovalState.PendingApproval
             else      -> DeviceApprovalState.Revoked
         }
-        TokenStore.saveApprovalState(app, approvalState.name)
+        TokenStore.saveApprovalState(app, approvalState::class.simpleName!!)
         _uiState.update {
             it.copy(
                 tokenState          = TokenState.DeviceTokenReady,
@@ -254,7 +254,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     "pending" -> DeviceApprovalState.PendingApproval
                     else      -> DeviceApprovalState.Revoked
                 }
-                TokenStore.saveApprovalState(getApplication(), approvalState.name)
+                TokenStore.saveApprovalState(getApplication(), approvalState::class.simpleName!!)
                 _uiState.update {
                     it.copy(
                         deviceApprovalState = approvalState,
@@ -614,7 +614,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                                     lastError               = null
                                 )
                             }
-                            TokenStore.saveApprovalState(getApplication(), DeviceApprovalState.Approved.name)
+                            TokenStore.saveApprovalState(getApplication(), "Approved")
                             log("Device approved — auto-connecting WS")
                             maybeAutoConnect()
                             break
