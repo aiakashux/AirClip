@@ -692,11 +692,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         resetDeviceSessionState()
         val app = getApplication<Application>()
         TokenStore.clearAll(app)
-        Prefs.email = ""
+        Prefs.clearAll()   // removes serverUrl + email; both revert to defaults on next read
         _uiState.update {
             it.copy(
                 authState = AuthState.LoggedOut,
-                email     = "",
+                baseUrl   = Prefs.serverUrl,   // returns DEFAULT_URL after clearAll
+                email     = Prefs.email,        // returns "" after clearAll
                 password  = ""
             )
         }
