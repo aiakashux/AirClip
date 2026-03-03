@@ -38,12 +38,17 @@ import java.util.concurrent.TimeUnit
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
 
+    // Step 1: initialise Prefs before _uiState reads from it.
+    init { Prefs.init(app) }
+
+    // _uiState is declared here — AFTER Prefs.init() so serverUrl/email are readable,
+    // and BEFORE the restore coroutine is launched so the IO thread can never observe
+    // a null _uiState (JVM zero-initialises fields; the coroutine must see the real value).
+    private val _uiState = MutableStateFlow(UiState(baseUrl = Prefs.serverUrl, email = Prefs.email))
+    val uiState: StateFlow<UiState> = _uiState
+
+    // Step 2: _uiState is now non-null; safe to launch coroutines that write to it.
     init {
-        // Prefs must be initialised before _uiState reads from it below.
-        Prefs.init(app)
-        // Hydrate token store from DataStore and restore UI state.
-        // Launched as a coroutine so all properties are fully initialized when the
-        // body runs (the init block returns immediately; _uiState is ready by then).
         viewModelScope.launch(Dispatchers.IO) {
             val savedApproval = TokenStore.loadFromDisk(app)
             val hasAccount    = TokenStore.accountToken != null
@@ -151,10 +156,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         /** Up to 10 most recently sent clipboard items (local history). */
         val localClipItems: List<LocalClipItemUi> = emptyList()
     )
-
-    // Seeded from Prefs — Prefs.init() is guaranteed to run first (init block precedes this).
-    private val _uiState = MutableStateFlow(UiState(baseUrl = Prefs.serverUrl, email = Prefs.email))
-    val uiState: StateFlow<UiState> = _uiState
 
     // ------------------------------------------------------------------
     // UI event handlers
