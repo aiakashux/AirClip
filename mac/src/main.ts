@@ -13,6 +13,8 @@ let loginWindow: BrowserWindow | null = null;
 let logsWindow: BrowserWindow | null = null;
 let wsClient: WsClient | null = null;
 let wsRecoveryAttempted = false;
+// Prevent handleAuthExpired() from firing more than once per launch (avoids log spam).
+let authExpiredHandled = false;
 
 // Loop-prevention state (in-memory only)
 let lastLocalHash: string | null = null;
@@ -132,6 +134,30 @@ function clearDeviceAuth(): void {
   });
 }
 
+/**
+ * Called once per launch when a REST call returns 401 with a token-expiry body.
+ *
+ * What it does:
+ *   - Stops clipboard polling immediately (no more 500ms spam).
+ *   - Clears account_token + account_id from persisted state.
+ *   - Invalidates the devices cache (handled inside setAccountToken).
+ *   - Leaves device_token and WS connection untouched — device auth is
+ *     independent; keeping the WS up avoids a reconnect loop and lets
+ *     incoming deliver_clipboard messages still arrive (they're harmless).
+ *   - Logs a single clear user-facing message.
+ *
+ * The flag authExpiredHandled is reset in doAuth() on the next successful login
+ * so the handler re-arms for the next session.
+ */
+function handleAuthExpired(): void {
+  if (authExpiredHandled) return;
+  authExpiredHandled = true;
+  stopClipboardPolling();
+  setAccountToken(null);             // clears account_token, invalidates devices cache
+  saveState({ account_id: null });
+  log("⚠ Session expired — please login again");
+}
+
 function setAccountToken(nextToken: string | null): void {
   const prev = getState().account_token;
   if (prev && prev !== nextToken) {
@@ -148,6 +174,7 @@ async function doAuth(action: "login" | "register", email: string, password: str
   try {
     const authFn = action === "login" ? api.login : api.register;
     const { token, account_id } = await authFn(email, password);
+    authExpiredHandled = false;   // re-arm for this new session
     setAccountToken(token);
     saveState({ account_id });
     log(`Auth success (${action}). account_id=${account_id}`);
@@ -165,6 +192,10 @@ async function doAuth(action: "login" | "register", email: string, password: str
 
     return { ok: true };
   } catch (err: unknown) {
+    if (err instanceof api.AuthExpiredError) {
+      handleAuthExpired();
+      return { ok: false, error: err.message };
+    }
     const msg = err instanceof Error ? err.message : String(err);
     log(`Auth error: ${msg}`);
     return { ok: false, error: msg };
@@ -225,6 +256,10 @@ function connectWs(): void {
       await ensureDeviceRegistered();
       connectWs();
     } catch (err: unknown) {
+      if (err instanceof api.AuthExpiredError) {
+        handleAuthExpired();
+        return;
+      }
       const msg = err instanceof Error ? err.message : String(err);
       log(`WS recovery failed: ${msg}`);
     }
@@ -236,6 +271,13 @@ function connectWs(): void {
       api.getDevicesCached(st.account_token, 10_000, {
         force: true,
         onFetch: (n) => log(`Fetched devices from server count=${n}`),
+      }).catch((err: unknown) => {
+        if (err instanceof api.AuthExpiredError) {
+          handleAuthExpired();
+        } else {
+          const msg = err instanceof Error ? err.message : String(err);
+          log(`Device fetch error on WS open: ${msg}`);
+        }
       });
     }
     startClipboardPolling();
@@ -322,6 +364,10 @@ async function sendTestMessage(): Promise<void> {
     const hash = crypto.createHash("sha256").update(plaintext).digest("hex").slice(0, 16);
     log(`Sent msg hash=${hash} len=${plaintext.length} to ${targets.length} device(s)`);
   } catch (err: unknown) {
+    if (err instanceof api.AuthExpiredError) {
+      handleAuthExpired();
+      return;
+    }
     const msg = err instanceof Error ? err.message : String(err);
     log(`Send error: ${msg}`);
   }
@@ -354,6 +400,10 @@ async function sendClipboardContent(text: string): Promise<boolean> {
     log(`Sent clipboard hash=${hashPrefix} len=${text.length} to ${targets.length} device(s)`);
     return true;
   } catch (err: unknown) {
+    if (err instanceof api.AuthExpiredError) {
+      handleAuthExpired();
+      return false;
+    }
     const msg = err instanceof Error ? err.message : String(err);
     log(`Clipboard send error: ${msg}`);
     return false;

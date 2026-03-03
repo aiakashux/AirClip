@@ -1,5 +1,19 @@
 import { BACKEND_HTTP_BASE } from "./config";
 
+// ---------------------------------------------------------------------------
+// Typed auth error — thrown when the server returns 401 with a token-expired
+// body. Callers catch this specifically to trigger session-expiry handling
+// rather than treating it as a generic network error.
+// ---------------------------------------------------------------------------
+export class AuthExpiredError extends Error {
+  constructor() {
+    super("Session expired — please login again");
+    this.name = "AuthExpiredError";
+    // Restore prototype chain so `instanceof` works after transpilation.
+    Object.setPrototypeOf(this, AuthExpiredError.prototype);
+  }
+}
+
 interface AuthResponse {
   token: string;
   account_id: string;
@@ -35,8 +49,23 @@ async function request<T>(
     body: body ? JSON.stringify(body) : undefined,
   });
   if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`${method} ${path} failed (${res.status}): ${text}`);
+    let body = "";
+    try { body = await res.text(); } catch { /* ignore read error */ }
+    // Distinguish session expiry from other 401s (e.g. wrong password).
+    // Primary: parse JSON and match detail field exactly.
+    // Fallback: substring check if body is not valid JSON.
+    if (res.status === 401) {
+      let isExpired = false;
+      try {
+        const parsed = JSON.parse(body) as { detail?: unknown };
+        const detail = typeof parsed.detail === "string" ? parsed.detail : "";
+        isExpired = detail === "Token expired" || detail.includes("Token expired");
+      } catch {
+        isExpired = body.toLowerCase().includes("token expired");
+      }
+      if (isExpired) throw new AuthExpiredError();
+    }
+    throw new Error(`${method} ${path} failed (${res.status}): ${body}`);
   }
   return res.json() as Promise<T>;
 }
