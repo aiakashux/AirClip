@@ -1,10 +1,13 @@
 package com.cliprplus.clipr
 
 import android.app.Application
+import android.content.ClipboardManager
+import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.cliprplus.clipr.auth.AuthApi
 import com.cliprplus.clipr.auth.TokenStore
+import com.cliprplus.clipr.clipboard.ClipboardMonitor
 import com.cliprplus.clipr.crypto.KeyManager
 import com.cliprplus.clipr.crypto.SealedBox
 import com.cliprplus.clipr.device.AuthState
@@ -13,6 +16,7 @@ import com.cliprplus.clipr.device.DeviceApprovalState
 import com.cliprplus.clipr.device.TokenState
 import com.cliprplus.clipr.device.WsState
 import com.cliprplus.clipr.util.Hash
+import com.cliprplus.clipr.util.RecentHashCache
 import com.cliprplus.clipr.util.RedactingLogger
 import com.cliprplus.clipr.ws.CliprWebSocket
 import com.cliprplus.clipr.ws.CliprWsListener
@@ -20,6 +24,7 @@ import com.cliprplus.clipr.ws.ClipboardPayload
 import com.cliprplus.clipr.ws.DeliveredMessage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -32,6 +37,36 @@ import java.util.Locale
 import java.util.concurrent.TimeUnit
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
+
+    init {
+        // Prefs must be initialised before _uiState reads from it below.
+        Prefs.init(app)
+        // Hydrate token store from DataStore and restore UI state.
+        // Launched as a coroutine so all properties are fully initialized when the
+        // body runs (the init block returns immediately; _uiState is ready by then).
+        viewModelScope.launch(Dispatchers.IO) {
+            val savedApproval = TokenStore.loadFromDisk(app)
+            val hasAccount    = TokenStore.accountToken != null
+            val hasDevice     = TokenStore.deviceToken  != null
+            val approvalState = when (savedApproval) {
+                DeviceApprovalState.Approved.name        -> DeviceApprovalState.Approved
+                DeviceApprovalState.PendingApproval.name -> DeviceApprovalState.PendingApproval
+                DeviceApprovalState.Revoked.name         -> DeviceApprovalState.Revoked
+                else                                     -> DeviceApprovalState.NotRegistered
+            }
+            _uiState.update {
+                it.copy(
+                    authState           = if (hasAccount) AuthState.AccountTokenReady else AuthState.LoggedOut,
+                    tokenState          = if (hasDevice)  TokenState.DeviceTokenReady  else TokenState.NoDeviceToken,
+                    deviceApprovalState = approvalState
+                )
+            }
+            if (hasAccount) log("Session restored — account_id=${TokenStore.accountId?.take(8)}…")
+            if (hasDevice && approvalState == DeviceApprovalState.Approved) {
+                maybeAutoConnect()
+            }
+        }
+    }
 
     // Shared HTTP client — reused across all REST API calls.
     private val httpClient = OkHttpClient.Builder()
@@ -49,22 +84,48 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         .replace("http://", "ws://")
         .replace("https://", "wss://") + "/ws"
 
-    private val keyManager = KeyManager()
+    private val keyManager      = KeyManager()
+    private val recentHashCache = RecentHashCache()
 
     private var wsClient: CliprWebSocket? = null
-    private var approvalPollJob: Job? = null
+    /** Incremented on every new WsClient creation — used to invalidate stale listeners. */
+    private var wsGeneration = 0
+
+    private var approvalPollJob:  Job? = null
+    private var clipboardMonitorJob: Job? = null
+
+    /** Epoch-ms of the last successful clipboard send (for rate limiting). */
+    @Volatile private var lastClipSentAtMs = 0L
+
+    companion object {
+        /** Minimum ms between successive clipboard sends. */
+        private const val RATE_LIMIT_MS = 500L
+    }
 
     // ------------------------------------------------------------------
     // UI state
     // ------------------------------------------------------------------
 
-    /** Immutable snapshot of everything the DebugScreen needs. */
     data class ReceivedMessageUi(
         val messageId: String,
         val fromDeviceId: String,
         val ciphertextHash: String,  // hash only — never plaintext
         val timestamp: String,
         val direction: String = "IN"
+    )
+
+    data class LocalClipItemUi(
+        /** First 12 hex chars of SHA-256 — safe to display and log. */
+        val hashPrefix: String,
+        val length: Int,
+        /**
+         * First 40 chars of plaintext clipboard content.
+         * DISPLAY ONLY — rendered in SentClipItemCard UI.
+         * MUST NOT be passed to log(), RedactingLogger, or statusLog.
+         */
+        val preview: String,
+        val timestamp: String,
+        val timestampMs: Long
     )
 
     data class UiState(
@@ -85,34 +146,46 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         /** Timestamp of the last manual device refresh, or null if never refreshed. */
         val lastRefreshTime: String? = null,
         /** Error from the last manual device refresh, or null if succeeded. */
-        val lastRefreshError: String? = null
+        val lastRefreshError: String? = null,
+        val isClipboardMonitorActive: Boolean = false,
+        /** Up to 10 most recently sent clipboard items (local history). */
+        val localClipItems: List<LocalClipItemUi> = emptyList()
     )
 
-    private val _uiState = MutableStateFlow(UiState())
+    // Seeded from Prefs — Prefs.init() is guaranteed to run first (init block precedes this).
+    private val _uiState = MutableStateFlow(UiState(baseUrl = Prefs.serverUrl, email = Prefs.email))
     val uiState: StateFlow<UiState> = _uiState
 
     // ------------------------------------------------------------------
     // UI event handlers
     // ------------------------------------------------------------------
 
-    fun onEmailChange(v: String)   = _uiState.update { it.copy(email = v) }
+    fun onEmailChange(v: String) {
+        Prefs.email = v
+        _uiState.update { it.copy(email = v) }
+    }
     fun onPasswordChange(v: String) = _uiState.update { it.copy(password = v) }
-    fun onBaseUrlChange(v: String) = _uiState.update { it.copy(baseUrl = v) }
+    fun onBaseUrlChange(v: String) {
+        Prefs.serverUrl = v
+        _uiState.update { it.copy(baseUrl = v) }
+    }
 
     fun onRegister() = runAsync("register") {
         resetDeviceSessionState()
-        val s = _uiState.value
+        val s   = _uiState.value
+        val app = getApplication<Application>()
         val resp = authApi().register(s.email, s.password)
-        TokenStore.setAccountAuth(resp.token, resp.account_id)
+        TokenStore.saveAccount(app, resp.account_id, resp.token)
         log("Registered — account_id=${resp.account_id}")
         _uiState.update { it.copy(authState = AuthState.AccountTokenReady, lastError = null) }
     }
 
     fun onLogin() = runAsync("login") {
         resetDeviceSessionState()
-        val s = _uiState.value
+        val s   = _uiState.value
+        val app = getApplication<Application>()
         val resp = authApi().login(s.email, s.password)
-        TokenStore.setAccountAuth(resp.token, resp.account_id)
+        TokenStore.saveAccount(app, resp.account_id, resp.token)
         log("Logged in — account_id=${resp.account_id}")
         _uiState.update { it.copy(authState = AuthState.AccountTokenReady, lastError = null) }
     }
@@ -129,7 +202,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             platform        = "android",
             publicKeyBase64 = keyManager.getPublicKeyBase64()
         )
-        TokenStore.setDeviceAuth(resp.token, resp.device_id)
+        val app = getApplication<Application>()
+        TokenStore.saveDevice(app, resp.device_id, resp.token)
         log("Device registered id=${resp.device_id} trust=${resp.trust_status}")
 
         val approvalState = when (resp.trust_status) {
@@ -137,6 +211,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             "pending" -> DeviceApprovalState.PendingApproval
             else      -> DeviceApprovalState.Revoked
         }
+        TokenStore.saveApprovalState(app, approvalState.name)
         _uiState.update {
             it.copy(
                 tokenState          = TokenState.DeviceTokenReady,
@@ -144,8 +219,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 lastError           = null
             )
         }
-        if (approvalState == DeviceApprovalState.PendingApproval) {
-            startApprovalPolling()
+        when (approvalState) {
+            DeviceApprovalState.PendingApproval -> startApprovalPolling()
+            DeviceApprovalState.Approved        -> maybeAutoConnect()
+            else                                -> Unit
         }
     }
 
@@ -164,8 +241,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 return@launch
             }
             try {
-                val devices  = deviceApi().listDevices(accountToken)
-                val myDevice = devices.find { it.device_id == myDeviceId }
+                val devices   = deviceApi().listDevices(accountToken)
+                val myDevice  = devices.find { it.device_id == myDeviceId }
                 val newStatus = myDevice?.trust_status
                 if (newStatus == null) {
                     _uiState.update { it.copy(lastRefreshTime = ts(), lastRefreshError = "Device not found") }
@@ -177,6 +254,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     "pending" -> DeviceApprovalState.PendingApproval
                     else      -> DeviceApprovalState.Revoked
                 }
+                TokenStore.saveApprovalState(getApplication(), approvalState.name)
                 _uiState.update {
                     it.copy(
                         deviceApprovalState = approvalState,
@@ -186,7 +264,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 log("Refresh: trust=$newStatus")
                 if (approvalState == DeviceApprovalState.Approved) {
-                    log("Device trusted — Connect WS available")
+                    maybeAutoConnect()
                 }
             } catch (e: Exception) {
                 RedactingLogger.error("refreshDevices", e)
@@ -223,11 +301,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
         wsClient?.disconnect()
+        val gen = ++wsGeneration
         _uiState.update { it.copy(wsState = WsState.Connecting, lastError = null) }
         wsClient = CliprWebSocket(
             wsBaseUrl   = wsUrl,
             deviceToken = deviceToken,
-            listener    = wsListener
+            listener    = makeWsListener(gen)
         )
         wsClient!!.connect()
         log("WS connecting…")
@@ -268,18 +347,68 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         log("Sent test to ${payloads.size} peer(s) hash=${Hash.sha256Short(testPlain)}")
     }
 
+    /**
+     * Called when the app returns to the foreground (ON_START lifecycle event)
+     * and also from the "Sync Clipboard Now" debug button.
+     *
+     * Reads the current system clipboard on the calling thread (must be Main),
+     * then dispatches encryption + send to IO.
+     *
+     * No-ops when WS is not connected or device is not approved.
+     * DO NOT log plaintext — only hash prefix and length.
+     */
+    fun onAppForegrounded() {
+        val st = _uiState.value
+        if (st.wsState != WsState.Connected || st.deviceApprovalState != DeviceApprovalState.Approved) return
+
+        log("Foreground: clipboard check…")
+
+        val cm = getApplication<Application>().getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        val text = try {
+            cm.primaryClip
+                ?.takeIf { it.itemCount > 0 }
+                ?.getItemAt(0)
+                ?.coerceToText(getApplication())
+                ?.toString()
+                ?.trim()
+                ?.takeIf { it.isNotEmpty() }
+        } catch (_: Exception) { null }
+
+        if (text == null) {
+            RedactingLogger.info("Foreground: clipboard empty or non-text — nothing to send")
+            return
+        }
+
+        log("Foreground: read hash=${Hash.sha256Hex(text).take(12)} len=${text.length}")
+
+        // sendClipboardText handles dedupe and exception logging internally.
+        // text is captured in the closure but never passed to any log inside the launch.
+        viewModelScope.launch(Dispatchers.IO) {
+            sendClipboardText(text)  // try/catch inside — no plaintext can escape to logcat
+        }
+    }
+
     // ------------------------------------------------------------------
-    // WebSocket listener (runs on OkHttp dispatch thread)
+    // WebSocket listener factory
     // ------------------------------------------------------------------
 
-    private val wsListener = object : CliprWsListener {
+    /**
+     * Create a per-connection listener tagged with [gen].
+     *
+     * [onDisconnected] guards on [wsGeneration] == [gen] to prevent a stale
+     * listener from a replaced client stopping the new connection's clipboard monitor.
+     */
+    private fun makeWsListener(gen: Int): CliprWsListener = object : CliprWsListener {
         override fun onConnected() {
             _uiState.update { it.copy(wsState = WsState.Connected, lastError = null) }
             log("WS connected")
+            startClipboardMonitor()
         }
 
         override fun onDisconnected(code: Int, reason: String) {
+            if (wsGeneration != gen) return  // stale listener — new connection already active
             _uiState.update { it.copy(wsState = WsState.Disconnected) }
+            stopClipboardMonitor()
             log("WS disconnected $code")
         }
 
@@ -288,7 +417,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
          * Block reconnect until the user re-registers the device.
          */
         override fun onAuthFailed() {
-            wsClient?.disconnect()  // sets shouldReconnect = false; prevents auto-reconnect
+            wsClient?.disconnect()
+            stopClipboardMonitor()
             _uiState.update {
                 it.copy(
                     wsState             = WsState.Disconnected,
@@ -301,7 +431,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         override fun onDeliverClipboard(msg: DeliveredMessage) {
-            // Store encrypted — DO NOT write to Android clipboard
+            // Store encrypted — DO NOT write to Android clipboard, DO NOT log content.
             val ui = ReceivedMessageUi(
                 messageId      = msg.messageId,
                 fromDeviceId   = msg.fromDeviceId,
@@ -315,6 +445,132 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         override fun onLog(text: String) = log(text)
+    }
+
+    // ------------------------------------------------------------------
+    // Clipboard monitor
+    // ------------------------------------------------------------------
+
+    /**
+     * Start watching the system clipboard. Runs a [Channel.CONFLATED] pipeline:
+     *  - Collector coroutine on Main (required by ClipboardManager)
+     *  - Rate-limited sender on IO (≥500ms between sends, coalesces during sleep)
+     *
+     * Safe to call multiple times — cancels any previous monitor first.
+     * Called automatically from [makeWsListener]'s onConnected.
+     */
+    private fun startClipboardMonitor() {
+        clipboardMonitorJob?.cancel()
+        val app = getApplication<Application>()
+
+        clipboardMonitorJob = viewModelScope.launch {
+            // CONFLATED: only the latest clipboard value is kept between sends.
+            val sendChannel = Channel<String>(Channel.CONFLATED)
+
+            // Collector — must run on Main; ClipboardManager requires main-thread listener.
+            launch(Dispatchers.Main) {
+                ClipboardMonitor.clipboardFlow(app).collect { text ->
+                    sendChannel.trySend(text)
+                }
+            }
+
+            // Rate-limited sender — enforces ≥RATE_LIMIT_MS between successive network sends.
+            launch(Dispatchers.IO) {
+                for (text in sendChannel) {
+                    val elapsed = System.currentTimeMillis() - lastClipSentAtMs
+                    if (elapsed < RATE_LIMIT_MS) delay(RATE_LIMIT_MS - elapsed)
+                    // Coalesce: prefer any newer value that arrived during the sleep.
+                    val latest = sendChannel.tryReceive().getOrNull() ?: text
+                    sendClipboardText(latest)
+                }
+            }
+        }
+
+        _uiState.update { it.copy(isClipboardMonitorActive = true) }
+        log("Clipboard monitor started")
+    }
+
+    private fun stopClipboardMonitor() {
+        clipboardMonitorJob?.cancel()
+        clipboardMonitorJob = null
+        _uiState.update { it.copy(isClipboardMonitorActive = false) }
+        log("Clipboard monitor stopped")
+    }
+
+    /**
+     * Encrypt [text] for all trusted peer devices and send via WebSocket.
+     *
+     * Skip if [recentHashCache] already knows this hash (loop prevention).
+     * DO NOT log plaintext content at any point.
+     */
+    private suspend fun sendClipboardText(text: String) {
+        // Compute hash first — used in both the happy path and the error path.
+        // hash is the ONLY derivative of text that may appear in any log line.
+        val hash = Hash.sha256Hex(text)
+        try {
+            if (recentHashCache.isKnown(hash)) {
+                RedactingLogger.info("ClipMonitor: skip known hash=${hash.take(12)}")
+                return
+            }
+
+            val ws           = wsClient?.takeIf { it.isConnected() } ?: return
+            val accountToken = TokenStore.accountToken ?: return
+            val myDeviceId   = TokenStore.deviceId     ?: return
+
+            val devices    = deviceApi().listDevices(accountToken)
+            val recipients = devices.filter { it.trust_status == "trusted" && it.device_id != myDeviceId }
+            if (recipients.isEmpty()) {
+                RedactingLogger.info("ClipMonitor: no trusted peers — skip hash=${hash.take(12)}")
+                return
+            }
+
+            val plainBytes = text.toByteArray(Charsets.UTF_8)
+            val payloads = recipients.map { device ->
+                val enc = SealedBox.encryptForRecipient(plainBytes, device.public_key)
+                ClipboardPayload(device.device_id, enc.ciphertextBase64, enc.nonce)
+            }
+            ws.sendClipboard(payloads)
+
+            recentHashCache.record(hash)
+            lastClipSentAtMs = System.currentTimeMillis()
+
+            // preview is stored for UI display only — it is never passed to log() or RedactingLogger.
+            val ui = LocalClipItemUi(
+                hashPrefix  = hash.take(12),
+                length      = text.length,
+                preview     = text.take(40),  // UI display only — see LocalClipItemUi.preview doc
+                timestamp   = ts(),
+                timestampMs = System.currentTimeMillis()
+            )
+            _uiState.update {
+                it.copy(localClipItems = (it.localClipItems + ui).takeLast(10))
+            }
+            log("→ clip sent hash=${hash.take(12)} len=${text.length} peers=${payloads.size}")
+
+        } catch (e: Exception) {
+            // Log hash and length only — never 'text', 'plainBytes', or 'preview'.
+            RedactingLogger.error("sendClipboardText: error hash=${hash.take(12)}", e)
+            log("→ clip send failed hash=${hash.take(12)} (${e.javaClass.simpleName})")
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Auto-connect
+    // ------------------------------------------------------------------
+
+    /**
+     * Connect WS automatically when the device becomes Approved and has a
+     * valid token — called after registration, approval polling, and manual refresh.
+     */
+    private fun maybeAutoConnect() {
+        val st = _uiState.value
+        if (st.deviceApprovalState == DeviceApprovalState.Approved &&
+            st.tokenState == TokenState.DeviceTokenReady &&
+            st.wsState == WsState.Disconnected
+        ) {
+            log("Auto-connecting WS…")
+            onConnectWs()
+        }
     }
 
     // ------------------------------------------------------------------
@@ -358,7 +614,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                                     lastError               = null
                                 )
                             }
-                            log("Device approved — WS connect now available")
+                            TokenStore.saveApprovalState(getApplication(), DeviceApprovalState.Approved.name)
+                            log("Device approved — auto-connecting WS")
+                            maybeAutoConnect()
                             break
                         }
                         "pending" -> {
@@ -406,19 +664,43 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         wsClient = null
         approvalPollJob?.cancel()
         approvalPollJob = null
+        stopClipboardMonitor()
+        recentHashCache.clear()
         TokenStore.clearDeviceAuth()
+        // Clear device creds from DataStore asynchronously (in-memory already cleared above).
+        viewModelScope.launch(Dispatchers.IO) {
+            TokenStore.clearDeviceAuth(getApplication())
+        }
         _uiState.update {
             it.copy(
-                tokenState              = TokenState.NoDeviceToken,
-                deviceApprovalState     = DeviceApprovalState.NotRegistered,
-                wsState                 = WsState.Disconnected,
-                approvalPollWaitSeconds = null,
-                lastError               = null,
-                lastRefreshTime         = null,
-                lastRefreshError        = null
+                tokenState               = TokenState.NoDeviceToken,
+                deviceApprovalState      = DeviceApprovalState.NotRegistered,
+                wsState                  = WsState.Disconnected,
+                approvalPollWaitSeconds  = null,
+                lastError                = null,
+                lastRefreshTime          = null,
+                lastRefreshError         = null,
+                isClipboardMonitorActive = false,
+                localClipItems           = emptyList()
             )
         }
         log("Device session reset")
+    }
+
+    /** Clear all session data and reset UI to the logged-out state. */
+    fun onLogout() = runAsync("logout") {
+        resetDeviceSessionState()
+        val app = getApplication<Application>()
+        TokenStore.clearAll(app)
+        Prefs.email = ""
+        _uiState.update {
+            it.copy(
+                authState = AuthState.LoggedOut,
+                email     = "",
+                password  = ""
+            )
+        }
+        log("Logged out — all session data cleared")
     }
 
     private fun log(msg: String) {
@@ -448,5 +730,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         super.onCleared()
         wsClient?.disconnect()
         approvalPollJob?.cancel()
+        clipboardMonitorJob?.cancel()
     }
 }

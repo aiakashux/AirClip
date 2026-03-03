@@ -12,14 +12,19 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
@@ -37,6 +42,16 @@ import com.cliprplus.clipr.device.WsState
 @Composable
 fun DebugScreen(vm: MainViewModel = viewModel()) {
     val state by vm.uiState.collectAsState()
+
+    // Foreground clipboard sync: fire onAppForegrounded every time the app comes to the front.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_START) vm.onAppForegrounded()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     // Pre-compute state labels
     val authLabel = when (state.authState) {
@@ -74,6 +89,8 @@ fun DebugScreen(vm: MainViewModel = viewModel()) {
                             state.tokenState == TokenState.DeviceTokenReady &&
                             state.wsState == WsState.Disconnected
     val canSendTest       = state.wsState == WsState.Connected && isTrusted
+    val canSyncClipboard  = state.wsState == WsState.Connected && isTrusted
+    val canLogout         = state.authState == AuthState.AccountTokenReady
 
     Column(
         modifier = Modifier
@@ -118,6 +135,15 @@ fun DebugScreen(vm: MainViewModel = viewModel()) {
             Button(onClick = vm::onRegister, modifier = Modifier.weight(1f)) { Text("Register") }
             Button(onClick = vm::onLogin,    modifier = Modifier.weight(1f)) { Text("Login") }
         }
+        Spacer(Modifier.height(4.dp))
+        Button(
+            onClick  = vm::onLogout,
+            enabled  = canLogout,
+            modifier = Modifier.fillMaxWidth(),
+            colors   = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+        ) {
+            Text("Logout / Clear Session")
+        }
         Spacer(Modifier.height(6.dp))
 
         // ── Device / WS buttons ──────────────────────────────────────
@@ -146,13 +172,22 @@ fun DebugScreen(vm: MainViewModel = viewModel()) {
         }
         Spacer(Modifier.height(6.dp))
 
-        // ── Refresh Devices ───────────────────────────────────────────
-        Button(
-            onClick  = vm::onRefreshDevices,
-            enabled  = canRefresh,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Refresh Devices")
+        // ── Sync + Refresh ────────────────────────────────────────────
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Button(
+                onClick  = vm::onAppForegrounded,
+                enabled  = canSyncClipboard,
+                modifier = Modifier.weight(1f)
+            ) {
+                Text("Sync Clipboard\nNow", fontSize = 11.sp, textAlign = TextAlign.Center)
+            }
+            Button(
+                onClick  = vm::onRefreshDevices,
+                enabled  = canRefresh,
+                modifier = Modifier.weight(1f)
+            ) {
+                Text("Refresh\nDevices", fontSize = 11.sp, textAlign = TextAlign.Center)
+            }
         }
         state.lastRefreshTime?.let { t ->
             val suffix = state.lastRefreshError?.let { " — $it" } ?: ""
@@ -190,12 +225,13 @@ fun DebugScreen(vm: MainViewModel = viewModel()) {
             colors   = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
         ) {
             Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
-                StateRow("Auth",     authLabel)
-                StateRow("Approval", approvalLabel,
+                StateRow("Auth",      authLabel)
+                StateRow("Approval",  approvalLabel,
                     isError = state.deviceApprovalState == DeviceApprovalState.Revoked)
-                StateRow("Token",    tokenLabel,
+                StateRow("Token",     tokenLabel,
                     isError = state.tokenState == TokenState.DeviceTokenInvalid)
-                StateRow("WS",       wsLabel)
+                StateRow("WS",        wsLabel)
+                StateRow("Clipboard", if (state.isClipboardMonitorActive) "Monitoring ✓" else "OFF")
                 state.lastError?.let { err ->
                     Spacer(Modifier.height(2.dp))
                     StateRow("Error", err, isError = true)
@@ -241,6 +277,22 @@ fun DebugScreen(vm: MainViewModel = viewModel()) {
                 Spacer(Modifier.height(4.dp))
             }
         }
+        Spacer(Modifier.height(10.dp))
+
+        // ── Sent (local) ──────────────────────────────────────────────
+        Text(
+            "Sent (local) — last ${state.localClipItems.size}:",
+            style = MaterialTheme.typography.labelMedium
+        )
+        Spacer(Modifier.height(4.dp))
+        if (state.localClipItems.isEmpty()) {
+            Text("(none yet)", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else {
+            state.localClipItems.reversed().forEach { item ->
+                SentClipItemCard(item)
+                Spacer(Modifier.height(4.dp))
+            }
+        }
         Spacer(Modifier.height(16.dp))
     }
 }
@@ -260,6 +312,41 @@ private fun StateRow(label: String, value: String, isError: Boolean = false) {
             fontFamily = FontFamily.Monospace,
             color = if (isError) Color(0xFFC62828) else MaterialTheme.colorScheme.onSurface
         )
+    }
+}
+
+@Composable
+private fun SentClipItemCard(item: MainViewModel.LocalClipItemUi) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors   = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
+            Row(
+                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    "OUT  ${item.timestamp}",
+                    fontSize = 10.sp,
+                    fontFamily = FontFamily.Monospace,
+                    color = MaterialTheme.colorScheme.onTertiaryContainer
+                )
+                Text(
+                    "len: ${item.length}",
+                    fontSize = 10.sp,
+                    fontFamily = FontFamily.Monospace,
+                    color = MaterialTheme.colorScheme.onTertiaryContainer
+                )
+            }
+            Text("hash: ${item.hashPrefix}…", fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+            Text(
+                "preview: ${item.preview}${if (item.length > 40) "…" else ""}",
+                fontSize = 10.sp,
+                fontFamily = FontFamily.Monospace,
+                color = MaterialTheme.colorScheme.outline
+            )
+        }
     }
 }
 

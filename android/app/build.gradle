@@ -70,4 +70,7 @@ dependencies {
 
     // Coroutines
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
+
+    // Persistence — DataStore for tokens; TODO: migrate to EncryptedDataStore before production
+    implementation 'androidx.datastore:datastore-preferences:1.0.0'
 }
