@@ -29,6 +29,7 @@ data class DeliveredMessage(
     val fromDeviceId: String,
     val ciphertext: String,   // base64 — DO NOT decrypt or log as plaintext
     val nonce: String,
+    val seq: Int = 0,         // monotonic per-account seq (0 if server did not include it)
     val receivedAtMs: Long = System.currentTimeMillis()
 )
 
@@ -43,6 +44,8 @@ interface CliprWsListener {
     fun onLog(text: String)
     /** Called when the server rejects the WS upgrade with 401/403. No reconnect is attempted. */
     fun onAuthFailed() {}
+    /** Called when the server sends a hello with the latest_seq for this device. */
+    fun onHello(latestSeq: Int) {}
 }
 
 // ---------------------------------------------------------------------------
@@ -178,16 +181,24 @@ class CliprWebSocket(
             val obj: JsonObject = JsonParser.parseString(text).asJsonObject
             when (val type = obj.get("type")?.asString) {
 
+                "hello" -> {
+                    val latestSeq = obj.get("latest_seq")?.asInt ?: 0
+                    RedactingLogger.info("WS ← hello latest_seq=$latestSeq")
+                    listener.onLog("WS hello: latest_seq=$latestSeq")
+                    listener.onHello(latestSeq)
+                }
+
                 "deliver_clipboard" -> {
                     val msg = DeliveredMessage(
-                        messageId   = obj.getStr("message_id"),
+                        messageId    = obj.getStr("message_id"),
                         fromDeviceId = obj.getStr("from_device_id"),
-                        ciphertext  = obj.getStr("ciphertext"),
-                        nonce       = obj.getStr("nonce")
+                        ciphertext   = obj.getStr("ciphertext"),
+                        nonce        = obj.getStr("nonce"),
+                        seq          = obj.get("seq")?.asInt ?: 0
                     )
                     // Log only hash/length — never ciphertext contents
                     RedactingLogger.logCiphertext("deliver_clipboard ciphertext", msg.ciphertext)
-                    RedactingLogger.info("WS ← deliver_clipboard from=${msg.fromDeviceId} msgId=${msg.messageId}")
+                    RedactingLogger.info("WS ← deliver_clipboard from=${msg.fromDeviceId} msgId=${msg.messageId} seq=${msg.seq}")
                     listener.onDeliverClipboard(msg)
                     // ACK immediately so the server deletes the queued message
                     sendAck(msg.messageId)

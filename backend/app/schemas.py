@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal, Optional
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel, EmailStr
 
@@ -97,12 +97,18 @@ class WSDevicePending(BaseModel):
     device_name: str
 
 
+class WSHello(BaseModel):
+    type: Literal["hello"] = "hello"
+    latest_seq: int
+
+
 class WSDeliverClipboard(BaseModel):
     type: Literal["deliver_clipboard"] = "deliver_clipboard"
     message_id: str
     from_device_id: str
     ciphertext: str  # base64
     nonce: str  # base64
+    seq: Optional[int] = None
 
 
 # --- Stored clipboard message ---
@@ -115,3 +121,13 @@ class ClipboardMessage(BaseModel):
     ciphertext: str
     nonce: str
     version: int = 1
+
+
+# --- Clip history REST response ---
+
+class ClipHistoryItem(BaseModel):
+    seq: int
+    message_id: str
+    from_device_id: str
+    ciphertext: str  # base64 — encrypted for the requesting device
+    nonce: str       # base64

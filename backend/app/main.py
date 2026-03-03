@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from . import storage
 from .auth import router as auth_router
+from .clips import router as clips_router
 from .devices import router as devices_router
 from .ws import websocket_endpoint
 
@@ -35,4 +36,5 @@ app.add_middleware(
 
 app.include_router(auth_router)
 app.include_router(devices_router)
+app.include_router(clips_router)
 app.add_api_websocket_route("/ws", websocket_endpoint)

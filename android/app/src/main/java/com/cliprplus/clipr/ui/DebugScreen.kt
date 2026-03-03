@@ -265,7 +265,7 @@ fun DebugScreen(vm: MainViewModel = viewModel()) {
 
         // ── Received messages ─────────────────────────────────────────
         Text(
-            "Received Messages (${state.receivedMessages.size}) — encrypted, not decrypted here:",
+            "Received Messages (${state.receivedMessages.size}):",
             style = MaterialTheme.typography.labelMedium
         )
         Spacer(Modifier.height(4.dp))
@@ -375,6 +375,14 @@ private fun ReceivedMessageCard(msg: MainViewModel.ReceivedMessageUi) {
                 )
             }
             Text("cipher_hash: ${msg.ciphertextHash}", fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+            if (msg.preview != null) {
+                Text(
+                    "preview: ${msg.preview}…",
+                    fontSize = 10.sp,
+                    fontFamily = FontFamily.Monospace,
+                    color = MaterialTheme.colorScheme.outline
+                )
+            }
             Text(
                 "msg_id: ${msg.messageId.take(8)}…",
                 fontSize = 10.sp,

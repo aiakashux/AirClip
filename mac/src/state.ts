@@ -9,6 +9,7 @@ export interface AppState {
   device_token: string | null;
   public_key_b64: string | null;
   private_key_b64: string | null;
+  last_seen_seq: number | null;
 }
 
 const DEFAULT_STATE: AppState = {
@@ -18,6 +19,7 @@ const DEFAULT_STATE: AppState = {
   device_token: null,
   public_key_b64: null,
   private_key_b64: null,
+  last_seen_seq: null,
 };
 
 let currentState: AppState = { ...DEFAULT_STATE };

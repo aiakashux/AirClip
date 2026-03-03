@@ -7,6 +7,11 @@ export interface DeliverClipboardEvent {
   from_device_id: string;
   ciphertext: string;
   nonce: string;
+  seq?: number;
+}
+
+export interface HelloEvent {
+  latest_seq: number;
 }
 
 export interface ClipboardPayload {
@@ -68,12 +73,16 @@ export class WsClient extends EventEmitter {
 
   private handleMessage(msg: Record<string, unknown>): void {
     switch (msg.type) {
+      case "hello":
+        this.emit("hello", { latest_seq: msg.latest_seq as number } as HelloEvent);
+        break;
       case "deliver_clipboard":
         this.emit("deliver_clipboard", {
           message_id: msg.message_id,
           from_device_id: msg.from_device_id,
           ciphertext: msg.ciphertext,
           nonce: msg.nonce,
+          seq: msg.seq as number | undefined,
         } as DeliverClipboardEvent);
         break;
       case "device_pending":

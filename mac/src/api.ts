@@ -149,3 +149,28 @@ export function invalidateDevicesCache(accountToken?: string): void {
     _cache.clear();
   }
 }
+
+// ---------------------------------------------------------------------------
+// Clip history (device-token authed — for catch-up after offline)
+// ---------------------------------------------------------------------------
+
+export interface ClipHistoryItem {
+  seq: number;
+  message_id: string;
+  from_device_id: string;
+  ciphertext: string;
+  nonce: string;
+}
+
+export async function fetchClipHistory(
+  deviceToken: string,
+  afterSeq: number,
+  limit = 10
+): Promise<ClipHistoryItem[]> {
+  return request<ClipHistoryItem[]>(
+    "GET",
+    `/clips/?after_seq=${afterSeq}&limit=${limit}`,
+    undefined,
+    deviceToken
+  );
+}

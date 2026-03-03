@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.firstOrNull
@@ -17,6 +18,7 @@ private val KEY_ACCOUNT_ID     = stringPreferencesKey("account_id")
 private val KEY_DEVICE_TOKEN   = stringPreferencesKey("device_token")
 private val KEY_DEVICE_ID      = stringPreferencesKey("device_id")
 private val KEY_APPROVAL_STATE = stringPreferencesKey("device_approval_state")
+private val KEY_LAST_SEEN_SEQ  = intPreferencesKey("last_seen_seq")
 
 /**
  * Token store for AccountToken and DeviceToken.
@@ -46,6 +48,10 @@ object TokenStore {
     @Volatile var deviceId: String? = null
         private set
 
+    /** Highest clip seq this device has processed. 0 = never seen any. */
+    @Volatile var lastSeenSeq: Int = 0
+        private set
+
     // ── Synchronous in-memory setters (existing call sites unchanged) ──
 
     fun setAccountAuth(token: String, accId: String) {
@@ -60,8 +66,9 @@ object TokenStore {
 
     /** Clears ONLY device-scoped credentials from memory. Account token is not affected. */
     fun clearDeviceAuth() {
-        deviceToken = null
-        deviceId    = null
+        deviceToken  = null
+        deviceId     = null
+        lastSeenSeq  = 0
     }
 
     fun clear() {
@@ -69,6 +76,7 @@ object TokenStore {
         deviceToken  = null
         accountId    = null
         deviceId     = null
+        lastSeenSeq  = 0
     }
 
     // ── DataStore-backed persistence ─────────────────────────────────
@@ -88,6 +96,7 @@ object TokenStore {
         val dId    = prefs[KEY_DEVICE_ID]
         if (aToken != null && aId != null) setAccountAuth(aToken, aId)
         if (dToken != null && dId != null) setDeviceAuth(dToken, dId)
+        lastSeenSeq = prefs[KEY_LAST_SEEN_SEQ] ?: 0
         return prefs[KEY_APPROVAL_STATE]
     }
 
@@ -119,6 +128,12 @@ object TokenStore {
         }
     }
 
+    /** Persist the highest clip seq this device has seen. */
+    suspend fun saveLastSeenSeq(context: Context, seq: Int) {
+        lastSeenSeq = seq
+        context.tokenDataStore.edit { prefs -> prefs[KEY_LAST_SEEN_SEQ] = seq }
+    }
+
     /**
      * Clear device credentials from DataStore and in-memory.
      * Account token and account_id are not affected.
@@ -129,6 +144,7 @@ object TokenStore {
             prefs.remove(KEY_DEVICE_TOKEN)
             prefs.remove(KEY_DEVICE_ID)
             prefs.remove(KEY_APPROVAL_STATE)
+            prefs.remove(KEY_LAST_SEEN_SEQ)
         }
     }
 

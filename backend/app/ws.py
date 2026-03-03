@@ -13,6 +13,7 @@ from .schemas import (
     ClipboardMessage,
     WSDeliverClipboard,
     WSDevicePending,
+    WSHello,
 )
 
 
@@ -153,6 +154,7 @@ async def handle_send_clipboard(
             continue
 
         msg_id = str(uuid.uuid4())
+        seq = await storage.next_clip_seq(account["id"])
         msg = ClipboardMessage(
             id=msg_id,
             from_device_id=caller_device_id,
@@ -162,6 +164,10 @@ async def handle_send_clipboard(
             nonce=payload["nonce"],
         )
 
+        msg_dict = msg.model_dump(mode="json")
+        # Always store in history buffer (30-min catch-up for offline devices)
+        await storage.store_clip_history(account["id"], seq, msg_dict)
+
         delivered = await manager.send_json(
             to_device_id,
             WSDeliverClipboard(
@@ -169,11 +175,12 @@ async def handle_send_clipboard(
                 from_device_id=caller_device_id,
                 ciphertext=payload["ciphertext"],
                 nonce=payload["nonce"],
+                seq=seq,
             ).model_dump(),
         )
 
         if not delivered:
-            await storage.store_clipboard_message(msg.model_dump(mode="json"))
+            await storage.store_clipboard_message(msg_dict)
 
 
 async def handle_ack(account_id: str, device_id: str, data: dict) -> None:
@@ -206,6 +213,8 @@ async def websocket_endpoint(ws: WebSocket) -> None:
 
     try:
         await deliver_pending(device_id)
+        latest_seq = await storage.get_latest_seq(account["id"], device_id)
+        await manager.send_json(device_id, WSHello(latest_seq=latest_seq).model_dump())
 
         while True:
             raw = await ws.receive_text()

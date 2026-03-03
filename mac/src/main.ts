@@ -4,7 +4,7 @@ import * as path from "path";
 import { loadState, saveState, getState, clearState } from "./state";
 import { initCrypto, generateKeypair, encryptForDevice, decryptFromDevice, toB64, fromB64, pubKeyFromB64 } from "./crypto";
 import * as api from "./api";
-import { WsClient, DeliverClipboardEvent } from "./websocket";
+import { WsClient, DeliverClipboardEvent, HelloEvent } from "./websocket";
 
 console.log("Clipr starting...");
 
@@ -284,6 +284,54 @@ function connectWs(): void {
   });
   wsClient.on("close", () => stopClipboardPolling());
 
+  wsClient.on("hello", async (evt: HelloEvent) => {
+    const st = getState();
+    const lastSeenSeq = st.last_seen_seq ?? 0;
+    log(`WS hello: latest_seq=${evt.latest_seq} last_seen_seq=${lastSeenSeq}`);
+    if (evt.latest_seq <= lastSeenSeq) return;
+    if (!st.device_token || !st.public_key_b64 || !st.private_key_b64) return;
+    try {
+      await initCrypto();
+      const clips = await api.fetchClipHistory(st.device_token, lastSeenSeq);
+      log(`Catch-up: fetched ${clips.length} missed clip(s)`);
+      for (const clip of clips) {
+        if (clip.from_device_id === st.device_id) continue;
+        try {
+          const plaintext = decryptFromDevice(
+            clip.ciphertext,
+            fromB64(st.public_key_b64!),
+            fromB64(st.private_key_b64!)
+          );
+          const hash = sha256hex(plaintext);
+          upsertClipboardItem({
+            source_device_label: `Remote (${clip.from_device_id.slice(0, 8)})`,
+            source_device_id: clip.from_device_id,
+            text: plaintext,
+            hash,
+            ts: Date.now(),
+            direction: "remote",
+          });
+          log(`Catch-up: seq=${clip.seq} hash=${hash.slice(0, 16)} len=${plaintext.length}`);
+        } catch (decryptErr: unknown) {
+          const msg = decryptErr instanceof Error ? decryptErr.message : String(decryptErr);
+          log(`Catch-up decrypt error seq=${clip.seq}: ${msg}`);
+        }
+      }
+      if (clips.length > 0) {
+        const maxSeq = Math.max(...clips.map((c) => c.seq));
+        saveState({ last_seen_seq: maxSeq });
+        log(`Catch-up: last_seen_seq updated to ${maxSeq}`);
+      }
+    } catch (err: unknown) {
+      if (err instanceof api.AuthExpiredError) {
+        handleAuthExpired();
+        return;
+      }
+      const msg = err instanceof Error ? err.message : String(err);
+      log(`Catch-up error: ${msg}`);
+    }
+  });
+
   wsClient.on("deliver_clipboard", async (evt: DeliverClipboardEvent) => {
     const st = getState();
     if (evt.from_device_id === st.device_id) {
@@ -315,6 +363,14 @@ function connectWs(): void {
 
       log(`Received msg=${evt.message_id} hash=${hashPrefix} len=${plaintext.length}`);
       wsClient!.sendAck(evt.message_id);
+
+      // Advance last_seen_seq so future reconnects don't re-deliver this clip
+      if (evt.seq != null) {
+        const currentSeq = getState().last_seen_seq ?? 0;
+        if (evt.seq > currentSeq) {
+          saveState({ last_seen_seq: evt.seq });
+        }
+      }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       log(`Decrypt error: ${msg}`);

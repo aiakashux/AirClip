@@ -11,6 +11,7 @@ import com.cliprplus.clipr.clipboard.ClipboardMonitor
 import com.cliprplus.clipr.crypto.KeyManager
 import com.cliprplus.clipr.crypto.SealedBox
 import com.cliprplus.clipr.device.AuthState
+import com.cliprplus.clipr.device.ClipsApi
 import com.cliprplus.clipr.device.DeviceApi
 import com.cliprplus.clipr.device.DeviceApprovalState
 import com.cliprplus.clipr.device.TokenState
@@ -83,6 +84,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     // a URL change in the debug field takes effect on the next call.
     private fun authApi()   = AuthApi(_uiState.value.baseUrl, httpClient)
     private fun deviceApi() = DeviceApi(_uiState.value.baseUrl, httpClient)
+    private fun clipsApi()  = ClipsApi(_uiState.value.baseUrl, httpClient)
 
     // Derive WS URL from the current HTTP base URL.
     private val wsUrl get() = _uiState.value.baseUrl
@@ -114,9 +116,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     data class ReceivedMessageUi(
         val messageId: String,
         val fromDeviceId: String,
-        val ciphertextHash: String,  // hash only — never plaintext
+        val ciphertextHash: String,  // hash only — never plaintext in logs
         val timestamp: String,
-        val direction: String = "IN"
+        val direction: String = "IN",
+        /**
+         * First 40 chars of decrypted plaintext — for UI display only.
+         * MUST NOT be passed to log() or RedactingLogger.
+         */
+        val preview: String? = null
     )
 
     data class LocalClipItemUi(
@@ -432,20 +439,95 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         override fun onDeliverClipboard(msg: DeliveredMessage) {
-            // Store encrypted — DO NOT write to Android clipboard, DO NOT log content.
-            val ui = ReceivedMessageUi(
-                messageId      = msg.messageId,
-                fromDeviceId   = msg.fromDeviceId,
-                ciphertextHash = Hash.sha256Short(msg.ciphertext),  // hash only
-                timestamp      = ts()
-            )
-            _uiState.update {
-                it.copy(receivedMessages = (it.receivedMessages + ui).takeLast(50))
+            val ciphertextHash = Hash.sha256Short(msg.ciphertext)
+            // Decrypt on IO so we can show a preview in the UI.
+            // Plaintext goes only to the UI — never to log() or RedactingLogger.
+            viewModelScope.launch(Dispatchers.IO) {
+                val preview = tryDecryptPreview(msg.ciphertext, msg.nonce)
+                val ui = ReceivedMessageUi(
+                    messageId      = msg.messageId,
+                    fromDeviceId   = msg.fromDeviceId,
+                    ciphertextHash = ciphertextHash,
+                    timestamp      = ts(),
+                    preview        = preview
+                )
+                _uiState.update {
+                    it.copy(receivedMessages = (it.receivedMessages + ui).takeLast(50))
+                }
+                log("← msg from ${msg.fromDeviceId.take(8)}… hash=$ciphertextHash")
+                // Advance last_seen_seq
+                if (msg.seq > 0 && msg.seq > TokenStore.lastSeenSeq) {
+                    TokenStore.saveLastSeenSeq(getApplication(), msg.seq)
+                }
             }
-            log("← msg from ${msg.fromDeviceId.take(8)}… hash=${ui.ciphertextHash}")
+        }
+
+        override fun onHello(latestSeq: Int) {
+            val lastSeen = TokenStore.lastSeenSeq
+            log("Hello: latest_seq=$latestSeq last_seen=$lastSeen")
+            if (latestSeq <= lastSeen) return
+            viewModelScope.launch(Dispatchers.IO) {
+                fetchMissedClips(lastSeen)
+            }
         }
 
         override fun onLog(text: String) = log(text)
+    }
+
+    /**
+     * Fetch clips with seq > [afterSeq] from the server and add them to the received list.
+     * Called after WS hello when the server has newer clips than we last saw.
+     */
+    private suspend fun fetchMissedClips(afterSeq: Int) {
+        val deviceToken = TokenStore.deviceToken ?: return
+        val myDeviceId  = TokenStore.deviceId    ?: return
+        try {
+            val clips = clipsApi().fetchHistory(deviceToken, afterSeq)
+            log("Catch-up: ${clips.size} missed clip(s) after seq=$afterSeq")
+            var maxSeq = afterSeq
+            for (clip in clips) {
+                if (clip.from_device_id == myDeviceId) continue
+                val preview = tryDecryptPreview(clip.ciphertext, clip.nonce)
+                val ui = ReceivedMessageUi(
+                    messageId      = clip.message_id,
+                    fromDeviceId   = clip.from_device_id,
+                    ciphertextHash = Hash.sha256Short(clip.ciphertext),
+                    timestamp      = ts(),
+                    direction      = "IN (catch-up)",
+                    preview        = preview
+                )
+                _uiState.update {
+                    it.copy(receivedMessages = (it.receivedMessages + ui).takeLast(50))
+                }
+                if (clip.seq > maxSeq) maxSeq = clip.seq
+            }
+            if (maxSeq > afterSeq) {
+                TokenStore.saveLastSeenSeq(getApplication(), maxSeq)
+                log("Catch-up: last_seen_seq advanced to $maxSeq")
+            }
+        } catch (e: Exception) {
+            RedactingLogger.error("fetchMissedClips", e)
+            log("Catch-up fetch failed: ${e.javaClass.simpleName}")
+        }
+    }
+
+    /**
+     * Decrypt [ciphertextBase64] using this device's keypair and return the first 40 chars
+     * of the plaintext as a UI preview, or null if decryption fails or keypair is not ready.
+     * The full plaintext is never stored or logged.
+     */
+    private fun tryDecryptPreview(ciphertextBase64: String, @Suppress("UNUSED_PARAMETER") nonce: String): String? {
+        if (!keyManager.isInitialized) return null
+        return try {
+            val plain = SealedBox.decryptForSelf(
+                ciphertextBase64,
+                keyManager.getPublicKeyBytes(),
+                keyManager.getPrivateKeyBytes()
+            )
+            String(plain, Charsets.UTF_8).take(40)
+        } catch (_: Exception) {
+            null
+        }
     }
 
     // ------------------------------------------------------------------
