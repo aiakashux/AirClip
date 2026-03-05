@@ -22,8 +22,24 @@ let lastRemoteHash: string | null = null;
 let clipboardPollTimer: ReturnType<typeof setInterval> | null = null;
 let pollingInFlight = false;
 
+// Catch-up / race-condition state (per WS connection, reset in connectWs)
+let catchUpInProgress = false;
+const catchUpBuffer: DeliverClipboardEvent[] = [];
+// Per-connection message-ID dedup: prevents duplicate display when pending delivery
+// and catch-up REST response both carry the same clip (cleared on full session reset)
+const processedMessageIds = new Set<string>();
+
 function sha256hex(text: string): string {
   return crypto.createHash("sha256").update(text).digest("hex");
+}
+
+/**
+ * Parse a persisted seq string to BigInt.
+ * Returns 0n for null / undefined / unparseable values.
+ */
+function parseSeq(raw: string | null | undefined): bigint {
+  if (raw == null) return 0n;
+  try { return BigInt(raw); } catch { return 0n; }
 }
 
 // ---------------------------------------------------------------------------
@@ -123,6 +139,9 @@ function createLogsWindow(): void {
 function resetAllState(): void {
   setAccountToken(null);
   clearState();
+  processedMessageIds.clear();
+  catchUpBuffer.length = 0;
+  catchUpInProgress = false;
 }
 
 function clearDeviceAuth(): void {
@@ -227,6 +246,60 @@ async function ensureDeviceRegistered(): Promise<void> {
   log(`Device registered: ${res.device_id} (${res.trust_status})`);
 }
 
+/**
+ * Process a single deliver_clipboard event: dedup → decrypt → display → ACK → advance seq.
+ * Extracted so it can be called both inline (live) and when draining the catch-up buffer.
+ * Plaintext is never logged — only hash prefix and length.
+ */
+async function processDelivery(evt: DeliverClipboardEvent): Promise<void> {
+  // Dedup: skip if this message was already displayed (pending delivery ∩ catch-up overlap)
+  if (processedMessageIds.has(evt.message_id)) {
+    log(`Dup msg=${evt.message_id.slice(0, 8)} skipped`);
+    return;
+  }
+  const st = getState();
+  if (evt.from_device_id === st.device_id) {
+    log("Ignoring message from self");
+    return;
+  }
+  if (!st.public_key_b64 || !st.private_key_b64) {
+    log("Cannot decrypt: no keypair");
+    return;
+  }
+  try {
+    await initCrypto();
+    const plaintext = decryptFromDevice(
+      evt.ciphertext,
+      fromB64(st.public_key_b64),
+      fromB64(st.private_key_b64)
+    );
+    const hash = sha256hex(plaintext);
+    const hashPrefix = hash.slice(0, 16);
+    upsertClipboardItem({
+      source_device_label: `Remote (${evt.from_device_id.slice(0, 8)})`,
+      source_device_id: evt.from_device_id,
+      text: plaintext,
+      hash,
+      ts: Date.now(),
+      direction: "remote",
+    });
+    processedMessageIds.add(evt.message_id);
+    log(`Received msg=${evt.message_id.slice(0, 8)} hash=${hashPrefix} len=${plaintext.length}`);
+    wsClient?.sendAck(evt.message_id);
+    // HIGH 2: only advance seq when decrypt succeeds; HIGH 3: monotonic check
+    if (evt.seq != null && evt.seq > 0n) {
+      const currentSeq = parseSeq(getState().last_seen_seq);
+      if (evt.seq > currentSeq) {
+        saveState({ last_seen_seq: String(evt.seq) });
+      }
+    }
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    log(`Decrypt error: ${msg}`);
+    // HIGH 2: do NOT advance seq on decrypt failure
+  }
+}
+
 function connectWs(): void {
   const state = getState();
   if (!state.device_token) {
@@ -237,6 +310,9 @@ function connectWs(): void {
     wsClient.disconnect();
   }
   stopClipboardPolling();
+  // Reset per-connection catch-up state
+  catchUpInProgress = false;
+  catchUpBuffer.length = 0;
   log(
     `WS connect attempt tokenType=device tokenLen=${state.device_token.length} device_id=${state.device_id?.slice(0, 8) ?? "?"}`
   );
@@ -286,41 +362,78 @@ function connectWs(): void {
 
   wsClient.on("hello", async (evt: HelloEvent) => {
     const st = getState();
-    const lastSeenSeq = st.last_seen_seq ?? 0;
-    log(`WS hello: latest_seq=${evt.latest_seq} last_seen_seq=${lastSeenSeq}`);
-    if (evt.latest_seq <= lastSeenSeq) return;
+
+    const currentSeq = parseSeq(st.last_seen_seq);
+    log(`WS hello: latest_seq=${evt.latest_seq} last_seen_seq=${currentSeq}`);
+    if (evt.latest_seq <= currentSeq) return;
     if (!st.device_token || !st.public_key_b64 || !st.private_key_b64) return;
+
+    // Buffer any live deliver_clipboard events that arrive while we fetch missed clips.
+    // Node.js is single-threaded: the flag is checked synchronously before each await.
+    catchUpInProgress = true;
+    catchUpBuffer.length = 0;
+
     try {
       await initCrypto();
-      const clips = await api.fetchClipHistory(st.device_token, lastSeenSeq);
-      log(`Catch-up: fetched ${clips.length} missed clip(s)`);
-      for (const clip of clips) {
-        if (clip.from_device_id === st.device_id) continue;
-        try {
-          const plaintext = decryptFromDevice(
-            clip.ciphertext,
-            fromB64(st.public_key_b64!),
-            fromB64(st.private_key_b64!)
-          );
-          const hash = sha256hex(plaintext);
-          upsertClipboardItem({
-            source_device_label: `Remote (${clip.from_device_id.slice(0, 8)})`,
-            source_device_id: clip.from_device_id,
-            text: plaintext,
-            hash,
-            ts: Date.now(),
-            direction: "remote",
-          });
-          log(`Catch-up: seq=${clip.seq} hash=${hash.slice(0, 16)} len=${plaintext.length}`);
-        } catch (decryptErr: unknown) {
-          const msg = decryptErr instanceof Error ? decryptErr.message : String(decryptErr);
-          log(`Catch-up decrypt error seq=${clip.seq}: ${msg}`);
+
+      // MED 7: paginated catch-up loop — fetch pages until caught up or empty
+      const PAGE_SIZE = 20;
+      let afterSeq: bigint = currentSeq;
+      // HIGH 2: only advance seq for clips that decrypt successfully (or are self-sent)
+      let maxDecryptedSeq: bigint = currentSeq;
+
+      while (afterSeq < evt.latest_seq) {
+        const clips = await api.fetchClipHistory(st.device_token, afterSeq, PAGE_SIZE);
+        log(`Catch-up: fetched ${clips.length} clip(s) after seq=${afterSeq}`);
+        if (clips.length === 0) break;
+
+        for (const clip of clips) {
+          // Dedup: pending WS delivery and catch-up REST may both carry the same clip
+          if (processedMessageIds.has(clip.message_id)) {
+            if (clip.seq > maxDecryptedSeq) maxDecryptedSeq = clip.seq;
+            log(`Catch-up: dup msg_id=${clip.message_id.slice(0, 8)} (already displayed)`);
+            continue;
+          }
+          if (clip.from_device_id === st.device_id) {
+            // Self-sent: advance seq watermark but don't display
+            if (clip.seq > maxDecryptedSeq) maxDecryptedSeq = clip.seq;
+            continue;
+          }
+          try {
+            const plaintext = decryptFromDevice(
+              clip.ciphertext,
+              fromB64(st.public_key_b64!),
+              fromB64(st.private_key_b64!)
+            );
+            const hash = sha256hex(plaintext);
+            upsertClipboardItem({
+              source_device_label: `Remote (${clip.from_device_id.slice(0, 8)})`,
+              source_device_id: clip.from_device_id,
+              text: plaintext,
+              hash,
+              ts: Date.now(),
+              direction: "remote",
+            });
+            processedMessageIds.add(clip.message_id);
+            // HIGH 2: gated on decrypt success
+            if (clip.seq > maxDecryptedSeq) maxDecryptedSeq = clip.seq;
+            log(`Catch-up: seq=${clip.seq} hash=${hash.slice(0, 16)} len=${plaintext.length}`);
+          } catch (decryptErr: unknown) {
+            const errMsg = decryptErr instanceof Error ? decryptErr.message : String(decryptErr);
+            log(`Catch-up decrypt error seq=${clip.seq}: ${errMsg}`);
+            // HIGH 2: do NOT advance seq on decrypt failure
+          }
         }
+
+        afterSeq = clips[clips.length - 1].seq;
       }
-      if (clips.length > 0) {
-        const maxSeq = Math.max(...clips.map((c) => c.seq));
-        saveState({ last_seen_seq: maxSeq });
-        log(`Catch-up: last_seen_seq updated to ${maxSeq}`);
+
+      // HIGH 3: monotonic write — take max of our result and any concurrent live-delivery update
+      if (maxDecryptedSeq > currentSeq) {
+        const freshSeq = parseSeq(getState().last_seen_seq);
+        const writeTo = maxDecryptedSeq > freshSeq ? maxDecryptedSeq : freshSeq;
+        saveState({ last_seen_seq: String(writeTo) });
+        log(`Catch-up: last_seen_seq updated to ${writeTo}`);
       }
     } catch (err: unknown) {
       if (err instanceof api.AuthExpiredError) {
@@ -329,52 +442,27 @@ function connectWs(): void {
       }
       const msg = err instanceof Error ? err.message : String(err);
       log(`Catch-up error: ${msg}`);
+    } finally {
+      // Release buffer — process any live messages that arrived during catch-up
+      catchUpInProgress = false;
+      const buffered = catchUpBuffer.splice(0);
+      if (buffered.length > 0) {
+        log(`Processing ${buffered.length} buffered delivery(ies) after catch-up`);
+        for (const bufferedEvt of buffered) {
+          await processDelivery(bufferedEvt);
+        }
+      }
     }
   });
 
   wsClient.on("deliver_clipboard", async (evt: DeliverClipboardEvent) => {
-    const st = getState();
-    if (evt.from_device_id === st.device_id) {
-      log("Ignoring message from self");
+    // Item 9: buffer deliveries that arrive while catch-up is fetching missed clips
+    if (catchUpInProgress) {
+      catchUpBuffer.push(evt);
+      log(`Buffered seq=${evt.seq ?? "?"} during catch-up (${catchUpBuffer.length} queued)`);
       return;
     }
-    if (!st.public_key_b64 || !st.private_key_b64) {
-      log("Cannot decrypt: no keypair");
-      return;
-    }
-    try {
-      await initCrypto();
-      const plaintext = decryptFromDevice(
-        evt.ciphertext,
-        fromB64(st.public_key_b64),
-        fromB64(st.private_key_b64)
-      );
-      const hash = sha256hex(plaintext);
-      const hashPrefix = hash.slice(0, 16);
-
-      upsertClipboardItem({
-        source_device_label: `Remote (${evt.from_device_id.slice(0, 8)})`,
-        source_device_id: evt.from_device_id,
-        text: plaintext,
-        hash,
-        ts: Date.now(),
-        direction: "remote",
-      });
-
-      log(`Received msg=${evt.message_id} hash=${hashPrefix} len=${plaintext.length}`);
-      wsClient!.sendAck(evt.message_id);
-
-      // Advance last_seen_seq so future reconnects don't re-deliver this clip
-      if (evt.seq != null) {
-        const currentSeq = getState().last_seen_seq ?? 0;
-        if (evt.seq > currentSeq) {
-          saveState({ last_seen_seq: evt.seq });
-        }
-      }
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      log(`Decrypt error: ${msg}`);
-    }
+    await processDelivery(evt);
   });
 
   wsClient.connect();

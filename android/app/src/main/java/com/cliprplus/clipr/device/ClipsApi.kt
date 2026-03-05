@@ -11,7 +11,7 @@ import okhttp3.Request
  * DO NOT log ciphertext — use RedactingLogger.logCiphertext if needed.
  */
 data class ClipHistoryItem(
-    val seq: Int,
+    val seq: Long,            // MED 8: Long — monotonic per-account seq
     val message_id: String,
     val from_device_id: String,
     val ciphertext: String,   // base64 — encrypted for the requesting device
@@ -33,7 +33,7 @@ class ClipsApi(
      * Returns clips with seq > afterSeq encrypted for the requesting device, ascending.
      * Must be called with [deviceToken], not accountToken.
      */
-    fun fetchHistory(deviceToken: String, afterSeq: Int, limit: Int = 10): List<ClipHistoryItem> {
+    fun fetchHistory(deviceToken: String, afterSeq: Long, limit: Int = 20): List<ClipHistoryItem> {
         val req = Request.Builder()
             .url("$baseUrl/clips/?after_seq=$afterSeq&limit=$limit")
             .header("Authorization", "Bearer $deviceToken")

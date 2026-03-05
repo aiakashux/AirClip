@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import secrets
 import uuid
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
@@ -10,7 +11,7 @@ from redis.asyncio import Redis
 CLIPBOARD_TTL = 60  # seconds
 
 CLIP_HISTORY_TTL = 30 * 60  # 30 minutes
-CLIP_HISTORY_MAX = 10       # max entries per device
+CLIP_HISTORY_MAX = 20       # max entries per account (30-min window)
 
 _redis: Optional[Redis] = None
 
@@ -188,22 +189,39 @@ async def next_clip_seq(account_id: str) -> int:
     return int(await r.incr(f"clips:seq:{account_id}"))
 
 
-async def store_clip_history(account_id: str, seq: int, msg: dict) -> None:
-    """
-    Store a clip in per-device history for 30 min.
-    Uses a sorted set keyed by (account_id, to_device_id) with seq as score.
-    Trims to CLIP_HISTORY_MAX entries per device after insert.
+async def get_epoch(account_id: str) -> str:
+    """Return the stable catch-up epoch for this account.
+
+    Created once via SETNX (no TTL) so it survives restarts.
+    Disappears only on a full Redis flush; clients detect the change and reset
+    their last_seen_seq to 0 so catch-up restarts cleanly.
     """
     r = get_redis()
-    device_id = msg["to_device_id"]
-    hist_key = f"clips:hist:{account_id}:{device_id}"
+    epoch_key = f"clips:epoch:{account_id}"
+    epoch = await r.get(epoch_key)
+    if not epoch:
+        candidate = secrets.token_hex(8)
+        await r.set(epoch_key, candidate, nx=True)
+        epoch = await r.get(epoch_key)  # read back the winner (nx=True is atomic)
+    return epoch  # type: ignore[return-value]
+
+
+async def store_clip_history(account_id: str, seq: int, msg: dict) -> None:
+    """
+    Store a clip in the per-account history for 30 min.
+    Uses a single sorted set keyed by account_id with seq as score.
+    The clip payload carries to_device_id so the REST endpoint can filter per device.
+    Trims to CLIP_HISTORY_MAX entries per account after insert.
+    """
+    r = get_redis()
+    hist_key = f"clips:hist:{account_id}"
     clip_key = f"clip:{account_id}:{seq}"
 
     await r.set(clip_key, json.dumps({**msg, "seq": seq}), ex=CLIP_HISTORY_TTL)
     await r.zadd(hist_key, {str(seq): seq})
     await r.expire(hist_key, CLIP_HISTORY_TTL)
 
-    # Trim oldest entries beyond the per-device cap
+    # Trim oldest entries beyond the per-account cap
     count = await r.zcard(hist_key)
     if count > CLIP_HISTORY_MAX:
         excess = count - CLIP_HISTORY_MAX
@@ -213,12 +231,10 @@ async def store_clip_history(account_id: str, seq: int, msg: dict) -> None:
             await r.zremrangebyrank(hist_key, 0, excess - 1)
 
 
-async def get_latest_seq(account_id: str, device_id: str) -> int:
-    """Return the highest seq stored for this device, or 0 if none."""
+async def get_latest_seq(account_id: str) -> int:
+    """Return the highest seq stored for this account, or 0 if none."""
     r = get_redis()
-    result = await r.zrange(
-        f"clips:hist:{account_id}:{device_id}", -1, -1, withscores=True
-    )
+    result = await r.zrange(f"clips:hist:{account_id}", -1, -1, withscores=True)
     if result:
         return int(result[0][1])
     return 0
@@ -227,15 +243,22 @@ async def get_latest_seq(account_id: str, device_id: str) -> int:
 async def get_clip_history(
     account_id: str, device_id: str, after_seq: int, limit: int
 ) -> List[dict]:
-    """Return clips with seq > after_seq for this device, ordered ascending by seq."""
+    """Return up to [limit] clips with seq > after_seq addressed to device_id, ascending.
+
+    Uses the per-account sorted set and filters by to_device_id in Python.
+    The full set is bounded by CLIP_HISTORY_MAX so scanning is O(CLIP_HISTORY_MAX).
+    """
     r = get_redis()
-    hist_key = f"clips:hist:{account_id}:{device_id}"
-    seq_strs = await r.zrangebyscore(
-        hist_key, after_seq + 1, "+inf", start=0, num=limit
-    )
-    clips = []
-    for seq_str in seq_strs:
+    hist_key = f"clips:hist:{account_id}"
+    # Fetch all seqs after after_seq (bounded by CLIP_HISTORY_MAX=100)
+    all_seq_strs = await r.zrangebyscore(hist_key, after_seq + 1, "+inf")
+    clips: List[dict] = []
+    for seq_str in all_seq_strs:
+        if len(clips) >= limit:
+            break
         data = await r.get(f"clip:{account_id}:{seq_str}")
         if data:
-            clips.append(json.loads(data))
+            clip = json.loads(data)
+            if clip.get("to_device_id") == device_id:
+                clips.append(clip)
     return clips

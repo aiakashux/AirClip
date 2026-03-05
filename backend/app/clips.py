@@ -37,15 +37,15 @@ async def get_latest_seq(
     auth: Tuple[str, str] = Depends(get_current_device),
 ) -> dict:
     """Return the highest seq stored for the requesting device (or 0 if none)."""
-    account_id, device_id = auth
-    seq = await storage.get_latest_seq(account_id, device_id)
+    account_id, _ = auth
+    seq = await storage.get_latest_seq(account_id)
     return {"latest_seq": seq}
 
 
 @router.get("/", response_model=List[ClipHistoryItem])
 async def get_clips(
     after_seq: int = Query(0, ge=0),
-    limit: int = Query(10, ge=1, le=50),
+    limit: int = Query(20, ge=1, le=100),
     auth: Tuple[str, str] = Depends(get_current_device),
 ) -> List[ClipHistoryItem]:
     """

@@ -155,7 +155,16 @@ export function invalidateDevicesCache(accountToken?: string): void {
 // ---------------------------------------------------------------------------
 
 export interface ClipHistoryItem {
-  seq: number;
+  seq: bigint;
+  message_id: string;
+  from_device_id: string;
+  ciphertext: string;
+  nonce: string;
+}
+
+// Raw shape returned by JSON.parse — backend serialises seq as a JSON string
+interface ClipHistoryItemRaw {
+  seq: string;
   message_id: string;
   from_device_id: string;
   ciphertext: string;
@@ -164,13 +173,22 @@ export interface ClipHistoryItem {
 
 export async function fetchClipHistory(
   deviceToken: string,
-  afterSeq: number,
+  afterSeq: bigint,
   limit = 10
 ): Promise<ClipHistoryItem[]> {
-  return request<ClipHistoryItem[]>(
+  // afterSeq.toString() emits digits only — no Number conversion
+  const raw = await request<ClipHistoryItemRaw[]>(
     "GET",
-    `/clips/?after_seq=${afterSeq}&limit=${limit}`,
+    `/clips/?after_seq=${afterSeq.toString()}&limit=${limit}`,
     undefined,
     deviceToken
   );
+  // Reject any item whose seq is not a string — coercing a number would silently lose precision
+  for (const item of raw) {
+    if (typeof (item as { seq: unknown }).seq !== "string") {
+      throw new Error("Invalid clip history seq type; expected string");
+    }
+  }
+  // seq is a JSON string → BigInt directly, no JS Number intermediary
+  return raw.map((item) => ({ ...item, seq: BigInt(item.seq) }));
 }

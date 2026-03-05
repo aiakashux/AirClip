@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import json
+import logging
 import uuid
 from datetime import datetime, timezone
 from typing import Dict, Optional, Tuple
+
+_log = logging.getLogger(__name__)
 
 from fastapi import WebSocket, WebSocketDisconnect
 
@@ -55,8 +58,7 @@ async def authenticate_ws(ws: WebSocket) -> Optional[Tuple[dict, str]]:
     auth_header = ws.headers.get("authorization", "").strip()
     if auth_header.startswith("Bearer "):
         token = auth_header[7:].strip() or None
-    if not token:
-        token = ws.query_params.get("token")
+    # HIGH 4: query-param token fallback removed — Authorization header only
     if not token:
         return None
     try:
@@ -78,11 +80,42 @@ async def deliver_pending(device_id: str) -> None:
     """Deliver any queued messages to a newly connected device."""
     messages = await storage.pop_pending_messages(device_id)
     for msg in messages:
+        raw_seq = msg.get("seq")
+        if isinstance(raw_seq, bool):
+            # Server-side invariant violation: every stored message must carry seq >= 1.
+            # Never deliver a message with seq=0 or missing seq.
+            _log.error(
+                "deliver_pending: msg %s has invalid seq=%r — skipping",
+                msg.get("id", "?"),
+                raw_seq,
+            )
+            continue
+        try:
+            seq = int(raw_seq)
+        except (TypeError, ValueError):
+            # Server-side invariant violation: every stored message must carry seq >= 1.
+            # Never deliver a message with seq=0 or missing seq.
+            _log.error(
+                "deliver_pending: msg %s has invalid seq=%r — skipping",
+                msg.get("id", "?"),
+                raw_seq,
+            )
+            continue
+        if seq < 1:
+            # Server-side invariant violation: every stored message must carry seq >= 1.
+            # Never deliver a message with seq=0 or missing seq.
+            _log.error(
+                "deliver_pending: msg %s has invalid seq=%r — skipping",
+                msg.get("id", "?"),
+                raw_seq,
+            )
+            continue
         outbound = WSDeliverClipboard(
             message_id=msg["id"],
             from_device_id=msg["from_device_id"],
             ciphertext=msg["ciphertext"],
             nonce=msg["nonce"],
+            seq=seq,
         )
         await manager.send_json(device_id, outbound.model_dump())
 
@@ -164,7 +197,8 @@ async def handle_send_clipboard(
             nonce=payload["nonce"],
         )
 
-        msg_dict = msg.model_dump(mode="json")
+        # HIGH 1: include seq in the stored dict so pending delivery also carries it
+        msg_dict = {**msg.model_dump(mode="json"), "seq": seq}
         # Always store in history buffer (30-min catch-up for offline devices)
         await storage.store_clip_history(account["id"], seq, msg_dict)
 
@@ -213,8 +247,10 @@ async def websocket_endpoint(ws: WebSocket) -> None:
 
     try:
         await deliver_pending(device_id)
-        latest_seq = await storage.get_latest_seq(account["id"], device_id)
-        await manager.send_json(device_id, WSHello(latest_seq=latest_seq).model_dump())
+        latest_seq = await storage.get_latest_seq(account["id"])
+        await manager.send_json(
+            device_id, WSHello(latest_seq=latest_seq).model_dump()
+        )
 
         while True:
             raw = await ws.receive_text()

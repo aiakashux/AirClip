@@ -9,7 +9,7 @@ export interface AppState {
   device_token: string | null;
   public_key_b64: string | null;
   private_key_b64: string | null;
-  last_seen_seq: number | null;
+  last_seen_seq: string | null;  // stored as decimal string; use parseSeq() to read
 }
 
 const DEFAULT_STATE: AppState = {
@@ -34,7 +34,10 @@ export function loadState(): AppState {
     const statePath = getStateFilePath();
     if (fs.existsSync(statePath)) {
       const raw = fs.readFileSync(statePath, "utf-8");
-      currentState = { ...DEFAULT_STATE, ...JSON.parse(raw) };
+      const parsed = JSON.parse(raw) as Partial<AppState> & { last_seen_seq?: unknown };
+      const lastSeenSeq =
+        typeof parsed.last_seen_seq === "string" ? parsed.last_seen_seq : null;
+      currentState = { ...DEFAULT_STATE, ...parsed, last_seen_seq: lastSeenSeq };
     }
   } catch {
     currentState = { ...DEFAULT_STATE };

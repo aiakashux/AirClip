@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import List, Literal, Optional
 
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, field_serializer, field_validator
 
 
 # --- Auth ---
@@ -99,7 +99,11 @@ class WSDevicePending(BaseModel):
 
 class WSHello(BaseModel):
     type: Literal["hello"] = "hello"
-    latest_seq: int
+    latest_seq: int  # serialised as string — see field_serializer below
+
+    @field_serializer("latest_seq")
+    def serialize_latest_seq(self, v: int) -> str:
+        return str(v)
 
 
 class WSDeliverClipboard(BaseModel):
@@ -108,7 +112,18 @@ class WSDeliverClipboard(BaseModel):
     from_device_id: str
     ciphertext: str  # base64
     nonce: str  # base64
-    seq: Optional[int] = None
+    seq: int  # monotonic per-account seq; required, must be >= 1; serialised as string
+
+    @field_validator("seq")
+    @classmethod
+    def seq_must_be_positive(cls, v: int) -> int:
+        if v < 1:
+            raise ValueError(f"seq must be >= 1, got {v}")
+        return v
+
+    @field_serializer("seq")
+    def serialize_seq(self, v: int) -> str:
+        return str(v)
 
 
 # --- Stored clipboard message ---
@@ -126,8 +141,12 @@ class ClipboardMessage(BaseModel):
 # --- Clip history REST response ---
 
 class ClipHistoryItem(BaseModel):
-    seq: int
+    seq: int  # serialised as string — see field_serializer below
     message_id: str
     from_device_id: str
     ciphertext: str  # base64 — encrypted for the requesting device
     nonce: str       # base64
+
+    @field_serializer("seq")
+    def serialize_seq(self, v: int) -> str:
+        return str(v)

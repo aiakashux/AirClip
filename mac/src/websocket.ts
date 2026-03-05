@@ -7,11 +7,11 @@ export interface DeliverClipboardEvent {
   from_device_id: string;
   ciphertext: string;
   nonce: string;
-  seq?: number;
+  seq?: bigint;
 }
 
 export interface HelloEvent {
-  latest_seq: number;
+  latest_seq: bigint;
 }
 
 export interface ClipboardPayload {
@@ -74,15 +74,25 @@ export class WsClient extends EventEmitter {
   private handleMessage(msg: Record<string, unknown>): void {
     switch (msg.type) {
       case "hello":
-        this.emit("hello", { latest_seq: msg.latest_seq as number } as HelloEvent);
+        if (typeof msg.latest_seq !== "string") {
+          this.emit("log", `WS hello dropped: latest_seq is not a string (got ${typeof msg.latest_seq})`);
+          return;
+        }
+        this.emit("hello", {
+          latest_seq: BigInt(msg.latest_seq),
+        } as HelloEvent);
         break;
       case "deliver_clipboard":
+        if (typeof msg.seq !== "string") {
+          this.emit("log", `WS deliver_clipboard dropped: seq is not a string (got ${typeof msg.seq})`);
+          return;
+        }
         this.emit("deliver_clipboard", {
           message_id: msg.message_id,
           from_device_id: msg.from_device_id,
           ciphertext: msg.ciphertext,
           nonce: msg.nonce,
-          seq: msg.seq as number | undefined,
+          seq: BigInt(msg.seq),
         } as DeliverClipboardEvent);
         break;
       case "device_pending":

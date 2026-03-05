@@ -35,6 +35,7 @@ import okhttp3.OkHttpClient
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
@@ -97,6 +98,33 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private var wsClient: CliprWebSocket? = null
     /** Incremented on every new WsClient creation — used to invalidate stale listeners. */
     private var wsGeneration = 0
+
+    // ------------------------------------------------------------------
+    // Serial WS event processor (Item 9: catch-up vs live-delivery race fix)
+    // ------------------------------------------------------------------
+
+    /** Sealed event types for the serial WS event queue. */
+    private sealed class WsEvent {
+        data class Delivery(val msg: DeliveredMessage) : WsEvent()
+        data class Hello(val latestSeq: Long) : WsEvent()
+    }
+
+    /**
+     * Unbounded channel for WS events. All deliver_clipboard and hello messages
+     * are enqueued here and consumed by a single serial coroutine, eliminating
+     * the race between catch-up REST fetches and live WS deliveries.
+     *
+     * Natural ordering: pending deliveries → hello → (catch-up runs inline) → live deliveries queue.
+     */
+    private val wsEventChannel = Channel<WsEvent>(Channel.UNLIMITED)
+    private var wsEventProcessorJob: Job? = null
+
+    /**
+     * Message-IDs seen in this WS session (pending + live + catch-up).
+     * Prevents duplicate display when a pending WS delivery and the REST catch-up
+     * both carry the same clip. ConcurrentHashMap-backed for safe cross-thread access.
+     */
+    private val seenMessageIds: MutableSet<String> = ConcurrentHashMap.newKeySet()
 
     private var approvalPollJob:  Job? = null
     private var clipboardMonitorJob: Job? = null
@@ -410,11 +438,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         override fun onConnected() {
             _uiState.update { it.copy(wsState = WsState.Connected, lastError = null) }
             log("WS connected")
+            // Drain stale events from a previous connection before starting the processor.
+            while (wsEventChannel.tryReceive().isSuccess) { /* discard */ }
+            startWsEventProcessor()
             startClipboardMonitor()
         }
 
         override fun onDisconnected(code: Int, reason: String) {
             if (wsGeneration != gen) return  // stale listener — new connection already active
+            wsEventProcessorJob?.cancel()
+            wsEventProcessorJob = null
             _uiState.update { it.copy(wsState = WsState.Disconnected) }
             stopClipboardMonitor()
             log("WS disconnected $code")
@@ -426,6 +459,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
          */
         override fun onAuthFailed() {
             wsClient?.disconnect()
+            wsEventProcessorJob?.cancel()
+            wsEventProcessorJob = null
             stopClipboardMonitor()
             _uiState.update {
                 it.copy(
@@ -438,72 +473,142 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             log("WS auth failed — device token invalid; re-register device to recover")
         }
 
+        /** Enqueue for serial processing — no concurrent coroutine spawned here. */
         override fun onDeliverClipboard(msg: DeliveredMessage) {
-            val ciphertextHash = Hash.sha256Short(msg.ciphertext)
-            // Decrypt on IO so we can show a preview in the UI.
-            // Plaintext goes only to the UI — never to log() or RedactingLogger.
-            viewModelScope.launch(Dispatchers.IO) {
-                val preview = tryDecryptPreview(msg.ciphertext, msg.nonce)
-                val ui = ReceivedMessageUi(
-                    messageId      = msg.messageId,
-                    fromDeviceId   = msg.fromDeviceId,
-                    ciphertextHash = ciphertextHash,
-                    timestamp      = ts(),
-                    preview        = preview
-                )
-                _uiState.update {
-                    it.copy(receivedMessages = (it.receivedMessages + ui).takeLast(50))
-                }
-                log("← msg from ${msg.fromDeviceId.take(8)}… hash=$ciphertextHash")
-                // Advance last_seen_seq
-                if (msg.seq > 0 && msg.seq > TokenStore.lastSeenSeq) {
-                    TokenStore.saveLastSeenSeq(getApplication(), msg.seq)
-                }
-            }
+            wsEventChannel.trySend(WsEvent.Delivery(msg))
         }
 
-        override fun onHello(latestSeq: Int) {
-            val lastSeen = TokenStore.lastSeenSeq
-            log("Hello: latest_seq=$latestSeq last_seen=$lastSeen")
-            if (latestSeq <= lastSeen) return
-            viewModelScope.launch(Dispatchers.IO) {
-                fetchMissedClips(lastSeen)
-            }
+        /** Enqueue for serial processing — catch-up runs inline inside the processor. */
+        override fun onHello(latestSeq: Long) {
+            wsEventChannel.trySend(WsEvent.Hello(latestSeq))
         }
 
         override fun onLog(text: String) = log(text)
     }
 
+    // ------------------------------------------------------------------
+    // Serial WS event processor helpers
+    // ------------------------------------------------------------------
+
     /**
-     * Fetch clips with seq > [afterSeq] from the server and add them to the received list.
-     * Called after WS hello when the server has newer clips than we last saw.
+     * Start a single serial coroutine that processes WS events in order.
+     * Natural ordering: pending deliveries → hello → catch-up (inline HTTP) → live deliveries queue.
+     * Cancels any previous processor before starting.
      */
-    private suspend fun fetchMissedClips(afterSeq: Int) {
+    private fun startWsEventProcessor() {
+        wsEventProcessorJob?.cancel()
+        wsEventProcessorJob = viewModelScope.launch(Dispatchers.IO) {
+            for (event in wsEventChannel) {
+                when (event) {
+                    is WsEvent.Delivery -> handleDelivery(event.msg)
+                    is WsEvent.Hello    -> handleHello(event.latestSeq)
+                }
+            }
+        }
+    }
+
+    /**
+     * Process a single deliver_clipboard event.
+     * Deduped via [seenMessageIds]; seq advance gated on decrypt success (HIGH 2, HIGH 3).
+     * Plaintext goes only to UI — never to log() or RedactingLogger.
+     */
+    private suspend fun handleDelivery(msg: DeliveredMessage) {
+        if (!seenMessageIds.add(msg.messageId)) {
+            log("Dup msg=${msg.messageId.take(8)} skipped")
+            return
+        }
+        val ciphertextHash = Hash.sha256Short(msg.ciphertext)
+        val preview = tryDecryptPreview(msg.ciphertext, msg.nonce)
+        val ui = ReceivedMessageUi(
+            messageId      = msg.messageId,
+            fromDeviceId   = msg.fromDeviceId,
+            ciphertextHash = ciphertextHash,
+            timestamp      = ts(),
+            preview        = preview
+        )
+        _uiState.update {
+            it.copy(receivedMessages = (it.receivedMessages + ui).takeLast(50))
+        }
+        log("← msg from ${msg.fromDeviceId.take(8)}… hash=$ciphertextHash")
+        if (preview != null) {
+            // ACK only after successful decrypt — server deletes the pending message
+            wsClient?.sendAck(msg.messageId)
+            // HIGH 2: only advance seq when decrypt succeeded; HIGH 3: monotonic
+            if (msg.seq > 0L) {
+                TokenStore.saveLastSeenSeq(getApplication(), msg.seq)
+            }
+        }
+        // HIGH 2: no ACK and no seq advance on decrypt failure
+    }
+
+    /**
+     * Process a hello event: paginated catch-up if server has clips we haven't seen (MED 7).
+     * Runs inline in the serial processor, so live deliveries queue behind it naturally.
+     */
+    private suspend fun handleHello(latestSeq: Long) {
+        val lastSeen = TokenStore.lastSeenSeq
+        log("Hello: latest_seq=$latestSeq last_seen=$lastSeen")
+        if (latestSeq <= lastSeen) return
+        fetchMissedClips(lastSeen, latestSeq)
+    }
+
+    /**
+     * Paginated catch-up: fetch clips with seq > [afterSeq] up to [latestSeq].
+     * MED 7: loops in pages of 20 until caught up or server returns empty.
+     * HIGH 2: seq watermark advances only for clips that decrypt successfully (or are self-sent).
+     * HIGH 3: final write uses TokenStore.saveLastSeenSeq which is monotonic.
+     */
+    private suspend fun fetchMissedClips(afterSeq: Long, latestSeq: Long) {
         val deviceToken = TokenStore.deviceToken ?: return
         val myDeviceId  = TokenStore.deviceId    ?: return
         try {
-            val clips = clipsApi().fetchHistory(deviceToken, afterSeq)
-            log("Catch-up: ${clips.size} missed clip(s) after seq=$afterSeq")
-            var maxSeq = afterSeq
-            for (clip in clips) {
-                if (clip.from_device_id == myDeviceId) continue
-                val preview = tryDecryptPreview(clip.ciphertext, clip.nonce)
-                val ui = ReceivedMessageUi(
-                    messageId      = clip.message_id,
-                    fromDeviceId   = clip.from_device_id,
-                    ciphertextHash = Hash.sha256Short(clip.ciphertext),
-                    timestamp      = ts(),
-                    direction      = "IN (catch-up)",
-                    preview        = preview
-                )
-                _uiState.update {
-                    it.copy(receivedMessages = (it.receivedMessages + ui).takeLast(50))
+            val api = clipsApi()
+            var currentAfterSeq = afterSeq
+            // HIGH 2: only advance for clips that decrypted (or are self-sent)
+            var maxAdvancedSeq = afterSeq
+
+            while (currentAfterSeq < latestSeq) {
+                val clips = api.fetchHistory(deviceToken, currentAfterSeq)
+                log("Catch-up: ${clips.size} clip(s) after seq=$currentAfterSeq")
+                if (clips.isEmpty()) break
+
+                for (clip in clips) {
+                    if (!seenMessageIds.add(clip.message_id)) {
+                        // Already displayed by a live WS delivery — still advance seq, skip display.
+                        if (clip.seq > maxAdvancedSeq) maxAdvancedSeq = clip.seq
+                        continue
+                    }
+                    if (clip.from_device_id == myDeviceId) {
+                        // Self-sent: advance seq watermark but don't display
+                        if (clip.seq > maxAdvancedSeq) maxAdvancedSeq = clip.seq
+                        continue
+                    }
+                    val preview = tryDecryptPreview(clip.ciphertext, clip.nonce)
+                    if (preview != null) {
+                        val ui = ReceivedMessageUi(
+                            messageId      = clip.message_id,
+                            fromDeviceId   = clip.from_device_id,
+                            ciphertextHash = Hash.sha256Short(clip.ciphertext),
+                            timestamp      = ts(),
+                            direction      = "IN (catch-up)",
+                            preview        = preview
+                        )
+                        _uiState.update {
+                            it.copy(receivedMessages = (it.receivedMessages + ui).takeLast(50))
+                        }
+                        // HIGH 2: gated on decrypt success
+                        if (clip.seq > maxAdvancedSeq) maxAdvancedSeq = clip.seq
+                    }
+                    // HIGH 2: decrypt failure → do NOT advance seq for this clip
                 }
-                if (clip.seq > maxSeq) maxSeq = clip.seq
+
+                currentAfterSeq = clips.last().seq
             }
-            if (maxSeq > afterSeq) {
-                TokenStore.saveLastSeenSeq(getApplication(), maxSeq)
-                log("Catch-up: last_seen_seq advanced to $maxSeq")
+
+            // HIGH 3: saveLastSeenSeq is monotonic — concurrent live-delivery updates are safe
+            if (maxAdvancedSeq > afterSeq) {
+                TokenStore.saveLastSeenSeq(getApplication(), maxAdvancedSeq)
+                log("Catch-up: last_seen_seq advanced to $maxAdvancedSeq")
             }
         } catch (e: Exception) {
             RedactingLogger.error("fetchMissedClips", e)
@@ -745,6 +850,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private fun resetDeviceSessionState() {
         wsClient?.disconnect()
         wsClient = null
+        wsEventProcessorJob?.cancel()
+        wsEventProcessorJob = null
+        seenMessageIds.clear()
+        while (wsEventChannel.tryReceive().isSuccess) { /* discard stale events */ }
         approvalPollJob?.cancel()
         approvalPollJob = null
         stopClipboardMonitor()
@@ -813,6 +922,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     override fun onCleared() {
         super.onCleared()
         wsClient?.disconnect()
+        wsEventProcessorJob?.cancel()
         approvalPollJob?.cancel()
         clipboardMonitorJob?.cancel()
     }
