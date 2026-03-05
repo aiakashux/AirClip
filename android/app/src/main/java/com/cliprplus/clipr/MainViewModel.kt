@@ -8,6 +8,8 @@ import androidx.lifecycle.viewModelScope
 import com.cliprplus.clipr.auth.AuthApi
 import com.cliprplus.clipr.auth.TokenStore
 import com.cliprplus.clipr.clipboard.ClipboardMonitor
+import com.cliprplus.clipr.ClipHistoryStore
+import com.cliprplus.clipr.ClipItemRecord
 import com.cliprplus.clipr.crypto.KeyManager
 import com.cliprplus.clipr.crypto.SealedBox
 import com.cliprplus.clipr.device.AuthState
@@ -61,11 +63,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 "Revoked"         -> DeviceApprovalState.Revoked
                 else              -> DeviceApprovalState.NotRegistered
             }
+            // Load persisted clipboard history so the list is visible immediately,
+            // before WS connects and catch-up runs.
+            val history = ClipHistoryStore.load(app)
             _uiState.update {
                 it.copy(
                     authState           = if (hasAccount) AuthState.AccountTokenReady else AuthState.LoggedOut,
                     tokenState          = if (hasDevice)  TokenState.DeviceTokenReady  else TokenState.NoDeviceToken,
-                    deviceApprovalState = approvalState
+                    deviceApprovalState = approvalState,
+                    clipHistory         = history
                 )
             }
             if (hasAccount) log("Session restored — account_id=${TokenStore.accountId?.take(8)}…")
@@ -189,7 +195,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val lastRefreshError: String? = null,
         val isClipboardMonitorActive: Boolean = false,
         /** Up to 10 most recently sent clipboard items (local history). */
-        val localClipItems: List<LocalClipItemUi> = emptyList()
+        val localClipItems: List<LocalClipItemUi> = emptyList(),
+        /**
+         * Received clipboard history — persisted across process kills.
+         * Sorted newest-first; capped to [ClipHistoryStore.MAX_ITEMS].
+         */
+        val clipHistory: List<ClipItemRecord> = emptyList()
     )
 
     // ------------------------------------------------------------------
@@ -537,6 +548,17 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             if (msg.seq > 0L) {
                 TokenStore.saveLastSeenSeq(getApplication(), msg.seq)
             }
+            // Persist to local history so the item survives process kills.
+            val record = ClipItemRecord(
+                messageId    = msg.messageId,
+                seq          = msg.seq,
+                fromDeviceId = msg.fromDeviceId,
+                timestampMs  = System.currentTimeMillis(),
+                cipherHash   = ciphertextHash,
+                preview      = preview
+            )
+            val updated = ClipHistoryStore.merge(getApplication(), listOf(record))
+            _uiState.update { it.copy(clipHistory = updated) }
         }
         // HIGH 2: no ACK and no seq advance on decrypt failure
     }
@@ -566,6 +588,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             var currentAfterSeq = afterSeq
             // HIGH 2: only advance for clips that decrypted (or are self-sent)
             var maxAdvancedSeq = afterSeq
+            // Collect new records for bulk persistence after the loop.
+            val newRecords = mutableListOf<ClipItemRecord>()
 
             while (currentAfterSeq < latestSeq) {
                 val clips = api.fetchHistory(deviceToken, currentAfterSeq)
@@ -583,12 +607,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                         if (clip.seq > maxAdvancedSeq) maxAdvancedSeq = clip.seq
                         continue
                     }
-                    val preview = tryDecryptPreview(clip.ciphertext, clip.nonce)
+                    val clipHash = Hash.sha256Short(clip.ciphertext)
+                    val preview  = tryDecryptPreview(clip.ciphertext, clip.nonce)
                     if (preview != null) {
                         val ui = ReceivedMessageUi(
                             messageId      = clip.message_id,
                             fromDeviceId   = clip.from_device_id,
-                            ciphertextHash = Hash.sha256Short(clip.ciphertext),
+                            ciphertextHash = clipHash,
                             timestamp      = ts(),
                             direction      = "IN (catch-up)",
                             preview        = preview
@@ -598,11 +623,25 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                         }
                         // HIGH 2: gated on decrypt success
                         if (clip.seq > maxAdvancedSeq) maxAdvancedSeq = clip.seq
+                        newRecords += ClipItemRecord(
+                            messageId    = clip.message_id,
+                            seq          = clip.seq,
+                            fromDeviceId = clip.from_device_id,
+                            timestampMs  = System.currentTimeMillis(),
+                            cipherHash   = clipHash,
+                            preview      = preview
+                        )
                     }
                     // HIGH 2: decrypt failure → do NOT advance seq for this clip
                 }
 
                 currentAfterSeq = clips.last().seq
+            }
+
+            // Persist all successfully-decrypted catch-up items in one merge.
+            if (newRecords.isNotEmpty()) {
+                val updated = ClipHistoryStore.merge(getApplication(), newRecords)
+                _uiState.update { it.copy(clipHistory = updated) }
             }
 
             // HIGH 3: saveLastSeenSeq is monotonic — concurrent live-delivery updates are safe
@@ -859,9 +898,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         stopClipboardMonitor()
         recentHashCache.clear()
         TokenStore.clearDeviceAuth()
-        // Clear device creds from DataStore asynchronously (in-memory already cleared above).
+        // Clear device creds and clip history from DataStore asynchronously.
         viewModelScope.launch(Dispatchers.IO) {
             TokenStore.clearDeviceAuth(getApplication())
+            ClipHistoryStore.clear(getApplication())
         }
         _uiState.update {
             it.copy(
@@ -873,10 +913,23 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 lastRefreshTime          = null,
                 lastRefreshError         = null,
                 isClipboardMonitorActive = false,
-                localClipItems           = emptyList()
+                localClipItems           = emptyList(),
+                clipHistory              = emptyList()
             )
         }
         log("Device session reset")
+    }
+
+    /**
+     * Called when the user taps a history item to copy it back to the Android clipboard.
+     * Records the preview hash in [recentHashCache] so the clipboard monitor does not
+     * immediately re-send what was just pasted.
+     *
+     * NOTE: [item.preview] is capped at 40 chars; the full original text is not stored.
+     */
+    fun onHistoryItemCopied(item: ClipItemRecord) {
+        recentHashCache.record(Hash.sha256Hex(item.preview))
+        log("History item copied to clipboard seq=${item.seq}")
     }
 
     /** Clear all session data and reset UI to the logged-out state. */

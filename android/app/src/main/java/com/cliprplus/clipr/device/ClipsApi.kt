@@ -11,11 +11,21 @@ import okhttp3.Request
  * DO NOT log ciphertext — use RedactingLogger.logCiphertext if needed.
  */
 data class ClipHistoryItem(
-    val seq: Long,            // MED 8: Long — monotonic per-account seq
+    val seq: Long,            // MED 8: Long — converted from JSON string in fetchHistory
     val message_id: String,
     val from_device_id: String,
     val ciphertext: String,   // base64 — encrypted for the requesting device
     val nonce: String         // base64
+)
+
+// Backend serialises seq as a JSON string (e.g. "5") — Gson cannot coerce
+// string → Long in POJO mode, so we parse into this raw type first.
+private data class ClipHistoryItemRaw(
+    val seq: String,
+    val message_id: String,
+    val from_device_id: String,
+    val ciphertext: String,
+    val nonce: String
 )
 
 /**
@@ -43,7 +53,17 @@ class ClipsApi(
         client.newCall(req).execute().use { resp ->
             val raw = resp.body?.string() ?: error("Empty response body")
             if (!resp.isSuccessful) error("HTTP ${resp.code}: $raw")
-            val items = gson.fromJson(raw, Array<ClipHistoryItem>::class.java).toList()
+            // Parse into raw first (seq as String), then convert seq to Long.
+            val rawItems = gson.fromJson(raw, Array<ClipHistoryItemRaw>::class.java).toList()
+            val items = rawItems.map { r ->
+                ClipHistoryItem(
+                    seq            = r.seq.toLongOrNull() ?: error("Invalid seq '${r.seq}'"),
+                    message_id     = r.message_id,
+                    from_device_id = r.from_device_id,
+                    ciphertext     = r.ciphertext,
+                    nonce          = r.nonce
+                )
+            }
             RedactingLogger.info("ClipsApi.fetchHistory: afterSeq=$afterSeq count=${items.size}")
             return items
         }

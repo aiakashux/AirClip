@@ -1,5 +1,9 @@
 package com.cliprplus.clipr.ui
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,6 +26,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -33,8 +39,12 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.cliprplus.clipr.ClipItemRecord
 import com.cliprplus.clipr.MainViewModel
 import com.cliprplus.clipr.device.AuthState
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import com.cliprplus.clipr.device.DeviceApprovalState
 import com.cliprplus.clipr.device.TokenState
 import com.cliprplus.clipr.device.WsState
@@ -263,6 +273,30 @@ fun DebugScreen(vm: MainViewModel = viewModel()) {
         }
         Spacer(Modifier.height(10.dp))
 
+        // ── Clipboard History ─────────────────────────────────────────
+        Text(
+            "Clipboard History — newest first (${state.clipHistory.size}):",
+            style = MaterialTheme.typography.labelMedium
+        )
+        Spacer(Modifier.height(4.dp))
+        if (state.clipHistory.isEmpty()) {
+            Text("(none yet)", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else {
+            val context = LocalContext.current
+            state.clipHistory.forEach { item ->
+                ClipHistoryCard(
+                    item   = item,
+                    onCopy = {
+                        val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        cm.setPrimaryClip(ClipData.newPlainText("clipr", item.preview))
+                        vm.onHistoryItemCopied(item)
+                    }
+                )
+                Spacer(Modifier.height(4.dp))
+            }
+        }
+        Spacer(Modifier.height(10.dp))
+
         // ── Received messages ─────────────────────────────────────────
         Text(
             "Received Messages (${state.receivedMessages.size}):",
@@ -345,6 +379,51 @@ private fun SentClipItemCard(item: MainViewModel.LocalClipItemUi) {
                 fontSize = 10.sp,
                 fontFamily = FontFamily.Monospace,
                 color = MaterialTheme.colorScheme.outline
+            )
+        }
+    }
+}
+
+@Composable
+private fun ClipHistoryCard(item: ClipItemRecord, onCopy: () -> Unit) {
+    val time = remember(item.timestampMs) {
+        SimpleDateFormat("HH:mm:ss", Locale.US).format(Date(item.timestampMs))
+    }
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onCopy),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
+            Row(
+                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    "IN  $time",
+                    fontSize   = 10.sp,
+                    fontFamily = FontFamily.Monospace,
+                    color      = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+                Text(
+                    "Tap to copy",
+                    fontSize   = 10.sp,
+                    fontFamily = FontFamily.Monospace,
+                    color      = MaterialTheme.colorScheme.primary
+                )
+            }
+            Text(
+                "preview: ${item.preview}${if (item.preview.length >= 40) "…" else ""}",
+                fontSize   = 11.sp,
+                fontFamily = FontFamily.Monospace,
+                color      = MaterialTheme.colorScheme.onPrimaryContainer
+            )
+            Text(
+                "seq=${item.seq}  from=${item.fromDeviceId.take(8)}…",
+                fontSize   = 9.sp,
+                fontFamily = FontFamily.Monospace,
+                color      = MaterialTheme.colorScheme.outline
             )
         }
     }
