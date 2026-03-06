@@ -584,8 +584,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /**
      * Paginated catch-up: fetch clips with seq > [afterSeq] up to [latestSeq].
      * MED 7: loops in pages of 20 until caught up or server returns empty.
-     * HIGH 2: seq watermark advances only for clips that decrypt successfully (or are self-sent).
      * HIGH 3: final write uses TokenStore.saveLastSeenSeq which is monotonic.
+     *
+     * maxAdvancedSeq advances in exactly three permitted branches:
+     *   1. decrypt success + accept (preview != null)
+     *   2. duplicate of a message already accepted in this session (seenMessageIds.contains)
+     *   3. self-sent message (from_device_id == myDeviceId) — accepted locally at send time
+     * In all other cases (decrypt failure) seq does NOT advance and the ID is NOT marked seen,
+     * keeping the message retryable on the next catch-up pass.
      */
     private suspend fun fetchMissedClips(afterSeq: Long, latestSeq: Long) {
         val deviceToken = TokenStore.deviceToken ?: return
@@ -604,23 +610,27 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 if (clips.isEmpty()) break
 
                 for (clip in clips) {
+                    // Branch 2: duplicate of an already-accepted message.
+                    // seenMessageIds holds only decrypt-success + ACK'd IDs, so advance is safe.
                     if (seenMessageIds.contains(clip.message_id)) {
-                        // Already accepted by a prior live WS delivery (decrypt success + ACK).
-                        // Safe to advance seq — only accepted IDs are in seenMessageIds.
-                        if (clip.seq > maxAdvancedSeq) maxAdvancedSeq = clip.seq
+                        maxAdvancedSeq = maxOf(maxAdvancedSeq, clip.seq)
                         continue
                     }
+                    // Branch 3: self-sent clip.
+                    // Plaintext was accepted locally when the user copied it to clipboard.
+                    // Advance seq so the watermark moves forward; skip decrypt and UI insert.
                     if (clip.from_device_id == myDeviceId) {
-                        // Self-sent: advance seq watermark but don't display
-                        if (clip.seq > maxAdvancedSeq) maxAdvancedSeq = clip.seq
+                        maxAdvancedSeq = maxOf(maxAdvancedSeq, clip.seq)
                         continue
                     }
+                    // Branch 1: decrypt attempt for a new inbound clip.
                     val clipHash = Hash.sha256Short(clip.ciphertext)
                     val preview  = tryDecryptPreview(clip.ciphertext, clip.nonce)
                     if (preview != null) {
-                        // Mark accepted ONLY on decrypt success — failed decrypts stay absent
-                        // so the item remains retryable on the next catch-up pass.
+                        // Mark accepted only on decrypt success — failed decrypts remain absent
+                        // from seenMessageIds so the item is retryable on the next catch-up pass.
                         seenMessageIds.add(clip.message_id)
+                        maxAdvancedSeq = maxOf(maxAdvancedSeq, clip.seq)
                         val ui = ReceivedMessageUi(
                             messageId      = clip.message_id,
                             fromDeviceId   = clip.from_device_id,
@@ -632,8 +642,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                         _uiState.update {
                             it.copy(receivedMessages = (it.receivedMessages + ui).takeLast(50))
                         }
-                        // HIGH 2: seq advance gated on decrypt success
-                        if (clip.seq > maxAdvancedSeq) maxAdvancedSeq = clip.seq
                         newRecords += ClipItemRecord(
                             messageId    = clip.message_id,
                             seq          = clip.seq,
@@ -643,7 +651,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                             preview      = preview
                         )
                     }
-                    // HIGH 2: decrypt failure → no seq advance, not added to seenMessageIds → retryable
+                    // Decrypt failure: seq does NOT advance; ID not added to seenMessageIds → retryable.
                 }
 
                 currentAfterSeq = clips.last().seq
