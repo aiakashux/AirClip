@@ -520,14 +520,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     /**
      * Process a single deliver_clipboard event.
-     * Deduped via [seenMessageIds]; seq advance gated on decrypt success (HIGH 2, HIGH 3).
+     *
+     * [seenMessageIds] is populated ONLY on decrypt success — failed decrypts are NOT
+     * added, so the same message can be retried on reconnect.  This also ensures the
+     * catch-up duplicate branch in [fetchMissedClips] advances seq only for items that
+     * were provably accepted, fixing the lastSeenSeq over-advance bug.
+     *
      * Plaintext goes only to UI — never to log() or RedactingLogger.
      */
     private suspend fun handleDelivery(msg: DeliveredMessage) {
-        if (!seenMessageIds.add(msg.messageId)) {
-            log("Dup msg=${msg.messageId.take(8)} skipped")
-            return
-        }
         val ciphertextHash = Hash.sha256Short(msg.ciphertext)
         val preview = tryDecryptPreview(msg.ciphertext, msg.nonce)
         val ui = ReceivedMessageUi(
@@ -542,6 +543,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
         log("← msg from ${msg.fromDeviceId.take(8)}… hash=$ciphertextHash")
         if (preview != null) {
+            // Dedup gated on decrypt success: only successfully-accepted IDs enter seenMessageIds.
+            // A duplicate here means a prior delivery already ACKed it — skip silently.
+            if (!seenMessageIds.add(msg.messageId)) {
+                log("Dup msg=${msg.messageId.take(8)} already accepted — skipped")
+                return
+            }
             // ACK only after successful decrypt — server deletes the pending message
             wsClient?.sendAck(msg.messageId)
             // HIGH 2: only advance seq when decrypt succeeded; HIGH 3: monotonic
@@ -560,7 +567,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val updated = ClipHistoryStore.merge(getApplication(), listOf(record))
             _uiState.update { it.copy(clipHistory = updated) }
         }
-        // HIGH 2: no ACK and no seq advance on decrypt failure
+        // Decrypt failed: no ACK, no seq advance, NOT added to seenMessageIds → retryable on reconnect
     }
 
     /**
@@ -598,7 +605,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
                 for (clip in clips) {
                     if (!seenMessageIds.add(clip.message_id)) {
-                        // Already displayed by a live WS delivery — still advance seq, skip display.
+                        // seenMessageIds contains only successfully-accepted IDs (decrypt success +
+                        // ACK sent), so seq advance here is safe — the item was definitely accepted.
                         if (clip.seq > maxAdvancedSeq) maxAdvancedSeq = clip.seq
                         continue
                     }

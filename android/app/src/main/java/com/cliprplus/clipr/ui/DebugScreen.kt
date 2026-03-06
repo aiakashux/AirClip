@@ -287,9 +287,12 @@ fun DebugScreen(vm: MainViewModel = viewModel()) {
                 ClipHistoryCard(
                     item   = item,
                     onCopy = {
+                        // Record hash BEFORE writing to clipboard so the clipboard
+                        // monitor cannot fire and re-send the item before the hash
+                        // is registered in recentHashCache.
+                        vm.onHistoryItemCopied(item)
                         val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                         cm.setPrimaryClip(ClipData.newPlainText("clipr", item.preview))
-                        vm.onHistoryItemCopied(item)
                     }
                 )
                 Spacer(Modifier.height(4.dp))
