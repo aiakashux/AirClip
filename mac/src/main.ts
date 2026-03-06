@@ -55,7 +55,7 @@ interface ClipboardItem {
   direction: "local" | "remote";
 }
 
-const MAX_CLIPBOARD_ITEMS = 10;
+const MAX_CLIPBOARD_ITEMS = 20;
 const CLIPBOARD_ITEM_TTL_MS = 30 * 60 * 1000; // 30 minutes
 let clipboardItems: ClipboardItem[] = [];
 let sessionStartedAt: number | null = null;

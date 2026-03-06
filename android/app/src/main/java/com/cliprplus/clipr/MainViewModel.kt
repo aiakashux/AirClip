@@ -132,6 +132,22 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      */
     private val seenMessageIds: MutableSet<String> = ConcurrentHashMap.newKeySet()
 
+    /**
+     * Snapshot of [TokenStore.lastSeenSeq] taken at the moment the WS connection opens,
+     * BEFORE the server sends any pending deliveries or hello.
+     *
+     * The server protocol sends pending deliver_clipboard frames first, then hello(latest_seq).
+     * If any pending delivery is processed before hello, [TokenStore.lastSeenSeq] advances.
+     * Using the advanced value as the catch-up cursor would make [handleHello] conclude
+     * "already caught up" and skip [fetchMissedClips], silently dropping older offline items.
+     *
+     * This field pins the catch-up baseline to the seq we knew about at connect time so
+     * pending deliveries can never inflate it.  Reset to -1L after hello is handled (or on
+     * session teardown).  @Volatile: written on the OkHttp network thread (onConnected),
+     * read on the serial WS event processor coroutine (handleHello).
+     */
+    @Volatile private var reconnectBaselineSeq: Long = -1L
+
     private var approvalPollJob:  Job? = null
     private var clipboardMonitorJob: Job? = null
 
@@ -449,6 +465,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         override fun onConnected() {
             _uiState.update { it.copy(wsState = WsState.Connected, lastError = null) }
             log("WS connected")
+            // Snapshot lastSeenSeq NOW, before the server sends any pending deliveries.
+            // handleHello uses this baseline so a pending delivery processed before hello
+            // cannot inflate the cursor and cause missed offline items to be skipped.
+            reconnectBaselineSeq = TokenStore.lastSeenSeq
+            RedactingLogger.info("Reconnect baseline: seq=$reconnectBaselineSeq")
+            log("DBG reconnect baseline: seq=$reconnectBaselineSeq")
             // Drain stale events from a previous connection before starting the processor.
             while (wsEventChannel.tryReceive().isSuccess) { /* discard */ }
             startWsEventProcessor()
@@ -573,12 +595,27 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /**
      * Process a hello event: paginated catch-up if server has clips we haven't seen (MED 7).
      * Runs inline in the serial processor, so live deliveries queue behind it naturally.
+     *
+     * Uses [reconnectBaselineSeq] — the seq captured at connect time — rather than the
+     * current [TokenStore.lastSeenSeq].  The server sends pending deliver_clipboard frames
+     * before hello; those deliveries advance [TokenStore.lastSeenSeq].  Without the baseline,
+     * if the last pending delivery has seq == latestSeq the comparison would incorrectly
+     * conclude "already caught up" and skip [fetchMissedClips] entirely, dropping every
+     * offline item except the one that happened to survive in the pending queue.
      */
     private suspend fun handleHello(latestSeq: Long) {
-        val lastSeen = TokenStore.lastSeenSeq
-        log("Hello: latest_seq=$latestSeq last_seen=$lastSeen")
-        if (latestSeq <= lastSeen) return
-        fetchMissedClips(lastSeen, latestSeq)
+        // Consume the baseline exactly once per reconnect, then clear it.
+        val baseline = reconnectBaselineSeq.also { reconnectBaselineSeq = -1L }
+        val current  = TokenStore.lastSeenSeq
+        // Defensive fallback: if baseline was never set (-1) use the current watermark.
+        val afterSeq = if (baseline >= 0L) baseline else current
+        val decision = if (latestSeq > afterSeq) "fetch" else "skip"
+        RedactingLogger.info(
+            "handleHello: latestSeq=$latestSeq baseline=$baseline currentLastSeen=$current decision=$decision"
+        )
+        log("DBG handleHello: latestSeq=$latestSeq baseline=$baseline currentLastSeen=$current decision=$decision")
+        if (latestSeq <= afterSeq) return
+        fetchMissedClips(afterSeq, latestSeq)
     }
 
     /**
@@ -594,6 +631,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * keeping the message retryable on the next catch-up pass.
      */
     private suspend fun fetchMissedClips(afterSeq: Long, latestSeq: Long) {
+        RedactingLogger.info("fetchMissedClips: START afterSeq=$afterSeq latestSeq=$latestSeq gap=${latestSeq - afterSeq}")
+        log("DBG fetchMissedClips: START afterSeq=$afterSeq latestSeq=$latestSeq gap=${latestSeq - afterSeq}")
         val deviceToken = TokenStore.deviceToken ?: return
         val myDeviceId  = TokenStore.deviceId    ?: return
         try {
@@ -668,6 +707,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 TokenStore.saveLastSeenSeq(getApplication(), maxAdvancedSeq)
                 log("Catch-up: last_seen_seq advanced to $maxAdvancedSeq")
             }
+            RedactingLogger.info(
+                "fetchMissedClips: END fetched=${newRecords.size} maxAdvancedSeq=$maxAdvancedSeq"
+            )
+            log("DBG fetchMissedClips: END fetched=${newRecords.size} maxAdvancedSeq=$maxAdvancedSeq")
         } catch (e: Exception) {
             RedactingLogger.error("fetchMissedClips", e)
             log("Catch-up fetch failed: ${e.javaClass.simpleName}")
@@ -911,6 +954,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         wsEventProcessorJob?.cancel()
         wsEventProcessorJob = null
         seenMessageIds.clear()
+        reconnectBaselineSeq = -1L
         while (wsEventChannel.tryReceive().isSuccess) { /* discard stale events */ }
         approvalPollJob?.cancel()
         approvalPollJob = null
@@ -937,6 +981,28 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             )
         }
         log("Device session reset")
+    }
+
+    /**
+     * Manually fetch missed clipboard items from the server REST history endpoint.
+     *
+     * Does NOT require an active WS connection — only a valid device token.
+     * Passes [Long.MAX_VALUE] as sentinelLatestSeq so [fetchMissedClips] self-terminates
+     * when the server returns an empty page (no items beyond current watermark).
+     *
+     * Safe to call concurrently with an ongoing WS-driven catch-up; seenMessageIds dedup
+     * and ClipHistoryStore.merge's distinctBy guard prevent double-inserts.
+     *
+     * This is the action wired to "Sync Now" in the UI.  Auto-catch-up on WS connect
+     * (handleHello → fetchMissedClips) still runs automatically on reopen; this function
+     * provides an explicit manual trigger when the user wants to pull without reconnecting.
+     */
+    fun onFetchHistory() = runAsync("fetchHistory") {
+        if (TokenStore.deviceToken == null) {
+            log("Fetch history: no device token — skipped")
+            return@runAsync
+        }
+        fetchMissedClips(TokenStore.lastSeenSeq, Long.MAX_VALUE)
     }
 
     /**

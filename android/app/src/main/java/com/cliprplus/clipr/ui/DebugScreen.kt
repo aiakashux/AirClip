@@ -100,6 +100,8 @@ fun DebugScreen(vm: MainViewModel = viewModel()) {
                             state.wsState == WsState.Disconnected
     val canSendTest       = state.wsState == WsState.Connected && isTrusted
     val canSyncClipboard  = state.wsState == WsState.Connected && isTrusted
+    // Fetch history only needs a device token, not an active WS connection.
+    val canFetchHistory   = isTrusted && state.tokenState == TokenState.DeviceTokenReady
     val canLogout         = state.authState == AuthState.AccountTokenReady
 
     Column(
@@ -185,11 +187,14 @@ fun DebugScreen(vm: MainViewModel = viewModel()) {
         // ── Sync + Refresh ────────────────────────────────────────────
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Button(
-                onClick  = vm::onAppForegrounded,
-                enabled  = canSyncClipboard,
+                // Send current clipboard outbound (requires WS) AND fetch missed history
+                // from server (only needs device token).  Using both in one tap mirrors
+                // what users expect "Sync" to mean: push what you have + pull what you missed.
+                onClick  = { vm.onAppForegrounded(); vm.onFetchHistory() },
+                enabled  = canSyncClipboard || canFetchHistory,
                 modifier = Modifier.weight(1f)
             ) {
-                Text("Sync Clipboard\nNow", fontSize = 11.sp, textAlign = TextAlign.Center)
+                Text("Sync Now\n(send+fetch)", fontSize = 11.sp, textAlign = TextAlign.Center)
             }
             Button(
                 onClick  = vm::onRefreshDevices,
