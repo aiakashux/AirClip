@@ -74,7 +74,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     clipHistory         = history
                 )
             }
-            if (hasAccount) log("Session restored — account_id=${TokenStore.accountId?.take(8)}…")
+            log(
+                "[RESTORE] account=${if (hasAccount) "YES" else "NO"} " +
+                "device=${if (hasDevice) "YES" else "NO"} " +
+                "approval=$approvalState " +
+                "lastSeenSeq=${TokenStore.lastSeenSeq} " +
+                "historySize=${history.size}"
+            )
             if (hasDevice && approvalState == DeviceApprovalState.Approved) {
                 maybeAutoConnect()
             }
@@ -422,9 +428,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun onAppForegrounded() {
         val st = _uiState.value
-        if (st.wsState != WsState.Connected || st.deviceApprovalState != DeviceApprovalState.Approved) return
-
-        log("Foreground: clipboard check…")
+        if (st.wsState != WsState.Connected || st.deviceApprovalState != DeviceApprovalState.Approved) {
+            log("[SYNC-BTN] onAppForegrounded skipped — wsState=${st.wsState} approval=${st.deviceApprovalState}")
+            return
+        }
+        log("[SYNC-BTN] onAppForegrounded — reading clipboard")
 
         val cm = getApplication<Application>().getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         val text = try {
@@ -464,13 +472,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private fun makeWsListener(gen: Int): CliprWsListener = object : CliprWsListener {
         override fun onConnected() {
             _uiState.update { it.copy(wsState = WsState.Connected, lastError = null) }
-            log("WS connected")
+            log("[WS] onConnected")
             // Snapshot lastSeenSeq NOW, before the server sends any pending deliveries.
             // handleHello uses this baseline so a pending delivery processed before hello
             // cannot inflate the cursor and cause missed offline items to be skipped.
             reconnectBaselineSeq = TokenStore.lastSeenSeq
-            RedactingLogger.info("Reconnect baseline: seq=$reconnectBaselineSeq")
-            log("DBG reconnect baseline: seq=$reconnectBaselineSeq")
+            RedactingLogger.info("[BASELINE] captured seq=$reconnectBaselineSeq at connect")
+            log("[BASELINE] captured seq=$reconnectBaselineSeq")
             // Drain stale events from a previous connection before starting the processor.
             while (wsEventChannel.tryReceive().isSuccess) { /* discard */ }
             startWsEventProcessor()
@@ -483,7 +491,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             wsEventProcessorJob = null
             _uiState.update { it.copy(wsState = WsState.Disconnected) }
             stopClipboardMonitor()
-            log("WS disconnected $code")
+            log("[WS] onDisconnected code=$code reason=${reason.take(80)}")
         }
 
         /**
@@ -503,7 +511,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     lastError           = "WS auth rejected — re-register device"
                 )
             }
-            log("WS auth failed — device token invalid; re-register device to recover")
+            log("[WS] onAuthFailed — device token invalid; re-register device to recover")
         }
 
         /** Enqueue for serial processing — no concurrent coroutine spawned here. */
@@ -610,10 +618,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         // Defensive fallback: if baseline was never set (-1) use the current watermark.
         val afterSeq = if (baseline >= 0L) baseline else current
         val decision = if (latestSeq > afterSeq) "fetch" else "skip"
+        log("[BASELINE] cleared (consumed by handleHello) was=$baseline")
         RedactingLogger.info(
-            "handleHello: latestSeq=$latestSeq baseline=$baseline currentLastSeen=$current decision=$decision"
+            "[WS] hello: latestSeq=$latestSeq baseline=$baseline currentLastSeen=$current decision=$decision"
         )
-        log("DBG handleHello: latestSeq=$latestSeq baseline=$baseline currentLastSeen=$current decision=$decision")
+        log("[WS] hello: latestSeq=$latestSeq baseline=$baseline currentLastSeen=$current decision=$decision")
         if (latestSeq <= afterSeq) return
         fetchMissedClips(afterSeq, latestSeq)
     }
@@ -631,8 +640,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * keeping the message retryable on the next catch-up pass.
      */
     private suspend fun fetchMissedClips(afterSeq: Long, latestSeq: Long) {
-        RedactingLogger.info("fetchMissedClips: START afterSeq=$afterSeq latestSeq=$latestSeq gap=${latestSeq - afterSeq}")
-        log("DBG fetchMissedClips: START afterSeq=$afterSeq latestSeq=$latestSeq gap=${latestSeq - afterSeq}")
+        RedactingLogger.info("[CATCH-UP] START afterSeq=$afterSeq latestSeq=$latestSeq gap=${latestSeq - afterSeq}")
+        log("[CATCH-UP] START afterSeq=$afterSeq latestSeq=$latestSeq gap=${latestSeq - afterSeq}")
         val deviceToken = TokenStore.deviceToken ?: return
         val myDeviceId  = TokenStore.deviceId    ?: return
         try {
@@ -642,25 +651,28 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             var maxAdvancedSeq = afterSeq
             // Collect new records for bulk persistence after the loop.
             val newRecords = mutableListOf<ClipItemRecord>()
+            var pageIdx = 0
 
             while (currentAfterSeq < latestSeq) {
                 val clips = api.fetchHistory(deviceToken, currentAfterSeq)
-                log("Catch-up: ${clips.size} clip(s) after seq=$currentAfterSeq")
+                log("[CATCH-UP] page=$pageIdx afterSeq=$currentAfterSeq count=${clips.size}")
                 if (clips.isEmpty()) break
+
+                var pageOk = 0; var pageFail = 0; var pageDup = 0; var pageSelf = 0
 
                 for (clip in clips) {
                     // Branch 2: duplicate of an already-accepted message.
                     // seenMessageIds holds only decrypt-success + ACK'd IDs, so advance is safe.
                     if (seenMessageIds.contains(clip.message_id)) {
                         maxAdvancedSeq = maxOf(maxAdvancedSeq, clip.seq)
-                        continue
+                        pageDup++; continue
                     }
                     // Branch 3: self-sent clip.
                     // Plaintext was accepted locally when the user copied it to clipboard.
                     // Advance seq so the watermark moves forward; skip decrypt and UI insert.
                     if (clip.from_device_id == myDeviceId) {
                         maxAdvancedSeq = maxOf(maxAdvancedSeq, clip.seq)
-                        continue
+                        pageSelf++; continue
                     }
                     // Branch 1: decrypt attempt for a new inbound clip.
                     val clipHash = Hash.sha256Short(clip.ciphertext)
@@ -670,6 +682,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                         // from seenMessageIds so the item is retryable on the next catch-up pass.
                         seenMessageIds.add(clip.message_id)
                         maxAdvancedSeq = maxOf(maxAdvancedSeq, clip.seq)
+                        pageOk++
                         val ui = ReceivedMessageUi(
                             messageId      = clip.message_id,
                             fromDeviceId   = clip.from_device_id,
@@ -689,10 +702,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                             cipherHash   = clipHash,
                             preview      = preview
                         )
+                    } else {
+                        pageFail++
+                        // Decrypt failure: seq does NOT advance; ID not added to seenMessageIds → retryable.
                     }
-                    // Decrypt failure: seq does NOT advance; ID not added to seenMessageIds → retryable.
                 }
 
+                log("[CATCH-UP] page=$pageIdx seqRange=${clips.first().seq}–${clips.last().seq} ok=$pageOk fail=$pageFail dup=$pageDup self=$pageSelf")
+                pageIdx++
                 currentAfterSeq = clips.last().seq
             }
 
@@ -708,9 +725,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 log("Catch-up: last_seen_seq advanced to $maxAdvancedSeq")
             }
             RedactingLogger.info(
-                "fetchMissedClips: END fetched=${newRecords.size} maxAdvancedSeq=$maxAdvancedSeq"
+                "[CATCH-UP] END pages=$pageIdx fetched=${newRecords.size} maxAdvancedSeq=$maxAdvancedSeq historySize=${_uiState.value.clipHistory.size}"
             )
-            log("DBG fetchMissedClips: END fetched=${newRecords.size} maxAdvancedSeq=$maxAdvancedSeq")
+            log("[CATCH-UP] END pages=$pageIdx fetched=${newRecords.size} maxAdvancedSeq=$maxAdvancedSeq historySize=${_uiState.value.clipHistory.size}")
         } catch (e: Exception) {
             RedactingLogger.error("fetchMissedClips", e)
             log("Catch-up fetch failed: ${e.javaClass.simpleName}")
@@ -857,8 +874,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             st.tokenState == TokenState.DeviceTokenReady &&
             st.wsState == WsState.Disconnected
         ) {
-            log("Auto-connecting WS…")
+            log("[AUTO-CONNECT] connecting — approval=${st.deviceApprovalState} token=${st.tokenState} ws=${st.wsState}")
             onConnectWs()
+        } else {
+            log("[AUTO-CONNECT] skipped — approval=${st.deviceApprovalState} token=${st.tokenState} ws=${st.wsState}")
         }
     }
 
@@ -998,11 +1017,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * provides an explicit manual trigger when the user wants to pull without reconnecting.
      */
     fun onFetchHistory() = runAsync("fetchHistory") {
+        val seq = TokenStore.lastSeenSeq
         if (TokenStore.deviceToken == null) {
-            log("Fetch history: no device token — skipped")
+            log("[SYNC-BTN] fetch skipped — no device token lastSeenSeq=$seq")
             return@runAsync
         }
-        fetchMissedClips(TokenStore.lastSeenSeq, Long.MAX_VALUE)
+        log("[SYNC-BTN] onFetchHistory — lastSeenSeq=$seq sentinel=MAX_VALUE")
+        fetchMissedClips(seq, Long.MAX_VALUE)
     }
 
     /**
