@@ -604,9 +604,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 if (clips.isEmpty()) break
 
                 for (clip in clips) {
-                    if (!seenMessageIds.add(clip.message_id)) {
-                        // seenMessageIds contains only successfully-accepted IDs (decrypt success +
-                        // ACK sent), so seq advance here is safe — the item was definitely accepted.
+                    if (seenMessageIds.contains(clip.message_id)) {
+                        // Already accepted by a prior live WS delivery (decrypt success + ACK).
+                        // Safe to advance seq — only accepted IDs are in seenMessageIds.
                         if (clip.seq > maxAdvancedSeq) maxAdvancedSeq = clip.seq
                         continue
                     }
@@ -618,6 +618,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     val clipHash = Hash.sha256Short(clip.ciphertext)
                     val preview  = tryDecryptPreview(clip.ciphertext, clip.nonce)
                     if (preview != null) {
+                        // Mark accepted ONLY on decrypt success — failed decrypts stay absent
+                        // so the item remains retryable on the next catch-up pass.
+                        seenMessageIds.add(clip.message_id)
                         val ui = ReceivedMessageUi(
                             messageId      = clip.message_id,
                             fromDeviceId   = clip.from_device_id,
@@ -629,7 +632,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                         _uiState.update {
                             it.copy(receivedMessages = (it.receivedMessages + ui).takeLast(50))
                         }
-                        // HIGH 2: gated on decrypt success
+                        // HIGH 2: seq advance gated on decrypt success
                         if (clip.seq > maxAdvancedSeq) maxAdvancedSeq = clip.seq
                         newRecords += ClipItemRecord(
                             messageId    = clip.message_id,
@@ -640,7 +643,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                             preview      = preview
                         )
                     }
-                    // HIGH 2: decrypt failure → do NOT advance seq for this clip
+                    // HIGH 2: decrypt failure → no seq advance, not added to seenMessageIds → retryable
                 }
 
                 currentAfterSeq = clips.last().seq
