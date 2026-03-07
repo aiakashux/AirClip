@@ -17,9 +17,9 @@ private val Context.clipHistoryDataStore: DataStore<Preferences>
 private val KEY_HISTORY = stringPreferencesKey("history_json")
 
 /**
- * One persisted received clipboard item.
+ * One persisted clipboard item (received from a peer, or sent locally).
  *
- * [preview] is the first 40 chars of decrypted plaintext — UI display only.
+ * [preview] is the first 40 chars of plaintext — UI display only.
  * MUST NOT be passed to any logger.
  */
 data class ClipItemRecord(
@@ -27,48 +27,64 @@ data class ClipItemRecord(
     val seq: Long,
     val fromDeviceId: String,
     val timestampMs: Long,
-    val cipherHash: String,   // sha256Short — safe to log
+    val cipherHash: String,   // sha256 prefix — safe to log
     val preview: String       // first 40 chars — UI display only; NEVER logged
 )
 
 /**
- * Persists the received clipboard history (up to [MAX_ITEMS] newest items) across
- * process kills. Uses DataStore<Preferences> + Gson — no new dependencies.
+ * Persists clipboard history across process kills. Items are bounded by both
+ * [MAX_ITEMS] count and [TTL_MS] age — whichever limit triggers first wins.
  *
  * All public functions are suspend and safe to call from IO coroutines.
  */
 object ClipHistoryStore {
-    private val gson = Gson()
+    private val gson     = Gson()
     private val listType = object : TypeToken<List<ClipItemRecord>>() {}.type
 
     const val MAX_ITEMS = 20
+    const val TTL_MS    = 30 * 60 * 1000L   // 30 minutes
 
-    /** Load persisted items from disk. Returns empty list on first run or parse error. */
+    /**
+     * Drop items older than [TTL_MS], sort newest-first by [ClipItemRecord.timestampMs],
+     * then cap at [MAX_ITEMS].
+     */
+    private fun prune(
+        items: List<ClipItemRecord>,
+        now: Long = System.currentTimeMillis()
+    ): List<ClipItemRecord> =
+        items
+            .filter { now - it.timestampMs <= TTL_MS }
+            .sortedByDescending { it.timestampMs }
+            .take(MAX_ITEMS)
+
+    /**
+     * Load persisted items from disk, pruned by age and count.
+     * Returns empty list on first run, parse error, or if all items have expired.
+     */
     suspend fun load(context: Context): List<ClipItemRecord> {
         val prefs = context.clipHistoryDataStore.data.firstOrNull() ?: return emptyList()
         val json  = prefs[KEY_HISTORY] ?: return emptyList()
-        return try {
-            gson.fromJson(json, listType) ?: emptyList()
+        val raw   = try {
+            gson.fromJson<List<ClipItemRecord>>(json, listType) ?: emptyList()
         } catch (_: Exception) {
             emptyList()
         }
+        return prune(raw)
     }
 
     /**
      * Merge [newItems] into the persisted list:
      *   1. combine existing + new
      *   2. deduplicate by messageId (existing wins on conflict)
-     *   3. sort by seq descending (newest first)
-     *   4. trim to [MAX_ITEMS]
+     *   3. drop items older than [TTL_MS]
+     *   4. sort by timestampMs descending (newest first)
+     *   5. trim to [MAX_ITEMS]
      *
      * Returns the updated list.
      */
     suspend fun merge(context: Context, newItems: List<ClipItemRecord>): List<ClipItemRecord> {
         val existing = load(context)
-        val merged   = (existing + newItems)
-            .distinctBy { it.messageId }
-            .sortedByDescending { it.seq }
-            .take(MAX_ITEMS)
+        val merged   = prune((existing + newItems).distinctBy { it.messageId })
         context.clipHistoryDataStore.edit { prefs ->
             prefs[KEY_HISTORY] = gson.toJson(merged)
         }

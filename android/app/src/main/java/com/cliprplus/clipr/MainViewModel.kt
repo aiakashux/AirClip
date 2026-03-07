@@ -37,6 +37,7 @@ import okhttp3.OkHttpClient
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
@@ -853,6 +854,23 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             _uiState.update {
                 it.copy(localClipItems = (it.localClipItems + ui).takeLast(10))
             }
+
+            // Insert a self-sent record into Clipboard History so Android shows its own
+            // clips consistently with Mac. seq=0 because the server seq is not known at
+            // send time; the catch-up self-sent branch (from_device_id == myDeviceId)
+            // skips these on catch-up, so there is no duplication risk from the server.
+            // preview goes to UI only — it is never passed to log() or RedactingLogger.
+            val selfRecord = ClipItemRecord(
+                messageId    = "local-${UUID.randomUUID()}",
+                seq          = 0L,
+                fromDeviceId = myDeviceId,
+                timestampMs  = System.currentTimeMillis(),
+                cipherHash   = hash.take(16),   // plaintext hash prefix — safe to log
+                preview      = text.take(40)     // UI display only — never logged
+            )
+            val updatedHistory = ClipHistoryStore.merge(getApplication(), listOf(selfRecord))
+            _uiState.update { it.copy(clipHistory = updatedHistory) }
+
             log("→ clip sent hash=${hash.take(12)} len=${text.length} peers=${payloads.size}")
 
         } catch (e: Exception) {
