@@ -73,4 +73,7 @@ dependencies {
 
     // Persistence — DataStore for tokens; TODO: migrate to EncryptedDataStore before production
     implementation 'androidx.datastore:datastore-preferences:1.0.0'
+
+    // EncryptedSharedPreferences — AES-256-GCM keypair persistence via Android Keystore master key
+    implementation 'androidx.security:security-crypto:1.0.0'
 }

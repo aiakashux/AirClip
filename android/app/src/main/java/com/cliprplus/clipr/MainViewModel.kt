@@ -55,6 +55,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     init {
         viewModelScope.launch(Dispatchers.IO) {
             val savedApproval = TokenStore.loadFromDisk(app)
+            // Load persisted keypair so tryDecryptPreview works on first cold-start reconnect.
+            keyManager.loadFromDisk()
             val hasAccount    = TokenStore.accountToken != null
             val hasDevice     = TokenStore.deviceToken  != null
             val approvalState = when (savedApproval) {
@@ -104,7 +106,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         .replace("http://", "ws://")
         .replace("https://", "wss://") + "/ws"
 
-    private val keyManager      = KeyManager()
+    private val keyManager      = KeyManager(app)
     private val recentHashCache = RecentHashCache()
 
     private var wsClient: CliprWebSocket? = null
@@ -980,10 +982,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         stopClipboardMonitor()
         recentHashCache.clear()
         TokenStore.clearDeviceAuth()
-        // Clear device creds and clip history from DataStore asynchronously.
+        // Clear device creds, clip history, and keypair asynchronously (all touch I/O).
         viewModelScope.launch(Dispatchers.IO) {
             TokenStore.clearDeviceAuth(getApplication())
             ClipHistoryStore.clear(getApplication())
+            keyManager.clearKeypair()
         }
         _uiState.update {
             it.copy(
