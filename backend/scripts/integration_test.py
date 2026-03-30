@@ -384,29 +384,38 @@ async def run_tests() -> None:
             step("Pending device send_clipboard blocked", True)
 
     # -----------------------------------------------------------------------
-    # SEC-B2: Pending device cannot self-approve via WS
+    # SEC-B2: approve_device is no longer a recognized event — server must
+    #         return an error response, not crash and not silently succeed.
     # -----------------------------------------------------------------------
-    print("\n--- SEC-B2: Pending device cannot self-approve ---")
+    print("\n--- SEC-B2: approve_device returns unrecognized-event error ---")
 
-    async with ws_connect(ws_url, additional_headers=ws_c_hdrs) as ws_c2:
-        await ws_c2.send(json.dumps({
+    async with ws_connect(ws_url, additional_headers=ws_a_hdrs) as ws_a2:
+        # Drain the hello message first
+        await asyncio.wait_for(ws_a2.recv(), timeout=3.0)
+
+        await ws_a2.send(json.dumps({
             "type": "approve_device",
-            "target_device_id": dev_c_id,
+            "target_device_id": dev_b_id,
         }))
-        await asyncio.sleep(0.5)
 
-    # Verify C is still pending via REST
-    async with httpx.AsyncClient(base_url=BASE, timeout=10.0) as http:
-        headers = {"Authorization": f"Bearer {account_token}"}
-        r = await http.get("/devices/", headers=headers)
-        devices = r.json()
-        dev_c_status = None
-        for d in devices:
-            if d["device_id"] == dev_c_id:
-                dev_c_status = d["trust_status"]
-        step("Self-approve by pending device rejected",
-             dev_c_status == "pending",
-             f"Device C trust_status = '{dev_c_status}'")
+        try:
+            raw = await asyncio.wait_for(ws_a2.recv(), timeout=3.0)
+            response = json.loads(raw)
+            is_error = (
+                response.get("type") == "error"
+                and "unrecognized" in response.get("message", "").lower()
+            )
+            step(
+                "approve_device returns unrecognized-event error",
+                is_error,
+                f"Got: {response}",
+            )
+        except asyncio.TimeoutError:
+            step(
+                "approve_device returns unrecognized-event error",
+                False,
+                "No response received within 3s — expected error message",
+            )
 
     # -----------------------------------------------------------------------
     # SEC-C: ACK from wrong device does not delete message
