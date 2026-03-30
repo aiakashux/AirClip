@@ -40,38 +40,30 @@ class DeviceRegisterRequest(BaseModel):
     public_key: str  # base64-encoded X25519 public key
 
 
-class DeviceApproveResponse(BaseModel):
-    device_id: str
-    trust_status: str
-
-
 class DeviceResponse(BaseModel):
     device_id: str
     device_name: str
     platform: str
     public_key: str
-    trust_status: Literal["trusted", "pending"]
+    trust_status: Literal["trusted"]
     created_at: datetime
     last_seen: Optional[datetime] = None
+    is_online: bool = False
 
 
 class DeviceRegisterResponse(DeviceResponse):
     token: str
 
 
-# --- WebSocket Messages (Client → Server) ---
+# --- Deprecated / compatibility stubs (used by ws.py until Task 5 removes them) ---
 
-class WSRegisterDevice(BaseModel):
-    type: Literal["register_device"] = "register_device"
+class WSDevicePending(BaseModel):
+    type: Literal["device_pending"] = "device_pending"
+    device_id: str
     device_name: str
-    platform: Literal["mac", "android"]
-    public_key: str
 
 
-class WSApproveDevice(BaseModel):
-    type: Literal["approve_device"] = "approve_device"
-    target_device_id: str
-
+# --- WebSocket Messages (Client → Server) ---
 
 class ClipboardPayload(BaseModel):
     to_device_id: str
@@ -90,12 +82,6 @@ class WSAck(BaseModel):
 
 
 # --- WebSocket Messages (Server → Client) ---
-
-class WSDevicePending(BaseModel):
-    type: Literal["device_pending"] = "device_pending"
-    device_id: str
-    device_name: str
-
 
 class WSHello(BaseModel):
     type: Literal["hello"] = "hello"

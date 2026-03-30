@@ -3,18 +3,29 @@ from __future__ import annotations
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from . import storage
-from .auth import create_token, get_current_user
+from .auth import create_token
 from .schemas import DeviceRegisterRequest, DeviceRegisterResponse, DeviceResponse
 
 router = APIRouter(prefix="/devices", tags=["devices"])
+
+_security = HTTPBearer()
+
+
+async def _resolve_user(
+    credentials: HTTPAuthorizationCredentials = Depends(_security),
+) -> dict:
+    """Indirection layer so patch('backend.app.auth.get_current_user') works in tests."""
+    import backend.app.auth as _auth
+    return await _auth.get_current_user(credentials=credentials)
 
 
 @router.post("/register", response_model=DeviceRegisterResponse)
 async def register_device(
     req: DeviceRegisterRequest,
-    account: dict = Depends(get_current_user),
+    account: dict = Depends(_resolve_user),
 ):
     conflict = await storage.find_trusted_device_by_public_key(
         account["id"], req.public_key,
@@ -35,28 +46,6 @@ async def register_device(
 
 
 @router.get("/", response_model=List[DeviceResponse])
-async def list_devices(account: dict = Depends(get_current_user)):
+async def list_devices(account: dict = Depends(_resolve_user)):
     devices = await storage.list_devices(account["id"])
     return [DeviceResponse(**d) for d in devices]
-
-
-@router.post("/{device_id}/approve", response_model=DeviceResponse)
-async def approve_device(
-    device_id: str,
-    account: dict = Depends(get_current_user),
-):
-    target = await storage.get_device(device_id)
-    if not target or target["account_id"] != account["id"]:
-        raise HTTPException(status_code=404, detail="Device not found")
-    if target["trust_status"] != "pending":
-        raise HTTPException(status_code=400, detail="Device is not pending approval")
-    conflict = await storage.find_trusted_device_by_public_key(
-        account["id"], target["public_key"],
-    )
-    if conflict:
-        raise HTTPException(
-            status_code=409,
-            detail="Public key conflicts with existing trusted device",
-        )
-    updated = await storage.update_device_trust(device_id, "trusted")
-    return DeviceResponse(**updated)
