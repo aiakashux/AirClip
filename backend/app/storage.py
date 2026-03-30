@@ -13,6 +13,8 @@ CLIPBOARD_TTL = 60  # seconds
 CLIP_HISTORY_TTL = 30 * 60  # 30 minutes
 CLIP_HISTORY_MAX = 20       # max entries per account (30-min window)
 
+PRESENCE_TTL = 45  # seconds — device heartbeat must arrive within this window
+
 _redis: Optional[Redis] = None
 
 
@@ -142,6 +144,26 @@ async def update_device_last_seen(device_id: str) -> None:
         device["last_seen"] = datetime.now(timezone.utc).isoformat()
         r = get_redis()
         await r.set(f"device:{device_id}", json.dumps(device))
+
+
+# --- Device Presence ---
+
+async def set_presence(device_id: str) -> None:
+    """Mark device as online. TTL renewed on each heartbeat."""
+    r = get_redis()
+    await r.set(f"presence:{device_id}", "online", ex=PRESENCE_TTL)
+
+
+async def delete_presence(device_id: str) -> None:
+    """Remove online marker immediately on disconnect."""
+    r = get_redis()
+    await r.delete(f"presence:{device_id}")
+
+
+async def is_online(device_id: str) -> bool:
+    """Return True if the presence key exists (device is connected)."""
+    r = get_redis()
+    return bool(await r.exists(f"presence:{device_id}"))
 
 
 # --- Clipboard Message Storage ---
