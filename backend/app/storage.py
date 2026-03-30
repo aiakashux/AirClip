@@ -115,6 +115,7 @@ async def list_devices(account_id: str) -> List[dict]:
     for did in device_ids:
         d = await get_device(did)
         if d:
+            d["is_online"] = await is_online(did)
             devices.append(d)
     return devices
 
