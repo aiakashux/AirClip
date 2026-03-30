@@ -1,0 +1,19 @@
+# Xcode build artefacts
+build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+*.xccheckout
+*.moved-aside
+
+# Xcode local settings
+ClipRPlus.xcodeproj/xcuserdata/
+ClipRPlus.xcodeproj/project.xcworkspace/xcuserdata/
+
+# macOS
+.DS_Store
+
+# Legacy Electron (removed)
+node_modules/
+dist/
+.local/

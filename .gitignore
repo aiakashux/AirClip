@@ -1,0 +1,40 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Redis
+dump.rdb
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.env
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+
+# Node / Electron
+node_modules/
+*.log
+.npm/
+mac/dist/
+mac/out/
+
+# Android
+android/.gradle/
+android/local.properties
+android/app/build/
+android/*.keystore
+android/*.jks
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Claude
+.claude/
