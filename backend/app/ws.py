@@ -15,7 +15,6 @@ from .auth import decode_token
 from .schemas import (
     ClipboardMessage,
     WSDeliverClipboard,
-    WSDevicePending,
     WSHello,
 )
 

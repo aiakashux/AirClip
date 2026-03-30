@@ -55,14 +55,6 @@ class DeviceRegisterResponse(DeviceResponse):
     token: str
 
 
-# --- Deprecated / compatibility stubs (used by ws.py until Task 5 removes them) ---
-
-class WSDevicePending(BaseModel):
-    type: Literal["device_pending"] = "device_pending"
-    device_id: str
-    device_name: str
-
-
 # --- WebSocket Messages (Client → Server) ---
 
 class ClipboardPayload(BaseModel):
