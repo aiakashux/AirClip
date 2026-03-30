@@ -81,8 +81,6 @@ async def deliver_pending(device_id: str) -> None:
     for msg in messages:
         raw_seq = msg.get("seq")
         if isinstance(raw_seq, bool):
-            # Server-side invariant violation: every stored message must carry seq >= 1.
-            # Never deliver a message with seq=0 or missing seq.
             _log.error(
                 "deliver_pending: msg %s has invalid seq=%r — skipping",
                 msg.get("id", "?"),
@@ -92,8 +90,6 @@ async def deliver_pending(device_id: str) -> None:
         try:
             seq = int(raw_seq)
         except (TypeError, ValueError):
-            # Server-side invariant violation: every stored message must carry seq >= 1.
-            # Never deliver a message with seq=0 or missing seq.
             _log.error(
                 "deliver_pending: msg %s has invalid seq=%r — skipping",
                 msg.get("id", "?"),
@@ -101,8 +97,6 @@ async def deliver_pending(device_id: str) -> None:
             )
             continue
         if seq < 1:
-            # Server-side invariant violation: every stored message must carry seq >= 1.
-            # Never deliver a message with seq=0 or missing seq.
             _log.error(
                 "deliver_pending: msg %s has invalid seq=%r — skipping",
                 msg.get("id", "?"),
@@ -119,54 +113,10 @@ async def deliver_pending(device_id: str) -> None:
         await manager.send_json(device_id, outbound.model_dump())
 
 
-async def handle_register_device(account: dict, data: dict) -> None:
-    """Handle register_device WS message."""
-    public_key = data.get("public_key", "")
-    conflict = await storage.find_trusted_device_by_public_key(
-        account["id"], public_key,
-    )
-    if conflict:
-        return
-
-    device = await storage.create_device(
-        account_id=account["id"],
-        device_name=data["device_name"],
-        platform=data["platform"],
-        public_key=public_key,
-    )
-    if device["trust_status"] == "pending":
-        trusted_devices = await storage.list_devices(account["id"])
-        pending_msg = WSDevicePending(
-            device_id=device["device_id"],
-            device_name=device["device_name"],
-        )
-        for d in trusted_devices:
-            if d["trust_status"] == "trusted":
-                await manager.send_json(d["device_id"], pending_msg.model_dump())
-
-
-async def handle_approve_device(
-    account: dict, caller_device_id: str, data: dict,
-) -> None:
-    """Handle approve_device WS message.  Only trusted devices may approve."""
-    caller = await storage.get_device(caller_device_id)
-    if not caller or caller["trust_status"] != "trusted":
-        return
-
-    target_id = data.get("target_device_id")
-    if not target_id:
-        return
-    target = await storage.get_device(target_id)
-    if not target or target["account_id"] != account["id"]:
-        return
-    if target["trust_status"] != "pending":
-        return
-    conflict = await storage.find_trusted_device_by_public_key(
-        account["id"], target["public_key"],
-    )
-    if conflict:
-        return
-    await storage.update_device_trust(target_id, "trusted")
+async def handle_heartbeat(device_id: str) -> None:
+    """Renew presence TTL and update last_seen timestamp."""
+    await storage.set_presence(device_id)
+    await storage.update_device_last_seen(device_id)
 
 
 async def handle_send_clipboard(
@@ -229,6 +179,23 @@ async def handle_ack(account_id: str, device_id: str, data: dict) -> None:
     await storage.delete_clipboard_message(msg_id)
 
 
+async def _dispatch_message(account: dict, device_id: str, data: dict) -> None:
+    """Route an inbound WebSocket message to the appropriate handler."""
+    msg_type = data.get("type")
+
+    if msg_type == "heartbeat":
+        await handle_heartbeat(device_id)
+    elif msg_type == "ack":
+        await handle_ack(account["id"], device_id, data)
+    elif msg_type == "send_clipboard":
+        await handle_send_clipboard(account, device_id, data)
+    else:
+        await manager.send_json(
+            device_id,
+            {"type": "error", "message": f"unrecognized event: {msg_type}"},
+        )
+
+
 async def websocket_endpoint(ws: WebSocket) -> None:
     result = await authenticate_ws(ws)
     if not result:
@@ -243,6 +210,7 @@ async def websocket_endpoint(ws: WebSocket) -> None:
         return
 
     await manager.connect(device_id, ws)
+    await storage.set_presence(device_id)
 
     try:
         await deliver_pending(device_id)
@@ -254,18 +222,10 @@ async def websocket_endpoint(ws: WebSocket) -> None:
         while True:
             raw = await ws.receive_text()
             data = json.loads(raw)
-            msg_type = data.get("type")
-
-            if msg_type == "ack":
-                await handle_ack(account["id"], device_id, data)
-            elif msg_type == "send_clipboard":
-                await handle_send_clipboard(account, device_id, data)
-            elif msg_type == "approve_device":
-                await handle_approve_device(account, device_id, data)
-            elif msg_type == "register_device":
-                await handle_register_device(account, data)
+            await _dispatch_message(account, device_id, data)
 
     except WebSocketDisconnect:
         pass
     finally:
         manager.disconnect(device_id)
+        await storage.delete_presence(device_id)
