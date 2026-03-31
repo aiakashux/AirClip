@@ -103,7 +103,7 @@ async def run_tests() -> None:
         dev_a_token = dev_a["token"]
         step("Device A trusted", dev_a["trust_status"] == "trusted")
 
-        # Device B (second → pending)
+        # Device B (second → trusted)
         r = await http.post("/devices/register", headers=headers, json={
             "device_name": "Crypto Android",
             "platform": "android",
@@ -114,11 +114,7 @@ async def run_tests() -> None:
         dev_b = r.json()
         dev_b_id = dev_b["device_id"]
         dev_b_token = dev_b["token"]
-        step("Device B pending", dev_b["trust_status"] == "pending")
-
-        # Approve B
-        r = await http.post(f"/devices/{dev_b_id}/approve", headers=headers)
-        step("Approve Device B", r.status_code == 200)
+        step("Device B trusted", dev_b["trust_status"] == "trusted")
 
     # ------------------------------------------------------------------
     # 3. Encrypt plaintext with Device B's public key (SealedBox)

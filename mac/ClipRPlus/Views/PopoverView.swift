@@ -162,7 +162,7 @@ struct ClipItemRow: View {
                         .foregroundColor(showCopied ? Color.encryptedGreen : Color.textTertiary)
                         .frame(width: 16)
                         .transition(.opacity)
-                        .animation(.easeInOut(duration: Duration.micro), value: showCopied)
+                        .animation(.cliprInstant(Duration.micro), value: showCopied)
                 }
             }
             .padding(.horizontal, Layout.rowPaddingH)
@@ -210,7 +210,7 @@ struct ConnectionBadge: View {
     private func startPulseIfNeeded() {
         dotOpacity = 1.0
         guard isConnected else { return }
-        withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true)) {
+        withAnimation(.cliprPulse.repeatForever(autoreverses: true)) {
             dotOpacity = 0.35
         }
     }

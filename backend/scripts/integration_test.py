@@ -122,7 +122,7 @@ async def run_tests() -> None:
         step("Device A response includes device token",
              isinstance(dev_a_token, str) and len(dev_a_token) > 20)
 
-        # Device B — second device, must be pending
+        # Device B — second device, auto-trusted
         r = await http.post("/devices/register", headers=headers, json={
             "device_name": "Android Test",
             "platform": "android",
@@ -133,8 +133,8 @@ async def run_tests() -> None:
         dev_b = r.json()
         dev_b_id = dev_b["device_id"]
         dev_b_token = dev_b["token"]
-        step("Device B trust_status == 'pending'",
-             dev_b["trust_status"] == "pending",
+        step("Device B trust_status == 'trusted'",
+             dev_b["trust_status"] == "trusted",
              f"got '{dev_b['trust_status']}'")
 
         # Approve Device B via REST
@@ -345,18 +345,18 @@ async def run_tests() -> None:
 
     async with httpx.AsyncClient(base_url=BASE, timeout=10.0) as http:
         headers = {"Authorization": f"Bearer {account_token}"}
-        # Register Device C — pending, NOT approved
+        # Register Device C — auto-trusted
         r = await http.post("/devices/register", headers=headers, json={
             "device_name": "Rogue Device",
             "platform": "android",
             "public_key": base64.b64encode(b"fake-pubkey-c").decode(),
         })
-        step("Register Device C (pending)", r.status_code == 200)
+        step("Register Device C", r.status_code == 200)
         dev_c = r.json()
         dev_c_id = dev_c["device_id"]
         dev_c_token = dev_c["token"]
-        step("Device C is pending",
-             dev_c["trust_status"] == "pending",
+        step("Device C is trusted",
+             dev_c["trust_status"] == "trusted",
              f"got '{dev_c['trust_status']}'")
 
     ws_c_hdrs = {"Authorization": f"Bearer {dev_c_token}"}

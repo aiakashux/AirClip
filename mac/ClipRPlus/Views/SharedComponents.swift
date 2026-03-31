@@ -42,7 +42,7 @@ struct ClipTextField: View {
             .focused($isFocused)
         }
         .frame(height: 36)
-        .animation(.easeInOut(duration: Duration.micro), value: isFocused)
+        .animation(.cliprInstant(Duration.micro), value: isFocused)
     }
 }
 
@@ -77,7 +77,7 @@ struct ClipPrimaryButton: View {
         .buttonStyle(.plain)
         .disabled(isDisabled || isLoading)
         .onHover { isHovered = !isDisabled && $0 }
-        .animation(.easeInOut(duration: Duration.instant), value: isHovered)
+        .animation(.cliprInstant(), value: isHovered)
     }
 }
 
@@ -113,7 +113,7 @@ struct SegmentedPicker: View {
                         .strokeBorder(Color.borderSubtle, lineWidth: 0.5)
                 )
         )
-        .animation(.easeInOut(duration: Duration.instant), value: selected)
+        .animation(.cliprInstant(), value: selected)
     }
 }
 
