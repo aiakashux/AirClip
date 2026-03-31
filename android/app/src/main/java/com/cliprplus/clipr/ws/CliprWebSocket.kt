@@ -112,12 +112,6 @@ class CliprWebSocket(
         RedactingLogger.info("WS → ack message_id=$messageId")
     }
 
-    /** Send an approve_device message (docs/protocol.md §6.1). Caller must be trusted. */
-    fun approveDevice(targetDeviceId: String) {
-        sendJson(mapOf("type" to "approve_device", "target_device_id" to targetDeviceId))
-        RedactingLogger.info("WS → approve_device target=$targetDeviceId")
-    }
-
     // ------------------------------------------------------------------
     // Internal
     // ------------------------------------------------------------------

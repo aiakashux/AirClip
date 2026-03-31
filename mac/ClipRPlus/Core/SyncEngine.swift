@@ -239,12 +239,6 @@ final class SyncEngine: ObservableObject {
         )
     }
 
-    // MARK: - Device approval
-
-    func approveDevice(targetDeviceId: String) async {
-        await sendJSON(["type": "approve_device", "target_device_id": targetDeviceId])
-    }
-
     // MARK: - Helpers
 
     private func sendAck(messageId: String) async {
