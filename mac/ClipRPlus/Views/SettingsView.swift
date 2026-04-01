@@ -115,7 +115,7 @@ struct SettingsView: View {
             .frame(height: Layout.rowHeight)
         } else {
             ForEach(Array(devices.enumerated()), id: \.element.id) { idx, device in
-                DeviceRow(device: device) { approveDevice(device) }
+                DeviceRow(device: device)
                 if idx < devices.count - 1 {
                     HairlineDivider(leadingPad: Spacing.md)
                 }
@@ -207,57 +207,30 @@ struct SettingsView: View {
         isLoadingDevices = false
     }
 
-    private func approveDevice(_ device: DeviceInfo) {
-        Task {
-            do {
-                try await APIClient.shared.approveDevice(id: device.id)
-                await SyncEngine.shared.approveDevice(targetDeviceId: device.id)
-                await loadDevices()
-            } catch { errorMessage = "Failed to approve: \(error.localizedDescription)" }
-        }
-    }
 }
 
 // MARK: - Device Row
 
 struct DeviceRow: View {
     let device: DeviceInfo
-    let onApprove: () -> Void
     @State private var isHovered = false
 
     var body: some View {
         HStack(spacing: Spacing.sm) {
             Circle()
-                .fill(device.trustStatus == "approved" ? Color.encryptedGreen : Color.warningYellow)
+                .fill(Color.encryptedGreen)
                 .frame(width: 6, height: 6)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(device.name)
                     .font(.cliprBody)
                     .foregroundColor(.textPrimary)
-                Text(device.trustStatus == "approved" ? "Approved" : "Pending approval")
+                Text("Trusted")
                     .font(.cliprCaption)
-                    .foregroundColor(device.trustStatus == "approved" ? Color.encryptedGreen : Color.warningYellow)
+                    .foregroundColor(Color.encryptedGreen)
             }
 
             Spacer()
-
-            if device.trustStatus == "pending" {
-                Button("Approve", action: onApprove)
-                    .font(.cliprCaptionMed)
-                    .foregroundColor(Color.accent)
-                    .buttonStyle(.plain)
-                    .padding(.horizontal, Spacing.sm)
-                    .padding(.vertical, Spacing.xxs)
-                    .background(
-                        RoundedRectangle(cornerRadius: 5)
-                            .fill(Color.selectionFill)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 5)
-                                    .strokeBorder(Color.accent.opacity(0.3), lineWidth: 0.5)
-                            )
-                    )
-            }
         }
         .padding(.horizontal, Spacing.md)
         .frame(minHeight: 44)

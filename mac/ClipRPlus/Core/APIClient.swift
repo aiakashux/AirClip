@@ -103,14 +103,6 @@ final class APIClient {
         return try await get(path: "/devices/", token: token)
     }
 
-    func approveDevice(id: String) async throws {
-        guard let token = AuthManager.shared.accountToken else { throw APIError.noToken }
-        let _: EmptyResponse = try await post(
-            path: "/devices/\(id)/approve",
-            body: EmptyBody(),
-            token: token
-        )
-    }
 
     // MARK: Clips catch-up
 
