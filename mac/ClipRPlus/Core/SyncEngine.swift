@@ -174,13 +174,11 @@ final class SyncEngine: ObservableObject {
         ciphertextB64: String,
         nonceB64: String
     ) async {
-        guard let senderKey = await resolveSenderPublicKey(deviceId: fromDeviceId) else { return }
-
         do {
             let plaintext = try CryptoManager.shared.decrypt(
                 ciphertextBase64: ciphertextB64,
                 nonceBase64: nonceB64,
-                senderPublicKeyBase64: senderKey
+                senderPublicKeyBase64: ""
             )
 
             // Hash dedup — guards against echo loops
@@ -256,8 +254,4 @@ final class SyncEngine: ObservableObject {
         }
     }
 
-    private func resolveSenderPublicKey(deviceId: String) async -> String? {
-        guard let devices = try? await APIClient.shared.listDevices() else { return nil }
-        return devices.first(where: { $0.id == deviceId })?.publicKey
-    }
 }
