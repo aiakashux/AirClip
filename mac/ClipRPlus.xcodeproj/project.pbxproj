@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		57232E7C2F82524000626D59 /* Clibsodium in Frameworks */ = {isa = PBXBuildFile; productRef = 57232E7B2F82524000626D59 /* Clibsodium */; };
+		57232E7E2F82524000626D59 /* Sodium in Frameworks */ = {isa = PBXBuildFile; productRef = 57232E7D2F82524000626D59 /* Sodium */; };
 		AA0200000000000000000001 /* ClipRPlusApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000001 /* ClipRPlusApp.swift */; };
 		AA0200000000000000000002 /* AppConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000002 /* AppConfig.swift */; };
 		AA0200000000000000000003 /* StatusBarController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000003 /* StatusBarController.swift */; };
@@ -48,6 +50,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				57232E7C2F82524000626D59 /* Clibsodium in Frameworks */,
+				57232E7E2F82524000626D59 /* Sodium in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -169,6 +173,9 @@
 				Base,
 			);
 			mainGroup = AA0300000000000000000001;
+			packageReferences = (
+				57232E7A2F82524000626D59 /* XCRemoteSwiftPackageReference "swift-sodium" */,
+			);
 			productRefGroup = AA0300000000000000000007 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -397,6 +404,30 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		57232E7A2F82524000626D59 /* XCRemoteSwiftPackageReference "swift-sodium" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/jedisct1/swift-sodium";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.10.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		57232E7B2F82524000626D59 /* Clibsodium */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 57232E7A2F82524000626D59 /* XCRemoteSwiftPackageReference "swift-sodium" */;
+			productName = Clibsodium;
+		};
+		57232E7D2F82524000626D59 /* Sodium */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 57232E7A2F82524000626D59 /* XCRemoteSwiftPackageReference "swift-sodium" */;
+			productName = Sodium;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = AA0600000000000000000002 /* Project object */;
 }
