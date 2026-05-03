@@ -863,7 +863,7 @@ private struct SettingsPage: View {
                         Text("Sign out")
                             .font(.ringBody)
                     }
-                    .foregroundColor(Color.destructiveRedRed)
+                    .foregroundColor(Color.destructiveRed)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 14)
                     .frame(height: 40)
@@ -942,7 +942,7 @@ private struct SettingsPage: View {
                 Button { LocalHistoryStore.shared.clearAll() } label: {
                     Text("Clear local history")
                         .font(.ringBody)
-                        .foregroundColor(Color.destructiveRedRed)
+                        .foregroundColor(Color.destructiveRed)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 14)
                         .frame(height: 40)
