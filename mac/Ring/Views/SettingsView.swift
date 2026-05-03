@@ -13,7 +13,7 @@ struct SettingsView: View {
         VStack(spacing: 0) {
             HStack {
                 Text("Settings")
-                    .font(.cliprTitle2)
+                    .font(.ringTitle2)
                     .foregroundColor(.textPrimary)
                 Spacer()
             }
@@ -26,7 +26,7 @@ struct SettingsView: View {
                     settingsSection("Account") {
                         settingsRow("Email") {
                             Text(authManager.accountEmail ?? "—")
-                                .font(.cliprBody)
+                                .font(.ringBody)
                                 .foregroundColor(.textSecondary)
                         }
                     }
@@ -34,7 +34,7 @@ struct SettingsView: View {
                     settingsSection("This device") {
                         settingsRow("Name") {
                             TextField("", text: $deviceName)
-                                .font(.cliprBody)
+                                .font(.ringBody)
                                 .foregroundColor(.textPrimary)
                                 .textFieldStyle(.plain)
                                 .multilineTextAlignment(.trailing)
@@ -51,7 +51,7 @@ struct SettingsView: View {
                     settingsSection("Server") {
                         settingsRow("URL") {
                             TextField("", text: $serverURL)
-                                .font(.cliprMono)
+                                .font(.ringMono)
                                 .foregroundColor(.textSecondary)
                                 .textFieldStyle(.plain)
                                 .multilineTextAlignment(.trailing)
@@ -63,7 +63,7 @@ struct SettingsView: View {
                         Button(action: { LocalHistoryStore.shared.clearAll() }) {
                             HStack {
                                 Text("Clear local history")
-                                    .font(.cliprBody)
+                                    .font(.ringBody)
                                     .foregroundColor(Color.destructiveRed)
                                 Spacer()
                             }
@@ -75,7 +75,7 @@ struct SettingsView: View {
 
                     if let err = errorMessage {
                         Text(err)
-                            .font(.cliprCaption)
+                            .font(.ringCaption)
                             .foregroundColor(Color.destructiveRed)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.horizontal, Spacing.sm)
@@ -107,7 +107,7 @@ struct SettingsView: View {
         } else if devices.isEmpty {
             HStack {
                 Text("No other devices")
-                    .font(.cliprBody)
+                    .font(.ringBody)
                     .foregroundColor(.textTertiary)
                 Spacer()
             }
@@ -129,7 +129,7 @@ struct SettingsView: View {
                 Image(systemName: "arrow.clockwise")
                     .font(.system(size: 11, weight: .regular))
                 Text("Refresh")
-                    .font(.cliprBody)
+                    .font(.ringBody)
             }
             .foregroundColor(Color.accent)
             .padding(.horizontal, Spacing.md)
@@ -148,7 +148,7 @@ struct SettingsView: View {
         VStack(spacing: 0) {
             HStack {
                 Text(title)
-                    .font(.cliprCaptionMed)
+                    .font(.ringCaptionMed)
                     .foregroundColor(.textTertiary)
                 Spacer()
             }
@@ -176,7 +176,7 @@ struct SettingsView: View {
     ) -> some View {
         HStack {
             Text(label)
-                .font(.cliprBody)
+                .font(.ringBody)
                 .foregroundColor(.textPrimary)
             Spacer()
             value()
@@ -223,10 +223,10 @@ struct DeviceRow: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(device.name)
-                    .font(.cliprBody)
+                    .font(.ringBody)
                     .foregroundColor(.textPrimary)
                 Text("Trusted")
-                    .font(.cliprCaption)
+                    .font(.ringCaption)
                     .foregroundColor(Color.encryptedGreen)
             }
 

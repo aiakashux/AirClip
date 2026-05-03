@@ -10,10 +10,10 @@ struct ClipTextField: View {
 
     var body: some View {
         ZStack(alignment: .leading) {
-            RoundedRectangle(cornerRadius: 7)
+            RoundedRectangle(cornerRadius: Radius.md)
                 .fill(Color.bgElevated)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 7)
+                    RoundedRectangle(cornerRadius: Radius.md)
                         .strokeBorder(
                             isFocused ? Color.borderFocus : Color.borderDefault,
                             lineWidth: 1
@@ -25,24 +25,24 @@ struct ClipTextField: View {
                     SecureField(
                         "",
                         text: $text,
-                        prompt: Text(placeholder).foregroundColor(.textPlaceholder)
+                        prompt: Text(placeholder).foregroundColor(.textTertiary)
                     )
                 } else {
                     TextField(
                         "",
                         text: $text,
-                        prompt: Text(placeholder).foregroundColor(.textPlaceholder)
+                        prompt: Text(placeholder).foregroundColor(.textTertiary)
                     )
                 }
             }
-            .font(.cliprBody)
+            .font(.ringBody)
             .foregroundColor(.textPrimary)
             .textFieldStyle(.plain)
-            .padding(.horizontal, 12)
+            .padding(.horizontal, Spacing.sm)
             .focused($isFocused)
         }
-        .frame(height: 36)
-        .animation(.cliprInstant(Duration.micro), value: isFocused)
+        .frame(height: Layout.inputHeight)
+        .animation(.spring(response: 0.22, dampingFraction: 0.82), value: isFocused)
     }
 }
 
@@ -58,26 +58,26 @@ struct ClipPrimaryButton: View {
     var body: some View {
         Button(action: action) {
             ZStack {
-                RoundedRectangle(cornerRadius: 8)
+                RoundedRectangle(cornerRadius: Radius.md)
                     .fill(
                         isDisabled ? Color.accent.opacity(0.35) :
                         isHovered  ? Color.accentDeep : Color.accent
                     )
-                    .frame(height: 36)
+                    .frame(height: Layout.buttonHeight)
 
                 if isLoading {
                     ProgressView().scaleEffect(0.65).tint(.white)
                 } else {
                     Text(title)
-                        .font(.cliprBodyMedium)
-                        .foregroundColor(.white.opacity(isDisabled ? 0.5 : 1))
+                        .font(.ringBodyMedium)
+                        .foregroundColor(.white.opacity(isDisabled ? 0.45 : 1))
                 }
             }
         }
         .buttonStyle(.plain)
         .disabled(isDisabled || isLoading)
         .onHover { isHovered = !isDisabled && $0 }
-        .animation(.cliprInstant(), value: isHovered)
+        .animation(.spring(response: 0.20, dampingFraction: 0.80), value: isHovered)
     }
 }
 
@@ -89,13 +89,13 @@ struct SegmentedPicker: View {
     let onSelect: (Int) -> Void
 
     var body: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: Spacing.xxs) {
             ForEach(Array(options.enumerated()), id: \.offset) { idx, label in
                 Button(label) { onSelect(idx) }
-                    .font(idx == selected ? .cliprCaptionMed : .cliprCaption)
+                    .font(idx == selected ? .ringCaptionMed : .ringCaption)
                     .foregroundColor(idx == selected ? .textPrimary : .textSecondary)
                     .frame(maxWidth: .infinity)
-                    .frame(height: 26)
+                    .frame(height: 28)
                     .background(
                         idx == selected ?
                         RoundedRectangle(cornerRadius: Layout.segmentCornerRadius)
@@ -104,16 +104,16 @@ struct SegmentedPicker: View {
                     .buttonStyle(.plain)
             }
         }
-        .padding(3)
+        .padding(Spacing.xxs)
         .background(
-            RoundedRectangle(cornerRadius: Layout.segmentCornerRadius + 2)
+            RoundedRectangle(cornerRadius: Radius.md)
                 .fill(Color.bgElevated)
                 .overlay(
-                    RoundedRectangle(cornerRadius: Layout.segmentCornerRadius + 2)
+                    RoundedRectangle(cornerRadius: Radius.md)
                         .strokeBorder(Color.borderSubtle, lineWidth: 0.5)
                 )
         )
-        .animation(.cliprInstant(), value: selected)
+        .animation(.spring(response: 0.20, dampingFraction: 0.82), value: selected)
     }
 }
 
@@ -123,10 +123,10 @@ struct IconButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .background(
-                RoundedRectangle(cornerRadius: 6)
+                RoundedRectangle(cornerRadius: Radius.sm)
                     .fill(configuration.isPressed ? Color.activeFill : Color.clear)
             )
-            .animation(.easeInOut(duration: Duration.micro), value: configuration.isPressed)
+            .animation(.spring(response: 0.18, dampingFraction: 0.80), value: configuration.isPressed)
     }
 }
 

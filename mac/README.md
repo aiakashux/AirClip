@@ -1,6 +1,6 @@
-# Clipr+ macOS Client
+# Ring macOS Client
 
-Native Swift menu-bar app for Clipr+. Requires macOS 14 (Sonoma) or later.
+Native Swift menu-bar app for Ring. Requires macOS 14 (Sonoma) or later.
 
 ## Requirements
 
@@ -10,8 +10,8 @@ Native Swift menu-bar app for Clipr+. Requires macOS 14 (Sonoma) or later.
 
 ## Build & Run
 
-1. Open `ClipRPlus.xcodeproj` in Xcode
-2. Select the **ClipRPlus** scheme and your Mac as the run destination
+1. Open `Ring.xcodeproj` in Xcode
+2. Select the **Ring** scheme and your Mac as the run destination
 3. In **Signing & Capabilities**, set your development team
 4. Press **⌘R** to build and run
 
@@ -21,8 +21,8 @@ The app hides from the Dock (`LSUIElement = YES`). Look for the clipboard icon i
 
 ```
 mac/
-  ClipRPlus/
-    ClipRPlusApp.swift          @main entry point + AppDelegate
+  Ring/
+    RingApp.swift          @main entry point + AppDelegate
     AppConfig.swift             Default server URL + constants
     MenuBar/
       StatusBarController.swift NSStatusItem + NSPopover management
@@ -39,8 +39,8 @@ mac/
       APIClient.swift           REST calls (URLSession async/await)
     Resources/
       Info.plist
-    ClipRPlus.entitlements
-  ClipRPlus.xcodeproj/
+    Ring.entitlements
+  Ring.xcodeproj/
 ```
 
 ## Security Properties
@@ -57,7 +57,7 @@ mac/
 
 ## Server URL
 
-Default: `https://api.cliprplus.com`
+Default: `https://api.ring.com`
 
 To switch to a dev server, open **Settings** from the popover and update the Server URL field.
 

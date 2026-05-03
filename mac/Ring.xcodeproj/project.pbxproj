@@ -9,7 +9,7 @@
 /* Begin PBXBuildFile section */
 		57232E7C2F82524000626D59 /* Clibsodium in Frameworks */ = {isa = PBXBuildFile; productRef = 57232E7B2F82524000626D59 /* Clibsodium */; };
 		57232E7E2F82524000626D59 /* Sodium in Frameworks */ = {isa = PBXBuildFile; productRef = 57232E7D2F82524000626D59 /* Sodium */; };
-		AA0200000000000000000001 /* ClipRPlusApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000001 /* ClipRPlusApp.swift */; };
+		AA0200000000000000000001 /* RingApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000001 /* RingApp.swift */; };
 		AA0200000000000000000002 /* AppConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000002 /* AppConfig.swift */; };
 		AA0200000000000000000003 /* StatusBarController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000003 /* StatusBarController.swift */; };
 		AA0200000000000000000004 /* PopoverView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000004 /* PopoverView.swift */; };
@@ -26,7 +26,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		AA0100000000000000000001 /* ClipRPlusApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipRPlusApp.swift; sourceTree = "<group>"; };
+		AA0100000000000000000001 /* RingApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RingApp.swift; sourceTree = "<group>"; };
 		AA0100000000000000000002 /* AppConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfig.swift; sourceTree = "<group>"; };
 		AA0100000000000000000003 /* StatusBarController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusBarController.swift; sourceTree = "<group>"; };
 		AA0100000000000000000004 /* PopoverView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PopoverView.swift; sourceTree = "<group>"; };
@@ -39,8 +39,8 @@
 		AA010000000000000000000B /* AuthManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthManager.swift; sourceTree = "<group>"; };
 		AA010000000000000000000C /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
 		AA010000000000000000000D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		AA010000000000000000000E /* ClipRPlus.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ClipRPlus.entitlements; sourceTree = "<group>"; };
-		AA010000000000000000000F /* ClipRPlus.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ClipRPlus.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		AA010000000000000000000E /* Ring.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Ring.entitlements; sourceTree = "<group>"; };
+		AA010000000000000000000F /* Ring.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Ring.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA0100000000000000000010 /* DesignTokens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignTokens.swift; sourceTree = "<group>"; };
 		AA0100000000000000000011 /* SharedComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedComponents.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -61,24 +61,24 @@
 		AA0300000000000000000001 = {
 			isa = PBXGroup;
 			children = (
-				AA0300000000000000000002 /* ClipRPlus */,
+				AA0300000000000000000002 /* Ring */,
 				AA0300000000000000000007 /* Products */,
 			);
 			sourceTree = "<group>";
 		};
-		AA0300000000000000000002 /* ClipRPlus */ = {
+		AA0300000000000000000002 /* Ring */ = {
 			isa = PBXGroup;
 			children = (
-				AA0100000000000000000001 /* ClipRPlusApp.swift */,
+				AA0100000000000000000001 /* RingApp.swift */,
 				AA0100000000000000000002 /* AppConfig.swift */,
 				AA0100000000000000000010 /* DesignTokens.swift */,
-				AA010000000000000000000E /* ClipRPlus.entitlements */,
+				AA010000000000000000000E /* Ring.entitlements */,
 				AA0300000000000000000003 /* MenuBar */,
 				AA0300000000000000000004 /* Views */,
 				AA0300000000000000000005 /* Core */,
 				AA0300000000000000000006 /* Resources */,
 			);
-			path = ClipRPlus;
+			path = Ring;
 			sourceTree = "<group>";
 		};
 		AA0300000000000000000003 /* MenuBar */ = {
@@ -124,7 +124,7 @@
 		AA0300000000000000000007 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				AA010000000000000000000F /* ClipRPlus.app */,
+				AA010000000000000000000F /* Ring.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -132,9 +132,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		AA0600000000000000000001 /* ClipRPlus */ = {
+		AA0600000000000000000001 /* Ring */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = AA0500000000000000000006 /* Build configuration list for PBXNativeTarget "ClipRPlus" */;
+			buildConfigurationList = AA0500000000000000000006 /* Build configuration list for PBXNativeTarget "Ring" */;
 			buildPhases = (
 				AA0400000000000000000001 /* Sources */,
 				AA0400000000000000000002 /* Frameworks */,
@@ -144,9 +144,9 @@
 			);
 			dependencies = (
 			);
-			name = ClipRPlus;
-			productName = ClipRPlus;
-			productReference = AA010000000000000000000F /* ClipRPlus.app */;
+			name = Ring;
+			productName = Ring;
+			productReference = AA010000000000000000000F /* Ring.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -164,7 +164,7 @@
 					};
 				};
 			};
-			buildConfigurationList = AA0500000000000000000005 /* Build configuration list for PBXProject "ClipRPlus" */;
+			buildConfigurationList = AA0500000000000000000005 /* Build configuration list for PBXProject "Ring" */;
 			compatibilityVersion = "Xcode 14.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
@@ -180,7 +180,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				AA0600000000000000000001 /* ClipRPlus */,
+				AA0600000000000000000001 /* Ring */,
 			);
 		};
 /* End PBXProject section */
@@ -200,7 +200,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				AA0200000000000000000001 /* ClipRPlusApp.swift in Sources */,
+				AA0200000000000000000001 /* RingApp.swift in Sources */,
 				AA0200000000000000000002 /* AppConfig.swift in Sources */,
 				AA0200000000000000000003 /* StatusBarController.swift in Sources */,
 				AA0200000000000000000004 /* PopoverView.swift in Sources */,
@@ -341,19 +341,19 @@
 		AA0500000000000000000003 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = ClipRPlus/ClipRPlus.entitlements;
+				CODE_SIGN_ENTITLEMENTS = Ring/Ring.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				DEAD_CODE_STRIPPING = YES;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
-				INFOPLIST_FILE = ClipRPlus/Resources/Info.plist;
+				INFOPLIST_FILE = Ring/Resources/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.cliprplus.clipr;
+				PRODUCT_BUNDLE_IDENTIFIER = com.ring.ring;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.9;
@@ -363,19 +363,19 @@
 		AA0500000000000000000004 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = ClipRPlus/ClipRPlus.entitlements;
+				CODE_SIGN_ENTITLEMENTS = Ring/Ring.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				DEAD_CODE_STRIPPING = YES;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
-				INFOPLIST_FILE = ClipRPlus/Resources/Info.plist;
+				INFOPLIST_FILE = Ring/Resources/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.cliprplus.clipr;
+				PRODUCT_BUNDLE_IDENTIFIER = com.ring.ring;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.9;
@@ -385,7 +385,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		AA0500000000000000000005 /* Build configuration list for PBXProject "ClipRPlus" */ = {
+		AA0500000000000000000005 /* Build configuration list for PBXProject "Ring" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				AA0500000000000000000001 /* Debug */,
@@ -394,7 +394,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		AA0500000000000000000006 /* Build configuration list for PBXNativeTarget "ClipRPlus" */ = {
+		AA0500000000000000000006 /* Build configuration list for PBXNativeTarget "Ring" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				AA0500000000000000000003 /* Debug */,
