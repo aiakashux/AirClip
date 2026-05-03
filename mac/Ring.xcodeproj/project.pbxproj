@@ -23,6 +23,8 @@
 		AA020000000000000000000C /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA010000000000000000000C /* APIClient.swift */; };
 		AA0200000000000000000010 /* DesignTokens.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000010 /* DesignTokens.swift */; };
 		AA0200000000000000000011 /* SharedComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000011 /* SharedComponents.swift */; };
+		AA0200000000000000000012 /* ClipTypeDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000012 /* ClipTypeDetector.swift */; };
+		AA0200000000000000000013 /* MainWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000013 /* MainWindowView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -43,6 +45,8 @@
 		AA010000000000000000000F /* Ring.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Ring.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA0100000000000000000010 /* DesignTokens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignTokens.swift; sourceTree = "<group>"; };
 		AA0100000000000000000011 /* SharedComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedComponents.swift; sourceTree = "<group>"; };
+		AA0100000000000000000012 /* ClipTypeDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipTypeDetector.swift; sourceTree = "<group>"; };
+		AA0100000000000000000013 /* MainWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainWindowView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -96,6 +100,8 @@
 				AA0100000000000000000005 /* SettingsView.swift */,
 				AA0100000000000000000006 /* OnboardingView.swift */,
 				AA0100000000000000000011 /* SharedComponents.swift */,
+				AA0100000000000000000012 /* ClipTypeDetector.swift */,
+				AA0100000000000000000013 /* MainWindowView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -214,6 +220,8 @@
 				AA020000000000000000000C /* APIClient.swift in Sources */,
 				AA0200000000000000000010 /* DesignTokens.swift in Sources */,
 				AA0200000000000000000011 /* SharedComponents.swift in Sources */,
+				AA0200000000000000000012 /* ClipTypeDetector.swift in Sources */,
+				AA0200000000000000000013 /* MainWindowView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
