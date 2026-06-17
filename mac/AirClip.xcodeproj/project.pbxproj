@@ -1,0 +1,503 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		57232E7C2F82524000626D59 /* Clibsodium in Frameworks */ = {isa = PBXBuildFile; productRef = 57232E7B2F82524000626D59 /* Clibsodium */; };
+		57232E7E2F82524000626D59 /* Sodium in Frameworks */ = {isa = PBXBuildFile; productRef = 57232E7D2F82524000626D59 /* Sodium */; };
+		AA0200000000000000000023 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000023 /* Assets.xcassets */; };
+		AA0200000000000000000001 /* AirClipApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000001 /* AirClipApp.swift */; };
+		AA0200000000000000000002 /* AppConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000002 /* AppConfig.swift */; };
+		AA0200000000000000000003 /* StatusBarController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000003 /* StatusBarController.swift */; };
+		AA0200000000000000000004 /* PopoverView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000004 /* PopoverView.swift */; };
+		AA0200000000000000000005 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000005 /* SettingsView.swift */; };
+		AA0200000000000000000006 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000006 /* OnboardingView.swift */; };
+		AA0200000000000000000007 /* ClipboardMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000007 /* ClipboardMonitor.swift */; };
+		AA0200000000000000000008 /* CryptoManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000008 /* CryptoManager.swift */; };
+		AA0200000000000000000009 /* SyncEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000009 /* SyncEngine.swift */; };
+		AA020000000000000000000A /* LocalHistoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA010000000000000000000A /* LocalHistoryStore.swift */; };
+		AA020000000000000000000B /* AuthManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA010000000000000000000B /* AuthManager.swift */; };
+		AA020000000000000000000C /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA010000000000000000000C /* APIClient.swift */; };
+		AA0200000000000000000010 /* DesignTokens.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000010 /* DesignTokens.swift */; };
+		AA0200000000000000000011 /* SharedComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000011 /* SharedComponents.swift */; };
+		AA0200000000000000000012 /* ClipTypeDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000012 /* ClipTypeDetector.swift */; };
+		AA0200000000000000000013 /* MainWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000013 /* MainWindowView.swift */; };
+		AA020000000000000000001D /* AirClipIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA010000000000000000001D /* AirClipIcon.swift */; };
+		AA0200000000000000000014 /* PeerConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000014 /* PeerConnection.swift */; };
+		AA0200000000000000000015 /* PeerManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000015 /* PeerManager.swift */; };
+		AA0200000000000000000016 /* LanServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000016 /* LanServer.swift */; };
+		AA0200000000000000000017 /* LanBrowser.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000017 /* LanBrowser.swift */; };
+		AA020000000000000000001A /* AirClipIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA010000000000000000001A /* AirClipIdentity.swift */; };
+		AA020000000000000000001B /* PairingSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA010000000000000000001B /* PairingSession.swift */; };
+		AA020000000000000000001C /* PairingClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA010000000000000000001C /* PairingClient.swift */; };
+		AA020000000000000000001E /* AppAppearanceStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA010000000000000000001E /* AppAppearanceStore.swift */; };
+		AA020000000000000000001F /* SyncMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA010000000000000000001F /* SyncMode.swift */; };
+		AA0200000000000000000020 /* SyncModeStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000020 /* SyncModeStore.swift */; };
+		AA0200000000000000000021 /* SensitiveClipboardPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000021 /* SensitiveClipboardPolicy.swift */; };
+		AA0200000000000000000022 /* SensitiveClipboardProtectionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000022 /* SensitiveClipboardProtectionStore.swift */; };
+		AA0200000000000000000023 /* UnreadStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000023 /* UnreadStore.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		AA0100000000000000000001 /* AirClipApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AirClipApp.swift; sourceTree = "<group>"; };
+		AA0100000000000000000002 /* AppConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfig.swift; sourceTree = "<group>"; };
+		AA0100000000000000000003 /* StatusBarController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusBarController.swift; sourceTree = "<group>"; };
+		AA0100000000000000000004 /* PopoverView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PopoverView.swift; sourceTree = "<group>"; };
+		AA0100000000000000000005 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		AA0100000000000000000006 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
+		AA0100000000000000000007 /* ClipboardMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipboardMonitor.swift; sourceTree = "<group>"; };
+		AA0100000000000000000008 /* CryptoManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CryptoManager.swift; sourceTree = "<group>"; };
+		AA0100000000000000000009 /* SyncEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncEngine.swift; sourceTree = "<group>"; };
+		AA010000000000000000000A /* LocalHistoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalHistoryStore.swift; sourceTree = "<group>"; };
+		AA010000000000000000000B /* AuthManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthManager.swift; sourceTree = "<group>"; };
+		AA010000000000000000000C /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
+		AA010000000000000000000D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		AA010000000000000000000E /* AirClip.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AirClip.entitlements; sourceTree = "<group>"; };
+		AA010000000000000000000F /* AirClip.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AirClip.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		AA0100000000000000000023 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		AA0100000000000000000010 /* DesignTokens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignTokens.swift; sourceTree = "<group>"; };
+		AA0100000000000000000011 /* SharedComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedComponents.swift; sourceTree = "<group>"; };
+		AA0100000000000000000012 /* ClipTypeDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipTypeDetector.swift; sourceTree = "<group>"; };
+		AA0100000000000000000013 /* MainWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainWindowView.swift; sourceTree = "<group>"; };
+		AA010000000000000000001D /* AirClipIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AirClipIcon.swift; sourceTree = "<group>"; };
+		AA0100000000000000000014 /* PeerConnection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeerConnection.swift; sourceTree = "<group>"; };
+		AA0100000000000000000015 /* PeerManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeerManager.swift; sourceTree = "<group>"; };
+		AA0100000000000000000016 /* LanServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LanServer.swift; sourceTree = "<group>"; };
+		AA0100000000000000000017 /* LanBrowser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LanBrowser.swift; sourceTree = "<group>"; };
+		AA010000000000000000001A /* AirClipIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AirClipIdentity.swift; sourceTree = "<group>"; };
+		AA010000000000000000001B /* PairingSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingSession.swift; sourceTree = "<group>"; };
+		AA010000000000000000001C /* PairingClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingClient.swift; sourceTree = "<group>"; };
+		AA010000000000000000001E /* AppAppearanceStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppAppearanceStore.swift; sourceTree = "<group>"; };
+		AA010000000000000000001F /* SyncMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncMode.swift; sourceTree = "<group>"; };
+		AA0100000000000000000020 /* SyncModeStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncModeStore.swift; sourceTree = "<group>"; };
+		AA0100000000000000000021 /* SensitiveClipboardPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SensitiveClipboardPolicy.swift; sourceTree = "<group>"; };
+		AA0100000000000000000022 /* SensitiveClipboardProtectionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SensitiveClipboardProtectionStore.swift; sourceTree = "<group>"; };
+		AA0100000000000000000023 /* UnreadStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnreadStore.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		AA0400000000000000000002 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				57232E7C2F82524000626D59 /* Clibsodium in Frameworks */,
+				57232E7E2F82524000626D59 /* Sodium in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		AA0300000000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				AA0300000000000000000002 /* AirClip */,
+				AA0300000000000000000007 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		AA0300000000000000000002 /* AirClip */ = {
+			isa = PBXGroup;
+			children = (
+				AA0100000000000000000001 /* AirClipApp.swift */,
+				AA0100000000000000000002 /* AppConfig.swift */,
+				AA0100000000000000000010 /* DesignTokens.swift */,
+				AA010000000000000000000E /* AirClip.entitlements */,
+				AA0100000000000000000023 /* Assets.xcassets */,
+				AA0300000000000000000003 /* MenuBar */,
+				AA0300000000000000000004 /* Views */,
+				AA0300000000000000000005 /* Core */,
+				AA0300000000000000000006 /* Resources */,
+			);
+			path = AirClip;
+			sourceTree = "<group>";
+		};
+		AA0300000000000000000003 /* MenuBar */ = {
+			isa = PBXGroup;
+			children = (
+				AA0100000000000000000003 /* StatusBarController.swift */,
+			);
+			path = MenuBar;
+			sourceTree = "<group>";
+		};
+		AA0300000000000000000004 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				AA0100000000000000000004 /* PopoverView.swift */,
+				AA0100000000000000000005 /* SettingsView.swift */,
+				AA0100000000000000000006 /* OnboardingView.swift */,
+				AA0100000000000000000011 /* SharedComponents.swift */,
+				AA010000000000000000001D /* AirClipIcon.swift */,
+				AA0100000000000000000012 /* ClipTypeDetector.swift */,
+				AA0100000000000000000013 /* MainWindowView.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		AA0300000000000000000005 /* Core */ = {
+			isa = PBXGroup;
+			children = (
+				AA0100000000000000000007 /* ClipboardMonitor.swift */,
+				AA010000000000000000001E /* AppAppearanceStore.swift */,
+				AA010000000000000000001F /* SyncMode.swift */,
+				AA0100000000000000000020 /* SyncModeStore.swift */,
+				AA0100000000000000000021 /* SensitiveClipboardPolicy.swift */,
+				AA0100000000000000000022 /* SensitiveClipboardProtectionStore.swift */,
+				AA0100000000000000000023 /* UnreadStore.swift */,
+				AA0100000000000000000008 /* CryptoManager.swift */,
+				AA0100000000000000000009 /* SyncEngine.swift */,
+				AA010000000000000000000A /* LocalHistoryStore.swift */,
+				AA010000000000000000000B /* AuthManager.swift */,
+				AA010000000000000000000C /* APIClient.swift */,
+				AA0100000000000000000014 /* PeerConnection.swift */,
+				AA0100000000000000000015 /* PeerManager.swift */,
+				AA0100000000000000000016 /* LanServer.swift */,
+				AA0100000000000000000017 /* LanBrowser.swift */,
+				AA010000000000000000001A /* AirClipIdentity.swift */,
+				AA010000000000000000001B /* PairingSession.swift */,
+				AA010000000000000000001C /* PairingClient.swift */,
+			);
+			path = Core;
+			sourceTree = "<group>";
+		};
+		AA0300000000000000000006 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				AA010000000000000000000D /* Info.plist */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		AA0300000000000000000007 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				AA010000000000000000000F /* AirClip.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		AA0600000000000000000001 /* AirClip */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AA0500000000000000000006 /* Build configuration list for PBXNativeTarget "AirClip" */;
+			buildPhases = (
+				AA0400000000000000000001 /* Sources */,
+				AA0400000000000000000002 /* Frameworks */,
+				AA0400000000000000000003 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = AirClip;
+			productName = AirClip;
+			productReference = AA010000000000000000000F /* AirClip.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		AA0600000000000000000002 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1500;
+				LastUpgradeCheck = 2610;
+				TargetAttributes = {
+					AA0600000000000000000001 = {
+						CreatedOnToolsVersion = 15.0;
+					};
+				};
+			};
+			buildConfigurationList = AA0500000000000000000005 /* Build configuration list for PBXProject "AirClip" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = AA0300000000000000000001;
+			packageReferences = (
+				57232E7A2F82524000626D59 /* XCRemoteSwiftPackageReference "swift-sodium" */,
+			);
+			productRefGroup = AA0300000000000000000007 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				AA0600000000000000000001 /* AirClip */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		AA0400000000000000000003 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AA0200000000000000000023 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		AA0400000000000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AA0200000000000000000001 /* AirClipApp.swift in Sources */,
+				AA0200000000000000000002 /* AppConfig.swift in Sources */,
+				AA0200000000000000000003 /* StatusBarController.swift in Sources */,
+				AA0200000000000000000004 /* PopoverView.swift in Sources */,
+				AA0200000000000000000005 /* SettingsView.swift in Sources */,
+				AA0200000000000000000006 /* OnboardingView.swift in Sources */,
+				AA0200000000000000000007 /* ClipboardMonitor.swift in Sources */,
+				AA0200000000000000000008 /* CryptoManager.swift in Sources */,
+				AA0200000000000000000009 /* SyncEngine.swift in Sources */,
+				AA020000000000000000000A /* LocalHistoryStore.swift in Sources */,
+				AA020000000000000000000B /* AuthManager.swift in Sources */,
+				AA020000000000000000000C /* APIClient.swift in Sources */,
+				AA0200000000000000000010 /* DesignTokens.swift in Sources */,
+				AA0200000000000000000011 /* SharedComponents.swift in Sources */,
+				AA020000000000000000001D /* AirClipIcon.swift in Sources */,
+				AA0200000000000000000012 /* ClipTypeDetector.swift in Sources */,
+				AA0200000000000000000013 /* MainWindowView.swift in Sources */,
+				AA0200000000000000000014 /* PeerConnection.swift in Sources */,
+				AA0200000000000000000015 /* PeerManager.swift in Sources */,
+				AA0200000000000000000016 /* LanServer.swift in Sources */,
+				AA0200000000000000000017 /* LanBrowser.swift in Sources */,
+				AA020000000000000000001A /* AirClipIdentity.swift in Sources */,
+				AA020000000000000000001B /* PairingSession.swift in Sources */,
+				AA020000000000000000001C /* PairingClient.swift in Sources */,
+				AA020000000000000000001E /* AppAppearanceStore.swift in Sources */,
+				AA020000000000000000001F /* SyncMode.swift in Sources */,
+				AA0200000000000000000020 /* SyncModeStore.swift in Sources */,
+				AA0200000000000000000021 /* SensitiveClipboardPolicy.swift in Sources */,
+				AA0200000000000000000022 /* SensitiveClipboardProtectionStore.swift in Sources */,
+				AA0200000000000000000023 /* UnreadStore.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		AA0500000000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		AA0500000000000000000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MTL_FAST_MATH = YES;
+				SDKROOT = macosx;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+			};
+			name = Release;
+		};
+		AA0500000000000000000003 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = AirClip/AirClip.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				DEAD_CODE_STRIPPING = YES;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
+				INFOPLIST_FILE = AirClip/Resources/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.airclip.airclip;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.9;
+			};
+			name = Debug;
+		};
+		AA0500000000000000000004 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = AirClip/AirClip.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				DEAD_CODE_STRIPPING = YES;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
+				INFOPLIST_FILE = AirClip/Resources/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.airclip.airclip;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.9;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		AA0500000000000000000005 /* Build configuration list for PBXProject "AirClip" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA0500000000000000000001 /* Debug */,
+				AA0500000000000000000002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AA0500000000000000000006 /* Build configuration list for PBXNativeTarget "AirClip" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA0500000000000000000003 /* Debug */,
+				AA0500000000000000000004 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		57232E7A2F82524000626D59 /* XCRemoteSwiftPackageReference "swift-sodium" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/jedisct1/swift-sodium";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.10.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		57232E7B2F82524000626D59 /* Clibsodium */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 57232E7A2F82524000626D59 /* XCRemoteSwiftPackageReference "swift-sodium" */;
+			productName = Clibsodium;
+		};
+		57232E7D2F82524000626D59 /* Sodium */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 57232E7A2F82524000626D59 /* XCRemoteSwiftPackageReference "swift-sodium" */;
+			productName = Sodium;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = AA0600000000000000000002 /* Project object */;
+}
