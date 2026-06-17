@@ -205,9 +205,7 @@ final class StatusBarController: NSObject {
     @objc private func contextOpenSettings() {
         if isPanelVisible { closePopover() }
         openMainWindow(onDesktopSpace: true)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-            NotificationCenter.default.post(name: .openSettingsTab, object: nil)
-        }
+        NotificationCenter.default.post(name: .openSettingsTab, object: nil)
     }
 
     @objc private func contextAbout() {
