@@ -30,6 +30,7 @@ final class StatusBarController: NSObject {
         item.button?.image?.accessibilityDescription = "AirClip"
         item.button?.action = #selector(togglePanel)
         item.button?.target = self
+        item.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
         statusItem = item
 
         unreadObserver = UnreadStore.shared.$hasUnread.sink { [weak self] hasUnread in
@@ -159,11 +160,62 @@ final class StatusBarController: NSObject {
     }
 
     @objc private func togglePanel() {
+        if let event = NSApp.currentEvent, event.type == .rightMouseUp {
+            showContextMenu()
+            return
+        }
         guard AirClipIdentity.shared.isPaired else {
             openMainWindow()
             return
         }
         if isPanelVisible { closePopover() } else { openPopover() }
+    }
+
+    private func showContextMenu() {
+        let menu = NSMenu()
+
+        let openItem = NSMenuItem(title: "Open AirClip", action: #selector(contextOpenApp), keyEquivalent: "")
+        openItem.target = self
+        menu.addItem(openItem)
+
+        let settingsItem = NSMenuItem(title: "Settings", action: #selector(contextOpenSettings), keyEquivalent: ",")
+        settingsItem.target = self
+        menu.addItem(settingsItem)
+
+        menu.addItem(.separator())
+
+        let aboutItem = NSMenuItem(title: "About AirClip", action: #selector(contextAbout), keyEquivalent: "")
+        aboutItem.target = self
+        menu.addItem(aboutItem)
+
+        menu.addItem(.separator())
+
+        let quitItem = NSMenuItem(title: "Quit AirClip", action: #selector(contextQuit), keyEquivalent: "q")
+        quitItem.target = self
+        menu.addItem(quitItem)
+
+        statusItem?.popUpMenu(menu)
+    }
+
+    @objc private func contextOpenApp() {
+        if isPanelVisible { closePopover() }
+        openMainWindow(onDesktopSpace: true)
+    }
+
+    @objc private func contextOpenSettings() {
+        if isPanelVisible { closePopover() }
+        openMainWindow(onDesktopSpace: true)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+            NotificationCenter.default.post(name: .openSettingsTab, object: nil)
+        }
+    }
+
+    @objc private func contextAbout() {
+        NSApp.orderFrontStandardAboutPanel(nil)
+    }
+
+    @objc private func contextQuit() {
+        NSApp.terminate(nil)
     }
 
     func openPopover() {
