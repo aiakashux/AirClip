@@ -4,6 +4,7 @@
       "filename" : "AppIcon.png",
       "idiom" : "mac",
       "platform" : "mac",
+      "scale" : "1x",
       "size" : "1024x1024"
     }
   ],
