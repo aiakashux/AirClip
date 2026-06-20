@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    AirClip widget — 4×1 home screen widget.
+    All four states live in a single layout; visibility is toggled by AirClipWidget.
+    States: no_devices | synced | pending | ready_to_send
+-->
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_background"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:paddingStart="16dp"
+    android:paddingEnd="12dp"
+    android:paddingTop="12dp"
+    android:paddingBottom="12dp">
+
+    <!-- Status dot (color set programmatically) -->
+    <TextView
+        android:id="@+id/widget_dot"
+        android:layout_width="8dp"
+        android:layout_height="8dp"
+        android:background="#848484"
+        android:layout_marginEnd="10dp" />
+
+    <!-- Text block (primary + secondary stacked) -->
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:layout_marginEnd="8dp">
+
+        <TextView
+            android:id="@+id/widget_primary"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="AirClip"
+            android:textColor="#EAEAEA"
+            android:textSize="13sp"
+            android:textStyle="normal"
+            android:maxLines="1"
+            android:ellipsize="end" />
+
+        <TextView
+            android:id="@+id/widget_secondary"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text=""
+            android:textColor="#848484"
+            android:textSize="11sp"
+            android:layout_marginTop="1dp"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:visibility="gone" />
+
+    </LinearLayout>
+
+    <!-- Action button (Paste / Send) — hidden for no_devices + synced states -->
+    <TextView
+        android:id="@+id/widget_action_btn"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Paste"
+        android:textColor="#EAEAEA"
+        android:textSize="12sp"
+        android:background="@drawable/widget_btn_background"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:paddingTop="6dp"
+        android:paddingBottom="6dp"
+        android:visibility="gone" />
+
+</LinearLayout>

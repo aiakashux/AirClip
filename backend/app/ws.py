@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import json
 import logging
-import uuid
-from datetime import datetime, timezone
 from typing import Dict, Optional, Tuple
 
 _log = logging.getLogger(__name__)
@@ -12,11 +10,6 @@ from fastapi import WebSocket, WebSocketDisconnect
 
 from . import storage
 from .auth import decode_token
-from .schemas import (
-    ClipboardMessage,
-    WSDeliverClipboard,
-    WSHello,
-)
 
 
 class ConnectionManager:
@@ -50,14 +43,12 @@ manager = ConnectionManager()
 async def authenticate_ws(ws: WebSocket) -> Optional[Tuple[dict, str]]:
     """Extract account and device_id from a device-scoped JWT.
 
-    Returns (account, device_id) or None.  The device_id is authoritative
-    — no client-supplied device_id is accepted.
+    Returns (account, device_id) or None. Authorization header only.
     """
     token = None
     auth_header = ws.headers.get("authorization", "").strip()
     if auth_header.startswith("Bearer "):
         token = auth_header[7:].strip() or None
-    # HIGH 4: query-param token fallback removed — Authorization header only
     if not token:
         return None
     try:
@@ -75,124 +66,13 @@ async def authenticate_ws(ws: WebSocket) -> Optional[Tuple[dict, str]]:
         return None
 
 
-async def deliver_pending(device_id: str) -> None:
-    """Deliver any queued messages to a newly connected device."""
-    messages = await storage.pop_pending_messages(device_id)
-    for msg in messages:
-        raw_seq = msg.get("seq")
-        if isinstance(raw_seq, bool):
-            _log.error(
-                "deliver_pending: msg %s has invalid seq=%r — skipping",
-                msg.get("id", "?"),
-                raw_seq,
-            )
-            continue
-        try:
-            seq = int(raw_seq)
-        except (TypeError, ValueError):
-            _log.error(
-                "deliver_pending: msg %s has invalid seq=%r — skipping",
-                msg.get("id", "?"),
-                raw_seq,
-            )
-            continue
-        if seq < 1:
-            _log.error(
-                "deliver_pending: msg %s has invalid seq=%r — skipping",
-                msg.get("id", "?"),
-                raw_seq,
-            )
-            continue
-        outbound = WSDeliverClipboard(
-            message_id=msg["id"],
-            from_device_id=msg["from_device_id"],
-            ciphertext=msg["ciphertext"],
-            nonce=msg["nonce"],
-            seq=seq,
-        )
-        await manager.send_json(device_id, outbound.model_dump())
-
-
-async def handle_heartbeat(device_id: str) -> None:
-    """Renew presence TTL and update last_seen timestamp."""
-    await storage.set_presence(device_id)
-    await storage.update_device_last_seen(device_id)
-
-
-async def handle_send_clipboard(
-    account: dict, caller_device_id: str, data: dict,
-) -> None:
-    """Route encrypted clipboard payloads.  Only trusted devices may send."""
-    caller = await storage.get_device(caller_device_id)
-    if not caller or caller["trust_status"] != "trusted":
-        return
-
-    for payload in data.get("payloads", []):
-        to_device_id = payload["to_device_id"]
-        target = await storage.get_device(to_device_id)
-        if not target or target["account_id"] != account["id"]:
-            continue
-        if target["trust_status"] != "trusted":
-            continue
-
-        msg_id = str(uuid.uuid4())
-        seq = await storage.next_clip_seq(account["id"])
-        msg = ClipboardMessage(
-            id=msg_id,
-            from_device_id=caller_device_id,
-            to_device_id=to_device_id,
-            created_at=datetime.now(timezone.utc),
-            ciphertext=payload["ciphertext"],
-            nonce=payload["nonce"],
-        )
-
-        # HIGH 1: include seq in the stored dict so pending delivery also carries it
-        msg_dict = {**msg.model_dump(mode="json"), "seq": seq}
-        # Always store in history buffer (30-min catch-up for offline devices)
-        await storage.store_clip_history(account["id"], seq, msg_dict)
-
-        delivered = await manager.send_json(
-            to_device_id,
-            WSDeliverClipboard(
-                message_id=msg_id,
-                from_device_id=caller_device_id,
-                ciphertext=payload["ciphertext"],
-                nonce=payload["nonce"],
-                seq=seq,
-            ).model_dump(),
-        )
-
-        if not delivered:
-            await storage.store_clipboard_message(msg_dict)
-
-
-async def handle_ack(account_id: str, device_id: str, data: dict) -> None:
-    """Delete message only if this device is the intended recipient."""
-    msg_id = data.get("message_id")
-    if not msg_id:
-        return
-    msg = await storage.get_clipboard_message(msg_id)
-    if not msg:
-        return  # already deleted, expired, or live-delivered
-    if msg["to_device_id"] != device_id:
-        return  # caller is not the intended recipient
-    await storage.delete_clipboard_message(msg_id)
-
-
 async def _dispatch_message(account: dict, device_id: str, data: dict) -> None:
-    """Route an inbound WebSocket message to the appropriate handler."""
     msg_type = data.get("type")
-
     if msg_type == "heartbeat":
-        await handle_heartbeat(device_id)
-    elif msg_type == "ack":
-        await handle_ack(account["id"], device_id, data)
-    elif msg_type == "send_clipboard":
-        await handle_send_clipboard(account, device_id, data)
+        await storage.update_device_last_seen(device_id)
     else:
         await manager.send_json(
-            device_id,
-            {"type": "error", "message": f"unrecognized event: {msg_type}"},
+            device_id, {"type": "error", "message": f"unrecognized event: {msg_type}"}
         )
 
 
@@ -210,22 +90,14 @@ async def websocket_endpoint(ws: WebSocket) -> None:
         return
 
     await manager.connect(device_id, ws)
-    await storage.set_presence(device_id)
 
     try:
-        await deliver_pending(device_id)
-        latest_seq = await storage.get_latest_seq(account["id"])
-        await manager.send_json(
-            device_id, WSHello(latest_seq=latest_seq).model_dump()
-        )
-
+        await manager.send_json(device_id, {"type": "hello"})
         while True:
             raw = await ws.receive_text()
             data = json.loads(raw)
             await _dispatch_message(account, device_id, data)
-
     except WebSocketDisconnect:
         pass
     finally:
         manager.disconnect(device_id)
-        await storage.delete_presence(device_id)

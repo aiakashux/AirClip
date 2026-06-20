@@ -1,0 +1,816 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<script src="https://mcp.figma.com/mcp/html-to-design/capture.js" async></script>
+<title>AirClip · Settings</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: #111113 url('file:///Users/cosmic-sky/.claude/image-cache/77a8f08a-0664-4d63-bd27-7574bc9e6008/16.png') center / cover no-repeat fixed;
+  font-family: -apple-system, "SF Pro Text", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+}
+
+/* ── Window shell ── */
+.window {
+  width: 700px;
+  height: 480px;
+  background: rgba(22,22,24,0.86);
+  backdrop-filter: blur(32px) saturate(160%);
+  -webkit-backdrop-filter: blur(32px) saturate(160%);
+  border-radius: 12px;
+  border: 0.5px solid rgba(255,255,255,0.12);
+  box-shadow:
+    0 24px 64px rgba(0,0,0,0.72),
+    0 4px 20px rgba(0,0,0,0.45),
+    inset 0 0.5px 0 rgba(255,255,255,0.10);
+  overflow: hidden;
+  display: flex;
+  flex-direction: row;
+}
+
+/* ── Left sidebar ── */
+.sidebar {
+  width: 200px;
+  flex-shrink: 0;
+  background: rgba(0,0,0,0.18);
+  border-right: 0.5px solid rgba(255,255,255,0.07);
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+}
+
+.sidebar-header {
+  height: 52px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 16px;
+  border-bottom: 0.5px solid rgba(255,255,255,0.06);
+  flex-shrink: 0;
+}
+
+.traffic-lights {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.tl {
+  width: 12px; height: 12px;
+  border-radius: 50%;
+}
+.tl-close  { background: #FF5F57; }
+.tl-min    { background: #FEBC2E; }
+.tl-max    { background: #28C840; }
+
+.sidebar-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: rgba(255,255,255,0.55);
+  margin-left: 4px;
+}
+
+.nav {
+  flex: 1;
+  padding: 10px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+}
+.nav::-webkit-scrollbar { display: none; }
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background 0.10s;
+  user-select: none;
+}
+.nav-item:hover { background: rgba(255,255,255,0.06); }
+.nav-item.active { background: rgba(255,255,255,0.10); }
+
+.nav-icon {
+  width: 18px; height: 18px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  opacity: 0.55;
+}
+.nav-item.active .nav-icon { opacity: 0.88; }
+
+.nav-label {
+  font-size: 13px;
+  font-weight: 400;
+  color: rgba(255,255,255,0.50);
+}
+.nav-item.active .nav-label { color: rgba(255,255,255,0.88); font-weight: 500; }
+
+.sidebar-footer {
+  padding: 10px 8px 16px;
+  border-top: 0.5px solid rgba(255,255,255,0.06);
+  flex-shrink: 0;
+}
+
+.signout-btn {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background 0.10s;
+  user-select: none;
+}
+.signout-btn:hover { background: rgba(229,52,42,0.10); }
+.signout-btn svg { opacity: 0.45; }
+.signout-btn:hover svg { opacity: 0.70; color: #E5342A; }
+.signout-label {
+  font-size: 13px;
+  font-weight: 400;
+  color: rgba(255,255,255,0.38);
+}
+.signout-btn:hover .signout-label { color: #E5342A; }
+
+/* ── Right content panel ── */
+.content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.content-header {
+  height: 52px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0 20px;
+  border-bottom: 0.5px solid rgba(255,255,255,0.06);
+  flex-shrink: 0;
+}
+.content-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: rgba(255,255,255,0.88);
+}
+
+.content-body {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 18px 20px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.content-body::-webkit-scrollbar { width: 4px; }
+.content-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.10); border-radius: 2px; }
+
+/* ── Section ── */
+.section { display: flex; flex-direction: column; gap: 6px; }
+.section-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: rgba(255,255,255,0.26);
+  padding: 0 2px;
+  letter-spacing: 0.01em;
+}
+
+/* ── Card ── */
+.card {
+  background: rgba(255,255,255,0.04);
+  border: 0.5px solid rgba(255,255,255,0.08);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+/* ── Row ── */
+.row {
+  display: flex;
+  align-items: center;
+  min-height: 42px;
+  padding: 0 14px;
+  gap: 10px;
+}
+.row + .row { border-top: 0.5px solid rgba(255,255,255,0.05); }
+
+.row-label {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 400;
+  color: rgba(255,255,255,0.80);
+}
+.row-label.destructive { color: #E5342A; }
+.row-value {
+  font-size: 12px;
+  color: rgba(255,255,255,0.35);
+}
+.row-value.mono {
+  font-family: "SF Mono", "Menlo", monospace;
+  font-size: 11px;
+}
+
+/* ── Toggle ── */
+.toggle {
+  width: 36px; height: 20px;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.12);
+  border: 0.5px solid rgba(255,255,255,0.08);
+  cursor: pointer;
+  position: relative;
+  transition: background 0.15s;
+  flex-shrink: 0;
+}
+.toggle.on { background: #789BFA; border-color: transparent; }
+.toggle-thumb {
+  position: absolute;
+  top: 2px; left: 2px;
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  background: white;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.30);
+  transition: transform 0.15s cubic-bezier(0.25,0.46,0.45,0.94);
+}
+.toggle.on .toggle-thumb { transform: translateX(16px); }
+
+/* ── Segmented retention ── */
+.seg-row {
+  padding: 10px 14px;
+}
+.seg {
+  display: flex;
+  gap: 4px;
+  background: rgba(255,255,255,0.05);
+  border: 0.5px solid rgba(255,255,255,0.07);
+  border-radius: 8px;
+  padding: 3px;
+}
+.seg-btn {
+  flex: 1;
+  height: 26px;
+  border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11.5px;
+  font-weight: 400;
+  color: rgba(255,255,255,0.40);
+  cursor: pointer;
+  transition: all 0.10s;
+  user-select: none;
+}
+.seg-btn:hover { color: rgba(255,255,255,0.65); }
+.seg-btn.active {
+  background: rgba(120,155,250,0.18);
+  color: #8AABFF;
+  font-weight: 500;
+}
+
+/* ── Profile row ── */
+.profile-row {
+  display: flex;
+  align-items: center;
+  padding: 12px 14px;
+  gap: 12px;
+}
+.avatar {
+  width: 38px; height: 38px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, rgba(120,155,250,0.55), rgba(89,212,153,0.35));
+  border: 0.5px solid rgba(255,255,255,0.12);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px;
+  font-weight: 600;
+  color: rgba(255,255,255,0.90);
+  flex-shrink: 0;
+}
+.profile-info { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.profile-name { font-size: 13px; font-weight: 500; color: rgba(255,255,255,0.88); }
+.profile-plan {
+  font-size: 11px;
+  color: rgba(255,255,255,0.30);
+}
+.plan-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  background: rgba(120,155,250,0.15);
+  border: 0.5px solid rgba(120,155,250,0.25);
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 500;
+  color: #789BFA;
+  margin-left: 6px;
+}
+
+/* ── Device rows ── */
+.device-row {
+  display: flex;
+  align-items: center;
+  min-height: 46px;
+  padding: 0 14px;
+  gap: 10px;
+}
+.device-row + .device-row { border-top: 0.5px solid rgba(255,255,255,0.05); }
+.device-row:hover .del-btn { opacity: 1; }
+
+.device-icon {
+  width: 28px; height: 28px;
+  border-radius: 6px;
+  background: rgba(255,255,255,0.06);
+  border: 0.5px solid rgba(255,255,255,0.08);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px;
+  flex-shrink: 0;
+}
+.device-info { flex: 1; display: flex; flex-direction: column; gap: 1px; }
+.device-name { font-size: 13px; color: rgba(255,255,255,0.80); }
+.device-meta { font-size: 11px; color: rgba(255,255,255,0.28); }
+
+.device-badge {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+}
+.status-dot {
+  width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
+}
+.status-dot.live    { background: #59D499; animation: pulse 1.5s ease-in-out infinite alternate; }
+.status-dot.offline { background: rgba(255,255,255,0.15); }
+.status-dot.pending { background: #FFC531; }
+@keyframes pulse { from { opacity:1; } to { opacity:0.3; } }
+.status-text { font-size: 11px; color: rgba(255,255,255,0.28); }
+
+.del-btn {
+  opacity: 0;
+  transition: opacity 0.10s;
+  width: 20px; height: 20px;
+  border-radius: 5px;
+  background: rgba(229,52,42,0.10);
+  border: 0.5px solid rgba(229,52,42,0.20);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.del-btn:hover { background: rgba(229,52,42,0.20); }
+
+.approve-btn {
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 5px;
+  background: rgba(120,155,250,0.14);
+  border: 0.5px solid rgba(120,155,250,0.28);
+  font-size: 11.5px;
+  font-weight: 500;
+  color: #789BFA;
+  cursor: pointer;
+  display: flex; align-items: center;
+  transition: background 0.10s;
+  flex-shrink: 0;
+  user-select: none;
+}
+.approve-btn:hover { background: rgba(120,155,250,0.24); }
+
+/* ── Stats row ── */
+.stats-row {
+  display: flex;
+  gap: 8px;
+}
+.stat-card {
+  flex: 1;
+  background: rgba(255,255,255,0.04);
+  border: 0.5px solid rgba(255,255,255,0.07);
+  border-radius: 8px;
+  padding: 12px 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.stat-value {
+  font-size: 20px;
+  font-weight: 600;
+  color: rgba(255,255,255,0.88);
+  letter-spacing: -0.4px;
+  line-height: 1;
+}
+.stat-card.blue .stat-value { color: #789BFA; }
+.stat-label {
+  font-size: 11px;
+  color: rgba(255,255,255,0.30);
+}
+
+/* ── Activity chart ── */
+.chart-wrap {
+  background: rgba(255,255,255,0.04);
+  border: 0.5px solid rgba(255,255,255,0.07);
+  border-radius: 8px;
+  padding: 12px 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.chart-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.chart-title { font-size: 11px; font-weight: 500; color: rgba(255,255,255,0.28); }
+.chart-range { font-size: 10.5px; color: rgba(255,255,255,0.22); }
+
+.activity-grid { display: flex; flex-direction: column; gap: 2.5px; }
+.activity-row  { display: flex; gap: 2.5px; }
+.cell {
+  width: 9px; height: 9px;
+  border-radius: 2px;
+  background: rgba(120,155,250, var(--i, 0.05));
+  flex-shrink: 0;
+}
+
+/* ── Page visibility ── */
+.page { display: none; }
+.page.active { display: contents; }
+</style>
+</head>
+<body>
+<div class="window">
+
+  <!-- ── Sidebar ── -->
+  <div class="sidebar">
+    <div class="sidebar-header">
+      <div class="traffic-lights">
+        <div class="tl tl-close"></div>
+        <div class="tl tl-min"></div>
+        <div class="tl tl-max"></div>
+      </div>
+      <span class="sidebar-title">Settings</span>
+    </div>
+
+    <nav class="nav" id="nav">
+      <div class="nav-item active" data-page="general">
+        <span class="nav-icon">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path d="M8 10a2 2 0 100-4 2 2 0 000 4z" fill="currentColor" opacity=".7"/>
+            <path fill-rule="evenodd" clip-rule="evenodd" d="M6.56 1.5a.75.75 0 00-.72.54l-.36 1.27a5.04 5.04 0 00-.87.5l-1.27-.33a.75.75 0 00-.77.35l-1.44 2.5a.75.75 0 00.14.9l.96.85a5.12 5.12 0 000 1l-.96.85a.75.75 0 00-.14.9l1.44 2.5a.75.75 0 00.77.35l1.27-.33c.27.19.56.36.87.5l.36 1.27a.75.75 0 00.72.54h2.88a.75.75 0 00.72-.54l.36-1.27c.31-.14.6-.31.87-.5l1.27.33a.75.75 0 00.77-.35l1.44-2.5a.75.75 0 00-.14-.9l-.96-.85a5.14 5.14 0 000-1l.96-.85a.75.75 0 00.14-.9l-1.44-2.5a.75.75 0 00-.77-.35l-1.27.33a5.05 5.05 0 00-.87-.5L10.16 2.04a.75.75 0 00-.72-.54H6.56zM8 5.5a2.5 2.5 0 100 5 2.5 2.5 0 000-5z" fill="currentColor" opacity=".5"/>
+          </svg>
+        </span>
+        <span class="nav-label">General</span>
+      </div>
+
+      <div class="nav-item" data-page="devices">
+        <span class="nav-icon">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <rect x="1" y="3.5" width="10" height="7" rx="1.5" stroke="currentColor" stroke-width="1.2" fill="none"/>
+            <rect x="12" y="5.5" width="3" height="5" rx="1" stroke="currentColor" stroke-width="1.2" fill="none"/>
+            <path d="M3.5 12.5h5M6 11v1.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+          </svg>
+        </span>
+        <span class="nav-label">Devices</span>
+      </div>
+
+      <div class="nav-item" data-page="account">
+        <span class="nav-icon">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <circle cx="8" cy="5.5" r="2.5" stroke="currentColor" stroke-width="1.2" fill="none"/>
+            <path d="M2 13c0-2.21 2.69-4 6-4s6 1.79 6 4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" fill="none"/>
+          </svg>
+        </span>
+        <span class="nav-label">Account</span>
+      </div>
+
+      <div class="nav-item" data-page="privacy">
+        <span class="nav-icon">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path d="M8 1.5L2 4v4c0 3.31 2.55 5.65 6 6.5 3.45-.85 6-3.19 6-6.5V4L8 1.5z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" fill="none"/>
+            <path d="M5.5 8l1.75 1.75L10.5 6.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </span>
+        <span class="nav-label">Privacy</span>
+      </div>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="signout-btn">
+        <svg class="nav-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" color="rgba(255,255,255,0.45)">
+          <path d="M6 2H3a1 1 0 00-1 1v10a1 1 0 001 1h3M10.5 5L14 8m0 0l-3.5 3M14 8H6" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span class="signout-label">Sign out</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Content ── -->
+  <div class="content">
+
+    <!-- General page -->
+    <div id="page-general" class="content-header" style="display:flex; align-items:center; gap:9px; height:52px; padding:0 20px; border-bottom: 0.5px solid rgba(255,255,255,0.06); flex-shrink:0;">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="opacity:0.50">
+        <path fill-rule="evenodd" clip-rule="evenodd" d="M6.56 1.5a.75.75 0 00-.72.54l-.36 1.27a5.04 5.04 0 00-.87.5l-1.27-.33a.75.75 0 00-.77.35l-1.44 2.5a.75.75 0 00.14.9l.96.85a5.12 5.12 0 000 1l-.96.85a.75.75 0 00-.14.9l1.44 2.5a.75.75 0 00.77.35l1.27-.33c.27.19.56.36.87.5l.36 1.27a.75.75 0 00.72.54h2.88a.75.75 0 00.72-.54l.36-1.27c.31-.14.6-.31.87-.5l1.27.33a.75.75 0 00.77-.35l1.44-2.5a.75.75 0 00-.14-.9l-.96-.85a5.14 5.14 0 000-1l.96-.85a.75.75 0 00.14-.9l-1.44-2.5a.75.75 0 00-.77-.35l-1.27.33a5.05 5.05 0 00-.87-.5L10.16 2.04a.75.75 0 00-.72-.54H6.56zM8 5.5a2.5 2.5 0 100 5 2.5 2.5 0 000-5z" fill="white"/>
+      </svg>
+      <span class="content-title">General</span>
+    </div>
+
+    <div id="body-general" class="content-body">
+
+      <!-- Stats -->
+      <div class="stats-row">
+        <div class="stat-card">
+          <div class="stat-value">1,284</div>
+          <div class="stat-label">Total clips</div>
+        </div>
+        <div class="stat-card blue">
+          <div class="stat-value">248K</div>
+          <div class="stat-label">Characters copied</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">3</div>
+          <div class="stat-label">Active devices</div>
+        </div>
+      </div>
+
+      <!-- Activity chart -->
+      <div class="chart-wrap">
+        <div class="chart-header">
+          <span class="chart-title">Daily activity</span>
+          <span class="chart-range">Last 16 weeks</span>
+        </div>
+        <div class="activity-grid" id="activityGrid"></div>
+      </div>
+
+      <!-- Clip retention -->
+      <div class="section">
+        <div class="section-label">Clip retention</div>
+        <div class="card">
+          <div class="seg-row">
+            <div class="seg">
+              <div class="seg-btn">1d</div>
+              <div class="seg-btn">3d</div>
+              <div class="seg-btn active">7d</div>
+              <div class="seg-btn">14d</div>
+              <div class="seg-btn">30d</div>
+              <div class="seg-btn">∞</div>
+            </div>
+          </div>
+          <div class="row" style="border-top: 0.5px solid rgba(255,255,255,0.05);">
+            <span class="row-label">Keep local history only</span>
+            <div class="toggle" onclick="this.classList.toggle('on')"><div class="toggle-thumb"></div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Startup & display -->
+      <div class="section">
+        <div class="section-label">Startup &amp; display</div>
+        <div class="card">
+          <div class="row">
+            <span class="row-label">Launch at login</span>
+            <div class="toggle on" onclick="this.classList.toggle('on')"><div class="toggle-thumb"></div></div>
+          </div>
+          <div class="row">
+            <span class="row-label">Show in menu bar</span>
+            <div class="toggle on" onclick="this.classList.toggle('on')"><div class="toggle-thumb"></div></div>
+          </div>
+          <div class="row">
+            <span class="row-label">Sync images</span>
+            <div class="toggle" onclick="this.classList.toggle('on')"><div class="toggle-thumb"></div></div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /body-general -->
+
+    <!-- Devices page (hidden initially) -->
+    <div id="page-devices" class="content-header" style="display:none; align-items:center; gap:9px; height:52px; padding:0 20px; border-bottom: 0.5px solid rgba(255,255,255,0.06); flex-shrink:0;">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="opacity:0.50">
+        <rect x="1" y="3.5" width="10" height="7" rx="1.5" stroke="white" stroke-width="1.2" fill="none"/>
+        <rect x="12" y="5.5" width="3" height="5" rx="1" stroke="white" stroke-width="1.2" fill="none"/>
+      </svg>
+      <span class="content-title">Devices</span>
+    </div>
+    <div id="body-devices" class="content-body" style="display:none;">
+      <div class="section">
+        <div class="section-label">Connected devices</div>
+        <div class="card">
+          <div class="device-row">
+            <div class="device-icon">💻</div>
+            <div class="device-info">
+              <div class="device-name">MacBook Pro <span style="font-size:11px;color:rgba(255,255,255,0.25);margin-left:4px;">This device</span></div>
+              <div class="device-meta">macOS 15.3 · Last sync just now</div>
+            </div>
+            <div class="device-badge">
+              <div class="status-dot live"></div>
+              <span class="status-text">Live</span>
+            </div>
+          </div>
+          <div class="device-row">
+            <div class="device-icon">📱</div>
+            <div class="device-info">
+              <div class="device-name">iPhone 16 Pro</div>
+              <div class="device-meta">iOS 18.3 · Last sync 2 min ago</div>
+            </div>
+            <div class="device-badge">
+              <div class="status-dot live"></div>
+              <span class="status-text">Live</span>
+            </div>
+            <div class="del-btn">
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 2l6 6M8 2L2 8" stroke="#E5342A" stroke-width="1.3" stroke-linecap="round"/></svg>
+            </div>
+          </div>
+          <div class="device-row">
+            <div class="device-icon">💻</div>
+            <div class="device-info">
+              <div class="device-name">MacBook Air</div>
+              <div class="device-meta">macOS 14.6 · Last sync 3 days ago</div>
+            </div>
+            <div class="device-badge">
+              <div class="status-dot offline"></div>
+              <span class="status-text">Offline</span>
+            </div>
+            <div class="del-btn">
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 2l6 6M8 2L2 8" stroke="#E5342A" stroke-width="1.3" stroke-linecap="round"/></svg>
+            </div>
+          </div>
+          <div class="device-row">
+            <div class="device-icon">📱</div>
+            <div class="device-info">
+              <div class="device-name">iPad Pro</div>
+              <div class="device-meta">iPadOS 18.1 · Awaiting approval</div>
+            </div>
+            <div class="device-badge">
+              <div class="status-dot pending"></div>
+              <span class="status-text">Pending</span>
+            </div>
+            <div class="approve-btn">Approve</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-label">This device</div>
+        <div class="card">
+          <div class="row">
+            <span class="row-label">Name</span>
+            <span class="row-value">MacBook Pro</span>
+          </div>
+          <div class="row">
+            <span class="row-label">Platform</span>
+            <span class="row-value">macOS 15.3</span>
+          </div>
+          <div class="row">
+            <span class="row-label">Device ID</span>
+            <span class="row-value mono">d3f8a2c1</span>
+          </div>
+          <div class="row">
+            <span class="row-label">Public key</span>
+            <span class="row-value mono">xK7p…nQ2r</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Account page (hidden initially) -->
+    <div id="page-account" class="content-header" style="display:none; align-items:center; gap:9px; height:52px; padding:0 20px; border-bottom: 0.5px solid rgba(255,255,255,0.06); flex-shrink:0;">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="opacity:0.50">
+        <circle cx="8" cy="5.5" r="2.5" stroke="white" stroke-width="1.2" fill="none"/>
+        <path d="M2 13c0-2.21 2.69-4 6-4s6 1.79 6 4" stroke="white" stroke-width="1.2" stroke-linecap="round" fill="none"/>
+      </svg>
+      <span class="content-title">Account</span>
+    </div>
+    <div id="body-account" class="content-body" style="display:none;">
+      <div class="section">
+        <div class="card">
+          <div class="profile-row">
+            <div class="avatar">CS</div>
+            <div class="profile-info">
+              <div class="profile-name">cosmic-sky <span class="plan-badge">Pro</span></div>
+              <div class="profile-plan">cosmic@example.com</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="section">
+        <div class="section-label">Subscription</div>
+        <div class="card">
+          <div class="row">
+            <span class="row-label">Plan</span>
+            <span class="row-value">AirClip Pro</span>
+          </div>
+          <div class="row">
+            <span class="row-label">Renews</span>
+            <span class="row-value">May 1, 2026</span>
+          </div>
+          <div class="row">
+            <span class="row-label">Manage billing</span>
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="opacity:0.30"><path d="M5 3l4 4-4 4" stroke="white" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Privacy page (hidden initially) -->
+    <div id="page-privacy" class="content-header" style="display:none; align-items:center; gap:9px; height:52px; padding:0 20px; border-bottom: 0.5px solid rgba(255,255,255,0.06); flex-shrink:0;">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="opacity:0.50">
+        <path d="M8 1.5L2 4v4c0 3.31 2.55 5.65 6 6.5 3.45-.85 6-3.19 6-6.5V4L8 1.5z" stroke="white" stroke-width="1.2" stroke-linejoin="round" fill="none"/>
+      </svg>
+      <span class="content-title">Privacy</span>
+    </div>
+    <div id="body-privacy" class="content-body" style="display:none;">
+      <div class="section">
+        <div class="section-label">Encryption</div>
+        <div class="card">
+          <div class="row">
+            <span class="row-label">End-to-end encrypted</span>
+            <span class="row-value" style="color:#59D499; font-size:11px;">Active</span>
+          </div>
+          <div class="row">
+            <span class="row-label">Encrypted on device</span>
+            <div class="toggle on"><div class="toggle-thumb"></div></div>
+          </div>
+        </div>
+      </div>
+      <div class="section">
+        <div class="section-label">Data</div>
+        <div class="card">
+          <div class="row" style="cursor:pointer;">
+            <span class="row-label">Clear local history</span>
+          </div>
+          <div class="row" style="cursor:pointer;">
+            <span class="row-label destructive">Delete account</span>
+          </div>
+        </div>
+      </div>
+      <div class="section">
+        <div class="card" style="padding: 14px; gap: 0;">
+          <p style="font-size:11.5px; color:rgba(255,255,255,0.28); line-height:1.5;">
+            AirClip uses X25519 key exchange and XSalsa20-Poly1305 authenticated encryption.
+            Your clipboard content is encrypted on-device before transmission and can only be decrypted by your registered devices.
+          </p>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /content -->
+</div><!-- /window -->
+
+<script>
+// Activity grid
+const grid = document.getElementById('activityGrid');
+const intensities = [0.05,0.05,0.12,0.05,0.22,0.05,0.05,0.35,0.05,0.12,0.50,0.35,0.05,0.22,0.05,0.05,
+                     0.60,0.12,0.05,0.35,0.80,0.05,0.22,0.12,0.05,0.50,0.60,0.35,0.05,0.22,0.05,0.05,
+                     0.90,0.05,0.22,0.60,0.35,0.05,0.80,0.50,0.12,0.35,0.05,0.22,0.60,0.05,0.35,0.22,
+                     0.12,0.80,0.05,0.35,0.22,0.05,0.60,0.12,0.35,0.05,0.80,0.22,0.05,0.35,0.50,0.22,
+                     0.05,0.35,0.60,0.05,0.22,0.80,0.35,0.05,0.12,0.50,0.22,0.05,0.35,0.60,0.05,0.22,
+                     0.80,0.35,0.05,0.12,0.22,0.05,0.60,0.35,0.80,0.05,0.22,0.35,0.50,0.12,0.05,0.22,
+                     0.35,0.05,0.60,0.22,0.80,0.05,0.35,0.12,0.22,0.60,0.05,0.35,0.05,0.12,0.05,0.05];
+for (let row = 0; row < 7; row++) {
+  const r = document.createElement('div');
+  r.className = 'activity-row';
+  for (let col = 0; col < 16; col++) {
+    const c = document.createElement('div');
+    c.className = 'cell';
+    c.style.setProperty('--i', intensities[row * 16 + col] ?? 0.05);
+    r.appendChild(c);
+  }
+  grid.appendChild(r);
+}
+
+// Nav switching
+const pages = ['general','devices','account','privacy'];
+document.getElementById('nav').addEventListener('click', e => {
+  const item = e.target.closest('.nav-item');
+  if (!item) return;
+  const page = item.dataset.page;
+
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  item.classList.add('active');
+
+  pages.forEach(p => {
+    const hdr = document.getElementById('page-' + p);
+    const bod = document.getElementById('body-' + p);
+    const show = (p === page);
+    if (hdr) hdr.style.display = show ? 'flex' : 'none';
+    if (bod) bod.style.display = show ? 'flex' : 'none';
+  });
+});
+
+// Seg picker
+document.querySelectorAll('.seg').forEach(seg => {
+  seg.addEventListener('click', e => {
+    const btn = e.target.closest('.seg-btn');
+    if (!btn) return;
+    seg.querySelectorAll('.seg-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+  });
+});
+</script>
+</body>
+</html>

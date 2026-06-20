@@ -1,335 +1,119 @@
-# Clipr+
+# AirClip
 
-Clipr+ is a secure cross-device clipboard synchronization system.
+AirClip is a LAN-first clipboard sync app for Mac and Android.
 
-It allows text copied on one device to instantly appear on other trusted devices.
+The current MVP pairs a Mac and Android phone, syncs clipboard content privately over the local network, and gives the user clear control over what is sent, stored, paused, or removed.
 
-The current MVP focuses on **Mac → Android clipboard sync** with:
+## Current MVP
 
-- encrypted payload transport
-- WebSocket real-time delivery
-- offline catch-up support
-- local clipboard history
+Active direction:
 
-The server acts only as a **temporary relay**, not a permanent storage layer.
+1. Mac + Android sync over LAN.
+2. Bonjour / Android NSD discovery with `_airclip._tcp`.
+3. Local WebSocket transport on TCP `7878`.
+4. Per-device encryption.
+5. Local clipboard history on each device.
+6. Global sync modes: Auto, Manual, Paused.
+7. Sensitive clipboard policy: Block, Ask, Allow.
+8. Device removal/re-pairing and presence diagnostics.
 
----
+The backend relay and Redis catch-up model are legacy. They are not the active clipboard transport for the current MVP.
 
-# Why Clipr+ Exists
+## What Works
 
-Copying information between devices is still unnecessarily difficult.
+Implemented or partially implemented:
 
-Typical workflow today:
+1. Mac and Android pairing.
+2. Bidirectional LAN clipboard sync.
+3. Manual send and paused mode.
+4. Sensitive clipboard protection.
+5. Local history with saved clips.
+6. Search, type filters, source labels, and relative time.
+7. History backfill after peer authentication.
+8. Heartbeat-based last-seen updates.
+9. Runtime diagnostics for listener/discovery failures.
 
-1. Copy text on laptop
-2. Open messaging app
-3. Send text to yourself
-4. Open phone
-5. Copy again
+See [docs/ROADMAP_STATUS.md](docs/ROADMAP_STATUS.md) for the active implementation tracker and [docs/MANUAL_VALIDATION_QUEUE.md](docs/MANUAL_VALIDATION_QUEUE.md) for the manual test queue.
 
-Clipr+ removes that friction.
+## Not In Current MVP
 
-Copy on one device → paste on another.
+1. Default cloud relay.
+2. Permanent cloud clipboard history.
+3. Redis sequence-number catch-up.
+4. Server-side pending device approval.
+5. Windows support.
+6. iOS support.
 
----
+## Architecture
 
-# MVP Scope
-
-This project currently implements a minimal but functional system:
-
-| Capability | Status |
-|------------|-------|
-| Mac → Android clipboard sync | ✅ |
-| WebSocket real-time delivery | ✅ |
-| Offline catch-up | ✅ |
-| Encrypted clipboard payloads | ✅ |
-| Android clipboard history | ✅ |
-| Tap-to-copy from history | ✅ |
-
-Not included in MVP:
-
-- Windows client
-- iOS client
-- permanent clipboard cloud storage
-- rich clipboard types (images/files)
-- device management UI
-
----
-
-# Supported Platforms
-
-### Mac Client
-- Clipboard monitoring
-- Encryption
-- Sending clipboard payloads
-
-### Android Client
-- WebSocket connection
-- Decryption
-- Local clipboard history
-- Tap-to-copy UI
-
-### Backend Server
-- REST API
-- WebSocket relay
-- Redis storage
-
----
-
-# System Architecture
-
-Clipr+ consists of three main layers.
-
-```
-Mac Client
-    │
-    │ encrypted clipboard payload
-    ▼
-Backend Server
-    │
-    │ WebSocket relay
-    ▼
-Android Client
+```text
+Mac app
+  ├─ Clipboard monitor
+  ├─ Local history
+  ├─ Bonjour advertise/browse
+  └─ LAN WebSocket peer
+          │ encrypted clipboard packets
+          ▼
+Android app
+  ├─ Foreground sync service
+  ├─ Local history
+  ├─ Android NSD advertise/discover
+  └─ LAN WebSocket peer
 ```
 
-Supporting services:
+The backend source remains in the repo, but treat it as legacy/future optional infrastructure unless a new product decision reactivates it.
 
-```
-Backend
- ├─ REST API
- ├─ WebSocket server
- └─ Redis
+## Project Structure
 
-Redis
- ├─ short clipboard history
- ├─ pending delivery queue
- └─ sequence ordering
-```
-
-The backend **never permanently stores clipboard content**.
-
----
-
-# Clipboard Sync Flow
-
-When a user copies text on Mac:
-
-1. Mac detects clipboard change
-2. Clipboard text is encrypted
-3. Encrypted payload is sent to backend
-4. Backend assigns sequence number
-5. Backend stores short-term history
-6. Backend pushes event via WebSocket
-7. Android receives encrypted payload
-8. Android decrypts message
-9. Android stores item in local history
-
----
-
-# Offline Catch-Up Flow
-
-If Android is offline:
-
-1. Mac copies clipboard items
-2. Backend stores recent items temporarily
-3. Android reconnects later
-4. Server sends `latest_seq`
-5. Android compares with `lastSeenSeq`
-6. Android fetches missed clips
-7. Android decrypts and merges history
-
-Catch-up window:
-
-- **30 minutes**
-- **max 20 items**
-
----
-
-# Security Model
-
-Clipboard data is encrypted **before leaving the sender device**.
-
-Key properties:
-
-- encryption happens on the client
-- server relays encrypted payload only
-- devices own their private keys
-- Android stores keypair securely
-- plaintext clipboard data is never logged
-
-The backend cannot read clipboard content.
-
----
-
-# Local Clipboard History
-
-Each device maintains its own clipboard history.
-
-Properties:
-
-- newest items first
-- max **20 items**
-- oldest items removed automatically
-- stored locally on device
-- tap any item to copy it again
-
----
-
-# Project Structure
-
-```
-Clipr+
-│
-├── backend
-│   ├── api
-│   ├── websocket
-│   └── redis
-│
-├── mac
-│   └── macOS clipboard client
-│
-├── android
-│   └── Android clipboard client
-│
-└── docs
-    ├── architecture.md
-    ├── protocol.md
-    ├── security.md
-    └── mvp-scope.md
+```text
+AirClip/
+  android/                 Android app
+  mac/                     macOS app
+  backend/                 Legacy backend source
+  docs/
+    PRODUCT_REQUIREMENTS.md
+    ROADMAP_STATUS.md
+    MANUAL_VALIDATION_QUEUE.md
+    VALIDATION_CHECKLIST.md
+    architecture.md
+    mvp-scope.md
+    protocol.md
 ```
 
----
+## Build
 
-# Running the Project
-
-## 1. Start Backend
-
-Requires:
-
-- Python
-- Redis
-- Docker (optional)
-
-Example:
+### Android
 
 ```bash
-docker-compose up
+cd android
+JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' ./gradlew testDebugUnitTest
 ```
 
-or run Redis + backend manually.
+Open `android/` in Android Studio to build and install the app.
 
----
+### macOS
 
-## 2. Run Mac Client
-
-Navigate to:
-
-```
-/mac
-```
-
-Run the Mac client.
-
-The client:
-
-- monitors clipboard
-- encrypts clipboard text
-- sends messages to backend
-
----
-
-## 3. Run Android Client
-
-Open the Android project in **Android Studio**.
-
-Build and run the app.
-
-The Android client will:
-
-- connect to backend
-- receive clipboard messages
-- decrypt payloads
-- store local clipboard history
-
----
-
-# Debug Tools
-
-The Android client currently includes a debug screen that shows:
-
-- WebSocket connection status
-- received clipboard messages
-- catch-up events
-- message sequence numbers
-
-This UI will be removed or hidden in later versions.
-
----
-
-# Known MVP Limitations
-
-Current limitations are intentional to keep the system simple.
-
-- text clipboard only
-- short server retention window
-- no Windows client
-- no iOS client
-- minimal device management
-- debug surfaces still present
-- limited Android background behavior
-
----
-
-# Roadmap
-
-Future work may include:
-
-### Platform Support
-- Windows client
-- iOS client
-
-### Clipboard Improvements
-- image clipboard sync
-- file clipboard sync
-- pinned clipboard items
-- searchable history
-
-### Sync Improvements
-- improved background reliability
-- smarter catch-up
-- better device trust UX
-
----
-
-# Development Philosophy
-
-Clipr+ is intentionally designed to be:
-
-- simple
-- secure
-- minimal server state
-- easy to reason about
-
-The goal is to keep the system **small but reliable**, rather than building a heavy cloud clipboard service.
-
----
-
-# License
-
-License will be defined before public release.
-
----
-
-# Documentation
-
-Additional technical documentation is available in:
-
-```
-docs/
+```bash
+xcodebuild \
+  -project mac/AirClip.xcodeproj \
+  -scheme AirClip \
+  -configuration Debug \
+  -destination 'platform=macOS' \
+  -disableAutomaticPackageResolution \
+  -onlyUsePackageVersionsFromResolvedFile \
+  CODE_SIGNING_ALLOWED=NO \
+  build
 ```
 
-- `architecture.md`
-- `protocol.md`
-- `security.md`
-- `mvp-scope.md`
-- `security.md`
+Open `mac/AirClip.xcodeproj` in Xcode for local development.
+
+## Documentation
+
+Start here:
+
+1. [Product requirements](docs/PRODUCT_REQUIREMENTS.md)
+2. [Roadmap status](docs/ROADMAP_STATUS.md)
+3. [Manual validation queue](docs/MANUAL_VALIDATION_QUEUE.md)
+4. [Architecture](docs/architecture.md)
+5. [Protocol](docs/protocol.md)
+6. [MVP scope](docs/mvp-scope.md)

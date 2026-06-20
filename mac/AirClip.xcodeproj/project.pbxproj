@@ -40,6 +40,13 @@
 		AA0200000000000000000021 /* SensitiveClipboardPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000021 /* SensitiveClipboardPolicy.swift */; };
 		AA0200000000000000000022 /* SensitiveClipboardProtectionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000022 /* SensitiveClipboardProtectionStore.swift */; };
 		AA0200000000000000000030 /* UnreadStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000030 /* UnreadStore.swift */; };
+		AA0200000000000000000031 /* AddDevicePairingSheetController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000031 /* AddDevicePairingSheetController.swift */; };
+		AA0200000000000000000032 /* DeviceConnectionStatusText.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000032 /* DeviceConnectionStatusText.swift */; };
+		AA0200000000000000000033 /* CurrentWiFiNetwork.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000033 /* CurrentWiFiNetwork.swift */; };
+		AA0200000000000000000034 /* DeviceRemovalNotice.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000034 /* DeviceRemovalNotice.swift */; };
+		AA0200000000000000000035 /* DeviceDisplayText.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000035 /* DeviceDisplayText.swift */; };
+		AA0200000000000000000036 /* SensitiveContentRevealStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000036 /* SensitiveContentRevealStore.swift */; };
+		AA0200000000000000000037 /* AirClipDeviceIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000037 /* AirClipDeviceIcon.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -77,6 +84,13 @@
 		AA0100000000000000000021 /* SensitiveClipboardPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SensitiveClipboardPolicy.swift; sourceTree = "<group>"; };
 		AA0100000000000000000022 /* SensitiveClipboardProtectionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SensitiveClipboardProtectionStore.swift; sourceTree = "<group>"; };
 		AA0100000000000000000030 /* UnreadStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnreadStore.swift; sourceTree = "<group>"; };
+		AA0100000000000000000031 /* AddDevicePairingSheetController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddDevicePairingSheetController.swift; sourceTree = "<group>"; };
+		AA0100000000000000000032 /* DeviceConnectionStatusText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceConnectionStatusText.swift; sourceTree = "<group>"; };
+		AA0100000000000000000033 /* CurrentWiFiNetwork.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CurrentWiFiNetwork.swift; sourceTree = "<group>"; };
+		AA0100000000000000000034 /* DeviceRemovalNotice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceRemovalNotice.swift; sourceTree = "<group>"; };
+		AA0100000000000000000035 /* DeviceDisplayText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceDisplayText.swift; sourceTree = "<group>"; };
+		AA0100000000000000000036 /* SensitiveContentRevealStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SensitiveContentRevealStore.swift; sourceTree = "<group>"; };
+		AA0100000000000000000037 /* AirClipDeviceIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AirClipDeviceIcon.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -132,6 +146,7 @@
 				AA0100000000000000000006 /* OnboardingView.swift */,
 				AA0100000000000000000011 /* SharedComponents.swift */,
 				AA010000000000000000001D /* AirClipIcon.swift */,
+				AA0100000000000000000037 /* AirClipDeviceIcon.swift */,
 				AA0100000000000000000012 /* ClipTypeDetector.swift */,
 				AA0100000000000000000013 /* MainWindowView.swift */,
 			);
@@ -148,6 +163,12 @@
 				AA0100000000000000000021 /* SensitiveClipboardPolicy.swift */,
 				AA0100000000000000000022 /* SensitiveClipboardProtectionStore.swift */,
 				AA0100000000000000000030 /* UnreadStore.swift */,
+				AA0100000000000000000031 /* AddDevicePairingSheetController.swift */,
+				AA0100000000000000000032 /* DeviceConnectionStatusText.swift */,
+				AA0100000000000000000033 /* CurrentWiFiNetwork.swift */,
+				AA0100000000000000000034 /* DeviceRemovalNotice.swift */,
+				AA0100000000000000000035 /* DeviceDisplayText.swift */,
+				AA0100000000000000000036 /* SensitiveContentRevealStore.swift */,
 				AA0100000000000000000008 /* CryptoManager.swift */,
 				AA0100000000000000000009 /* SyncEngine.swift */,
 				AA010000000000000000000A /* LocalHistoryStore.swift */,
@@ -267,6 +288,7 @@
 				AA0200000000000000000010 /* DesignTokens.swift in Sources */,
 				AA0200000000000000000011 /* SharedComponents.swift in Sources */,
 				AA020000000000000000001D /* AirClipIcon.swift in Sources */,
+				AA0200000000000000000037 /* AirClipDeviceIcon.swift in Sources */,
 				AA0200000000000000000012 /* ClipTypeDetector.swift in Sources */,
 				AA0200000000000000000013 /* MainWindowView.swift in Sources */,
 				AA0200000000000000000014 /* PeerConnection.swift in Sources */,
@@ -282,6 +304,12 @@
 				AA0200000000000000000021 /* SensitiveClipboardPolicy.swift in Sources */,
 				AA0200000000000000000022 /* SensitiveClipboardProtectionStore.swift in Sources */,
 				AA0200000000000000000030 /* UnreadStore.swift in Sources */,
+				AA0200000000000000000031 /* AddDevicePairingSheetController.swift in Sources */,
+				AA0200000000000000000032 /* DeviceConnectionStatusText.swift in Sources */,
+				AA0200000000000000000033 /* CurrentWiFiNetwork.swift in Sources */,
+				AA0200000000000000000034 /* DeviceRemovalNotice.swift in Sources */,
+				AA0200000000000000000035 /* DeviceDisplayText.swift in Sources */,
+				AA0200000000000000000036 /* SensitiveContentRevealStore.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

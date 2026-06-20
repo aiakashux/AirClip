@@ -1,12 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
     Network security config — development only.
-    Allows cleartext (HTTP) traffic to the local dev server IP only.
-    All other hosts continue to require TLS (Android 9+ default).
-    Remove or replace this file before production release.
+    Permits cleartext HTTP for all connections (LAN dev server).
+    In production, replace base-config with TLS-only and remove this comment.
 -->
 <network-security-config>
-    <domain-config cleartextTrafficPermitted="true">
-        <domain includeSubdomains="false">192.168.0.49</domain>
-    </domain-config>
+    <base-config cleartextTrafficPermitted="true" />
 </network-security-config>

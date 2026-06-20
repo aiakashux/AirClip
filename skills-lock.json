@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "skills": {
+    "design": {
+      "source": "rshankras/claude-code-apple-skills",
+      "sourceType": "github",
+      "computedHash": "09a095a1550f225e9264633931cc3c7d027ab2d09ecf5dcbc7e14f4c3cc15461"
+    },
+    "emil-design-eng": {
+      "source": "emilkowalski/skill",
+      "sourceType": "github",
+      "skillPath": "skills/emil-design-eng/SKILL.md",
+      "computedHash": "8bdf9e4e6de7a4969147bf4828a4ad2c5aacd9fba4b690b250a85e0467ca387d"
+    },
+    "ios-development": {
+      "source": "rshankras/claude-code-apple-skills",
+      "sourceType": "github",
+      "computedHash": "d96bf1934ca2c01ca846f0babb6da4018c831a504a697d8d0519c827f4f4c683"
+    },
+    "macos-development": {
+      "source": "rshankras/claude-code-apple-skills",
+      "sourceType": "github",
+      "computedHash": "ff7fba1c081a1efb29e67526abc4e281fbb482f10e2b364f11fbbe85c2d34e05"
+    },
+    "security": {
+      "source": "rshankras/claude-code-apple-skills",
+      "sourceType": "github",
+      "computedHash": "0630926283229a4393f89e893f3654922499d92315b3cf5409189f502d53e63d"
+    },
+    "shared": {
+      "source": "rshankras/claude-code-apple-skills",
+      "sourceType": "github",
+      "computedHash": "4da29b40afc5ed49cb257218fe856920b368cbc3d21a26c6c566db14f528e46f"
+    },
+    "swift-development": {
+      "source": "rshankras/claude-code-apple-skills",
+      "sourceType": "github",
+      "computedHash": "288fb175cd0742b10c16f147028ae031cbd9ec6bcd4417d2bd264a771bbaed70"
+    },
+    "testing": {
+      "source": "rshankras/claude-code-apple-skills",
+      "sourceType": "github",
+      "computedHash": "b49549bb712467f8de97e702a31e4c894d18c70db10bf85aa42f297c8dc6b32e"
+    }
+  }
+}

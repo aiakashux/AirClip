@@ -11,6 +11,7 @@ __pycache__/
 *.py[cod]
 *.pyo
 .env
+.npmrc
 .venv/
 venv/
 *.egg-info/

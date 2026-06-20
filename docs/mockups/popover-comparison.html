@@ -1,0 +1,900 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<script src="https://mcp.figma.com/mcp/html-to-design/capture.js" async></script>
+<title>AirClip · Raycast-inspired · 520pt</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: #111113 url('file:///Users/cosmic-sky/.claude/image-cache/77a8f08a-0664-4d63-bd27-7574bc9e6008/16.png') center / cover no-repeat fixed;
+  font-family: -apple-system, "SF Pro Text", system-ui, sans-serif;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 48px 0;
+}
+
+/* ── Popover shell ── */
+.popover {
+  width: 620px;
+  height: 580px;
+  background: rgba(22,22,24,0.82);
+  backdrop-filter: blur(32px) saturate(160%);
+  -webkit-backdrop-filter: blur(32px) saturate(160%);
+  border-radius: 12px;
+  border: 0.5px solid rgba(255,255,255,0.12);
+  box-shadow:
+    0 24px 64px rgba(0,0,0,0.70),
+    0 4px 20px rgba(0,0,0,0.45),
+    inset 0 0.5px 0 rgba(255,255,255,0.10);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+/* ── Header / search bar ── */
+.header {
+  display: flex;
+  align-items: center;
+  height: 56px;
+  padding: 0 12px;
+  gap: 10px;
+  border-bottom: 0.5px solid rgba(255,255,255,0.07);
+  flex-shrink: 0;
+}
+
+
+.search-wrap {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.search-icon {
+  color: rgba(255,255,255,0.28);
+  flex-shrink: 0;
+  transition: opacity 0.15s ease-out;
+  pointer-events: none;
+}
+.search-icon.hidden { opacity: 0; }
+
+.search-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-family: -apple-system, system-ui, sans-serif;
+  font-size: 15px;
+  font-weight: 400;
+  color: rgba(255,255,255,0.85);
+  caret-color: #FF6363;
+}
+.search-input::placeholder { color: rgba(255,255,255,0.25); }
+
+/* ── Filter dropdown ── */
+.filter-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.filter-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 12px;
+  background: rgba(255,255,255,0.08);
+  border: 0.5px solid rgba(255,255,255,0.12);
+  border-radius: 8px;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.10s;
+  white-space: nowrap;
+}
+.filter-btn:hover { background: rgba(255,255,255,0.12); }
+.filter-btn-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: rgba(255,255,255,0.80);
+}
+.filter-chevron {
+  color: rgba(255,255,255,0.40);
+  flex-shrink: 0;
+  transition: transform 0.15s ease-out;
+}
+.filter-wrap.open .filter-chevron { transform: rotate(180deg); }
+
+/* Dropdown panel — fully opaque, matches button width */
+.filter-dropdown {
+  display: none;
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  width: 100%; /* matches .filter-btn width */
+  background: #26262A;
+  border: 0.5px solid rgba(255,255,255,0.10);
+  border-radius: 10px;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.55), 0 2px 8px rgba(0,0,0,0.30);
+  overflow: hidden;
+  z-index: 100;
+  padding: 4px;
+}
+.filter-wrap.open .filter-dropdown { display: block; }
+
+.filter-option {
+  display: flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  font-weight: 400;
+  color: rgba(255,255,255,0.75);
+  cursor: pointer;
+  transition: background 0.08s;
+  white-space: nowrap;
+}
+.filter-option:hover { background: rgba(255,255,255,0.08); }
+.filter-option.active {
+  background: rgba(255,255,255,0.10);
+  color: rgba(255,255,255,0.95);
+  font-weight: 500;
+}
+
+@keyframes pulse { from { opacity:1; } to { opacity:0.3; } }
+
+/* ── Split body ── */
+.split {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* ── Left list (230pt) ── */
+.list-pane {
+  width: 256px;
+  flex-shrink: 0;
+  border-right: 0.5px solid rgba(255,255,255,0.07);
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 4px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.list-pane::-webkit-scrollbar { width: 4px; }
+.list-pane::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 2px; }
+
+/* Section header */
+.section-header {
+  font-size: 11px;
+  font-weight: 500;
+  color: rgba(255,255,255,0.28);
+  padding: 10px 8px 4px;
+  letter-spacing: 0.01em;
+}
+
+/* Clip row — inset rounded card style like Raycast */
+.clip-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px;
+  height: 44px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.10s;
+  flex-shrink: 0;
+}
+.clip-row:hover   { background: rgba(255,255,255,0.06); }
+.clip-row.selected { background: rgba(255,255,255,0.10); }
+
+/* Image rows same height as regular rows */
+.clip-row.image-row { height: 44px; }
+
+/* Type icon */
+.type-icon {
+  width: 28px; height: 28px;
+  border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 500;
+  flex-shrink: 0;
+}
+.type-icon.text  { background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.40); }
+.type-icon.url   { background: rgba(86,194,255,0.14);  color: #56C2FF; }
+.type-icon.code  { background: rgba(89,212,153,0.14);  color: #59D499; }
+.type-icon.email { background: rgba(255,197,49,0.14);  color: #FFC531; }
+.type-icon.color { background: rgba(255,99,99,0.14);   color: #FF6363; }
+
+/* Image thumbnail */
+.img-thumb {
+  width: 28px; height: 28px;
+  border-radius: 6px;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: rgba(255,255,255,0.06);
+  border: 0.5px solid rgba(255,255,255,0.08);
+  display: flex; align-items: center; justify-content: center;
+}
+.img-thumb img {
+  width: 100%; height: 100%;
+  object-fit: cover;
+}
+.img-thumb-placeholder {
+  font-size: 16px;
+  opacity: 0.4;
+}
+
+.row-label {
+  flex: 1;
+  min-width: 0;
+  font-size: 13.5px;
+  font-weight: 400;
+  color: rgba(255,255,255,0.85);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1;
+}
+.row-label.mono {
+  font-family: "SF Mono", "Menlo", monospace;
+  font-size: 12px;
+}
+
+/* ── Right preview pane ── */
+.preview-pane {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: rgba(30,30,32,0.40);
+}
+
+/* Content area */
+.preview-content {
+  flex: 1;
+  padding: 16px 16px 12px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  min-height: 0;
+}
+
+.preview-text-mono {
+  font-family: "SF Mono", "Menlo", monospace;
+  font-size: 12.5px;
+  color: rgba(247,249,252,0.50);
+  line-height: 1.70;
+  white-space: pre-wrap;
+  word-break: break-all;
+  overflow: hidden;
+  transition: color 0.12s;
+}
+.preview-content:hover .preview-text-mono { color: rgba(247,249,252,0.90); }
+
+.preview-text-plain {
+  font-size: 14px;
+  color: rgba(247,249,252,0.50);
+  line-height: 1.60;
+  transition: color 0.12s;
+}
+.preview-content:hover .preview-text-plain { color: rgba(247,249,252,0.90); }
+
+.preview-url {
+  font-size: 13px;
+  color: #789BFA;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  line-height: 1.65;
+  word-break: break-all;
+  transition: color 0.12s;
+}
+.preview-content:hover .preview-url { color: #A3BCFF; }
+
+/* Full image preview */
+.preview-image-wrap {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  min-height: 0;
+}
+.preview-image-wrap img {
+  max-width: 100%; max-height: 100%;
+  border-radius: 6px;
+  object-fit: contain;
+  border: 1px solid rgba(255,255,255,0.14);
+  cursor: pointer;
+  transition: border-color 0.12s;
+}
+.preview-image-wrap img:hover {
+  border-color: rgba(255,255,255,0.26);
+}
+
+/* Color swatch */
+.color-preview {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.swatch {
+  width: 44px; height: 44px;
+  border-radius: 10px;
+  border: 0.5px solid rgba(255,255,255,0.15);
+  flex-shrink: 0;
+}
+.color-vals { display: flex; flex-direction: column; gap: 4px; }
+.color-val {
+  font-family: "SF Mono", monospace;
+  font-size: 12px;
+  color: rgba(247,249,252,0.50);
+  transition: color 0.12s;
+}
+.preview-content:hover .color-val { color: rgba(247,249,252,0.90); }
+
+.swatch {
+  transition: border-color 0.12s;
+}
+.preview-content:hover .swatch { border-color: rgba(255,255,255,0.30); }
+
+/* Info panel */
+.info-panel {
+  border-top: 0.5px solid rgba(255,255,255,0.07);
+  padding: 12px 16px 14px;
+  flex-shrink: 0;
+}
+.info-title {
+  font-size: 11px;
+  font-weight: 500;
+  color: rgba(255,255,255,0.28);
+  margin-bottom: 10px;
+  letter-spacing: 0.01em;
+}
+.info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 5px 0;
+}
+.info-row + .info-row { border-top: 0.5px solid rgba(255,255,255,0.05); }
+.info-label { font-size: 12px; color: rgba(255,255,255,0.35); }
+.info-value { font-size: 12px; color: rgba(255,255,255,0.72); text-align: right; }
+.info-value.mono { font-family: "SF Mono", monospace; font-size: 11.5px; }
+
+/* ── Footer ── */
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 42px;
+  padding: 0 14px;
+  border-top: 0.5px solid rgba(255,255,255,0.07);
+  flex-shrink: 0;
+}
+
+/* Left: app mark */
+.footer-app-icon {
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.app-mark {
+  position: relative;
+  width: 18px;
+  height: 18px;
+}
+
+.app-mark-back {
+  position: absolute;
+  bottom: 0; right: 0;
+  width: 13px; height: 13px;
+  border-radius: 4px;
+  border: 1.5px solid rgba(255,255,255,0.18);
+}
+
+.app-mark-front {
+  position: absolute;
+  top: 0; left: 0;
+  width: 13px; height: 13px;
+  border-radius: 4px;
+  background: rgba(255,255,255,0.14);
+  border: 1.5px solid rgba(255,255,255,0.28);
+}
+
+/* Right: action groups */
+.footer-right {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
+.footer-action-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  cursor: default;
+  user-select: none;
+}
+
+/* Vertical separator between groups */
+.footer-sep {
+  width: 0.5px;
+  height: 14px;
+  background: rgba(255,255,255,0.14);
+  flex-shrink: 0;
+}
+
+.footer-action-label {
+  font-size: 12px;
+  font-weight: 400;
+  color: rgba(255,255,255,0.55);
+}
+
+kbd {
+  font-family: -apple-system, system-ui, sans-serif;
+  font-size: 11px;
+  color: rgba(255,255,255,0.38);
+  background: rgba(255,255,255,0.07);
+  border: 0.5px solid rgba(255,255,255,0.13);
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  line-height: 1;
+}
+
+/* Clickable groups */
+.kbd-clickable {
+  cursor: pointer;
+}
+.kbd-clickable:hover .footer-action-label { color: rgba(255,255,255,0.80); }
+.kbd-clickable:hover kbd { color: rgba(255,255,255,0.60); border-color: rgba(255,255,255,0.22); }
+
+/* Last action group — no right padding */
+.footer-right .footer-action-group:last-child { padding-right: 0; }
+
+/* Preview content — clickable to copy, no visual cursor hint */
+.preview-content { cursor: default; }
+
+/* ── Copy tooltip ── */
+.popover-wrap {
+  position: relative;
+  display: inline-block;
+}
+
+.copy-toast {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%) translateY(0px);
+  background: #0f0f0f;
+  border: 0.5px solid rgba(255,255,255,0.13);
+  border-radius: 12px;
+  padding: 7px 16px;
+  font-size: 12px;
+  font-weight: 400;
+  color: rgba(255,255,255,0.68);
+  pointer-events: none;
+  white-space: nowrap;
+  opacity: 0;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.40), 0 1px 4px rgba(0,0,0,0.20);
+  z-index: 300;
+}
+
+@keyframes toastIn {
+  from { opacity: 0; transform: translateX(-50%) translateY(0px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(-16px); }
+}
+@keyframes toastOut {
+  from { opacity: 1;    transform: translateX(-50%) translateY(-16px); }
+  80%  { opacity: 0.15; transform: translateX(-50%) translateY(-2px); }
+  to   { opacity: 0;    transform: translateX(-50%) translateY(0px); }
+}
+
+.copy-toast.animating-in {
+  animation: toastIn 0.40s cubic-bezier(0.25,0.46,0.45,0.94) forwards;
+}
+.copy-toast.animating-out {
+  animation: toastOut 0.27s cubic-bezier(0.25,0.46,0.45,0.94) forwards;
+}
+
+/* ── Preview switcher tabs ── */
+.tabs {
+  display: flex; gap: 6px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.tab {
+  font-size: 11px; font-weight: 500;
+  color: rgba(255,255,255,0.38);
+  background: rgba(255,255,255,0.06);
+  border: 0.5px solid rgba(255,255,255,0.10);
+  border-radius: 5px;
+  padding: 4px 12px;
+  cursor: pointer;
+  transition: all 0.10s;
+}
+.tab:hover { color: rgba(255,255,255,0.65); background: rgba(255,255,255,0.09); }
+.tab.active { color: #FF6363; background: rgba(255,99,99,0.12); border-color: rgba(255,99,99,0.25); }
+
+.pv { display: none; flex-direction: column; flex: 1; min-height: 0; }
+.pv.active { display: flex; }
+
+/* image row with sync indicator */
+.sync-dot { width: 4px; height: 4px; border-radius: 50%; background: #56C2FF; flex-shrink: 0; }
+</style>
+</head>
+<body>
+
+<div class="tabs">
+  <div class="tab active" onclick="show('url',this)">URL</div>
+  <div class="tab" onclick="show('code',this)">Code</div>
+  <div class="tab" onclick="show('text',this)">Text</div>
+  <div class="tab" onclick="show('image',this)">Image</div>
+  <div class="tab" onclick="show('color',this)">Color</div>
+  <div class="tab" onclick="show('email',this)">Email</div>
+</div>
+
+<div class="popover-wrap">
+<div class="copy-toast" id="copyToast"></div>
+<div class="popover">
+
+  <!-- Header / search bar -->
+  <div class="header">
+    <div class="search-wrap">
+      <svg class="search-icon" width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="6" cy="6" r="4.5" stroke="currentColor" stroke-width="1.3"/>
+        <line x1="9.5" y1="9.5" x2="12.5" y2="12.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+      </svg>
+      <input class="search-input" type="text" placeholder="Type to filter entries…" oninput="handleSearch(this)">
+    </div>
+    <div class="filter-wrap" id="filterWrap">
+      <div class="filter-btn" onclick="toggleFilter()">
+        <span class="filter-btn-label" id="filterLabel">All Types</span>
+        <svg class="filter-chevron" width="10" height="6" viewBox="0 0 10 6" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M1 1L5 5L9 1" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <div class="filter-dropdown" id="filterDropdown">
+        <!-- built dynamically by JS -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Split -->
+  <div class="split">
+
+    <!-- Left list -->
+    <div class="list-pane">
+
+      <div class="section-header">Today</div>
+
+      <div class="clip-row selected" data-type="url" onclick="show('url',null);sel(this)">
+        <div class="type-icon url">↗</div>
+        <span class="row-label">https://developer.apple.com/doc…</span>
+      </div>
+
+      <div class="clip-row image-row" data-type="image" onclick="show('image',null);sel(this)">
+        <div class="img-thumb">
+          <img src="file:///Users/cosmic-sky/.claude/image-cache/77a8f08a-0664-4d63-bd27-7574bc9e6008/16.png" alt="">
+        </div>
+        <span class="row-label">Image (640×853)</span>
+      </div>
+
+      <div class="clip-row" data-type="code" onclick="show('code',null);sel(this)">
+        <div class="type-icon code">&lt;/&gt;</div>
+        <span class="row-label mono">func fetchItems() async throws</span>
+      </div>
+
+      <div class="clip-row" data-type="text" onclick="show('text',null);sel(this)">
+        <div class="type-icon text">T</div>
+        <span class="row-label">Meeting notes from design review</span>
+      </div>
+
+      <div class="clip-row" data-type="email" onclick="show('email',null);sel(this)">
+        <div class="type-icon email">@</div>
+        <span class="row-label">hello@example.com</span>
+      </div>
+
+      <div class="clip-row" data-type="color" onclick="show('color',null);sel(this)">
+        <div class="type-icon color">●</div>
+        <span class="row-label mono">#FF6363</span>
+      </div>
+
+      <div class="section-header">Yesterday</div>
+
+      <div class="clip-row" data-type="url" onclick="show('url',null);sel(this)">
+        <div class="type-icon url">↗</div>
+        <span class="row-label">https://github.com/anthropics/…</span>
+      </div>
+
+      <div class="clip-row" data-type="code" onclick="show('code',null);sel(this)">
+        <div class="type-icon code">&lt;/&gt;</div>
+        <span class="row-label mono">@State private var isConnected</span>
+      </div>
+
+      <div class="clip-row image-row" data-type="image" onclick="show('image',null);sel(this)">
+        <div class="img-thumb">
+          <span class="img-thumb-placeholder">🖼</span>
+        </div>
+        <span class="row-label">Image (1280×720)</span>
+      </div>
+
+      <div class="clip-row" data-type="text" onclick="show('text',null);sel(this)">
+        <div class="type-icon text">T</div>
+        <span class="row-label">Don't forget to push staging branch</span>
+      </div>
+
+    </div>
+
+    <!-- Right preview pane -->
+    <div class="preview-pane">
+
+      <!-- URL -->
+      <div class="pv active" id="pv-url">
+        <div class="preview-content" onclick="triggerCopy()" >
+          <div class="preview-url">https://developer.apple.com/documentation/swiftui/view-layout</div>
+        </div>
+        <div class="info-panel">
+          <div class="info-title">Information</div>
+          <div class="info-row"><span class="info-label">Source</span><span class="info-value">Safari</span></div>
+          <div class="info-row"><span class="info-label">Content type</span><span class="info-value">URL</span></div>
+          <div class="info-row"><span class="info-label">Characters</span><span class="info-value mono">62</span></div>
+          <div class="info-row"><span class="info-label">Device</span><span class="info-value">iPhone</span></div>
+          <div class="info-row"><span class="info-label">Copied</span><span class="info-value">Today at 2:14 PM</span></div>
+        </div>
+      </div>
+
+      <!-- Code -->
+      <div class="pv" id="pv-code">
+        <div class="preview-content" onclick="triggerCopy()">
+          <div class="preview-text-mono">func fetchItems() async throws -> [ClipItem] {
+    let resp = try await api.get("/clips")
+    return resp.items
+}</div>
+        </div>
+        <div class="info-panel">
+          <div class="info-title">Information</div>
+          <div class="info-row"><span class="info-label">Source</span><span class="info-value">Xcode</span></div>
+          <div class="info-row"><span class="info-label">Content type</span><span class="info-value">Code</span></div>
+          <div class="info-row"><span class="info-label">Characters</span><span class="info-value mono">78</span></div>
+          <div class="info-row"><span class="info-label">Device</span><span class="info-value">This Mac</span></div>
+          <div class="info-row"><span class="info-label">Copied</span><span class="info-value">Today at 1:58 PM</span></div>
+        </div>
+      </div>
+
+      <!-- Text -->
+      <div class="pv" id="pv-text">
+        <div class="preview-content" onclick="triggerCopy()">
+          <div class="preview-text-plain">Meeting notes from the design review session this afternoon. Key decisions: wider popover, split pane preview, type indicators per clip.</div>
+        </div>
+        <div class="info-panel">
+          <div class="info-title">Information</div>
+          <div class="info-row"><span class="info-label">Source</span><span class="info-value">Notes</span></div>
+          <div class="info-row"><span class="info-label">Content type</span><span class="info-value">Text</span></div>
+          <div class="info-row"><span class="info-label">Characters</span><span class="info-value mono">142</span></div>
+          <div class="info-row"><span class="info-label">Words</span><span class="info-value mono">23</span></div>
+          <div class="info-row"><span class="info-label">Copied</span><span class="info-value">Today at 1:30 PM</span></div>
+        </div>
+      </div>
+
+      <!-- Image -->
+      <div class="pv" id="pv-image">
+        <div class="preview-content" style="padding:12px;">
+          <div class="preview-image-wrap" style="flex:1;">
+            <img src="file:///Users/cosmic-sky/.claude/image-cache/77a8f08a-0664-4d63-bd27-7574bc9e6008/16.png" alt="Image preview" onclick="triggerCopy()">
+          </div>
+        </div>
+        <div class="info-panel">
+          <div class="info-title">Information</div>
+          <div class="info-row"><span class="info-label">Content type</span><span class="info-value">Image</span></div>
+          <div class="info-row"><span class="info-label">Dimensions</span><span class="info-value mono">640 × 853</span></div>
+          <div class="info-row"><span class="info-label">Device</span><span class="info-value">iPhone</span></div>
+          <div class="info-row"><span class="info-label">Copied</span><span class="info-value">Today at 12:44 PM</span></div>
+        </div>
+      </div>
+
+      <!-- Color -->
+      <div class="pv" id="pv-color">
+        <div class="preview-content" onclick="triggerCopy()">
+          <div class="color-preview">
+            <div class="swatch" style="background:#FF6363;"></div>
+            <div class="color-vals">
+              <div class="color-val">#FF6363</div>
+              <div class="color-val">rgb(255, 99, 99)</div>
+              <div class="color-val">hsl(0°, 100%, 70%)</div>
+            </div>
+          </div>
+        </div>
+        <div class="info-panel">
+          <div class="info-title">Information</div>
+          <div class="info-row"><span class="info-label">Source</span><span class="info-value">Figma</span></div>
+          <div class="info-row"><span class="info-label">Content type</span><span class="info-value">Color</span></div>
+          <div class="info-row"><span class="info-label">Copied</span><span class="info-value">Today at 11:20 AM</span></div>
+        </div>
+      </div>
+
+      <!-- Email -->
+      <div class="pv" id="pv-email">
+        <div class="preview-content" onclick="triggerCopy()">
+          <div class="preview-text-mono">hello@example.com</div>
+        </div>
+        <div class="info-panel">
+          <div class="info-title">Information</div>
+          <div class="info-row"><span class="info-label">Source</span><span class="info-value">Mail</span></div>
+          <div class="info-row"><span class="info-label">Content type</span><span class="info-value">Email</span></div>
+          <div class="info-row"><span class="info-label">Characters</span><span class="info-value mono">17</span></div>
+          <div class="info-row"><span class="info-label">Device</span><span class="info-value">iPhone</span></div>
+          <div class="info-row"><span class="info-label">Copied</span><span class="info-value">Today at 10:05 AM</span></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div class="footer">
+    <div style="display:flex;align-items:center;gap:8px;">
+      <div class="footer-app-icon">
+        <div class="app-mark">
+          <div class="app-mark-back"></div>
+          <div class="app-mark-front"></div>
+        </div>
+      </div>
+      <span style="font-size:12px;font-weight:500;color:rgba(255,255,255,0.38);">AirClip</span>
+    </div>
+    <div class="footer-right">
+      <div class="footer-action-group kbd-clickable" onclick="triggerCopy()">
+        <span class="footer-action-label">Copy</span>
+        <kbd>↵</kbd>
+      </div>
+      <div class="footer-sep"></div>
+      <div class="footer-action-group kbd-clickable">
+        <span class="footer-action-label">Settings</span>
+        <kbd>⌘</kbd>
+        <kbd>,</kbd>
+      </div>
+    </div>
+  </div>
+
+</div>
+</div>
+
+<script>
+  // Filter label map — no "Only"
+  const typeLabels = {
+    url: 'Links', code: 'Code', text: 'Text',
+    email: 'Emails', color: 'Colors', image: 'Images'
+  };
+
+  // Toast label map — what shows on copy
+  const toastLabels = {
+    url: 'Link', code: 'Code', text: 'Text',
+    email: 'Email', color: 'Color', image: 'Image'
+  };
+
+  let currentType = 'url';
+  let toastTimer = null;
+  let toastOutTimer = null;
+
+  function triggerCopy() {
+    const label = toastLabels[currentType] || currentType;
+    const toast = document.getElementById('copyToast');
+    toast.textContent = label + ' copied';
+
+    // Reset
+    clearTimeout(toastTimer);
+    clearTimeout(toastOutTimer);
+    toast.classList.remove('animating-in', 'animating-out');
+    void toast.offsetWidth; // reflow
+
+    // Slide in
+    toast.classList.add('animating-in');
+
+    // After 2s hold, slide out
+    toastTimer = setTimeout(() => {
+      toast.classList.remove('animating-in');
+      void toast.offsetWidth;
+      toast.classList.add('animating-out');
+      toastOutTimer = setTimeout(() => toast.classList.remove('animating-out'), 270);
+    }, 2000);
+  }
+
+  function buildFilter() {
+    const types = [...new Set(
+      [...document.querySelectorAll('.clip-row[data-type]')]
+        .map(r => r.dataset.type)
+    )];
+
+    const wrap = document.getElementById('filterWrap');
+    if (types.length < 2) { wrap.style.display = 'none'; return; }
+    wrap.style.display = '';
+
+    const dropdown = document.getElementById('filterDropdown');
+    dropdown.innerHTML = '';
+
+    const allEl = document.createElement('div');
+    allEl.className = 'filter-option active';
+    allEl.textContent = 'All Types';
+    allEl.onclick = () => selectFilter('All Types', allEl);
+    dropdown.appendChild(allEl);
+
+    types.forEach(type => {
+      const label = typeLabels[type] || (type.charAt(0).toUpperCase() + type.slice(1));
+      const el = document.createElement('div');
+      el.className = 'filter-option';
+      el.textContent = label;
+      el.onclick = () => selectFilter(label, el);
+      dropdown.appendChild(el);
+    });
+  }
+
+  function toggleFilter() {
+    document.getElementById('filterWrap').classList.toggle('open');
+  }
+
+  function selectFilter(label, el) {
+    document.getElementById('filterLabel').textContent = label;
+    document.querySelectorAll('.filter-option').forEach(o => o.classList.remove('active'));
+    el.classList.add('active');
+    document.getElementById('filterWrap').classList.remove('open');
+  }
+
+  document.addEventListener('click', e => {
+    const wrap = document.getElementById('filterWrap');
+    if (!wrap.contains(e.target)) wrap.classList.remove('open');
+  });
+
+  function handleSearch(input) {
+    const icon = input.closest('.search-wrap').querySelector('.search-icon');
+    if (input.value.length > 0) {
+      icon.classList.add('hidden');
+    } else {
+      icon.classList.remove('hidden');
+    }
+  }
+
+  // Run on load
+  document.addEventListener('DOMContentLoaded', buildFilter);
+
+  function show(type, tabEl) {
+    currentType = type;
+    document.querySelectorAll('.pv').forEach(el => el.classList.remove('active'));
+    const el = document.getElementById('pv-' + type);
+    if (el) el.classList.add('active');
+    if (tabEl) {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      tabEl.classList.add('active');
+    }
+  }
+  function sel(row) {
+    document.querySelectorAll('.clip-row').forEach(r => r.classList.remove('selected'));
+    row.classList.add('selected');
+  }
+  // Row label double-click = copy
+  document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('.clip-row .row-label').forEach(label => {
+      label.style.cursor = 'default';
+      label.addEventListener('dblclick', e => {
+        e.stopPropagation();
+        triggerCopy();
+      });
+    });
+  });
+</script>
+</body>
+</html>

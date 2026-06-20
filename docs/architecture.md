@@ -1,514 +1,164 @@
-# Clipr+ Architecture
+# AirClip Architecture
 
-This document explains how the Clipr+ system works internally.
+Status: Current LAN-first architecture.
 
-It covers:
+AirClip is a Mac + Android clipboard sync app that works on the local network first. Clipboard content is encrypted on the sender, sent directly to paired devices over LAN WebSocket connections, and stored only in local device history.
 
-- system components
-- clipboard sync flow
-- encryption model
-- message delivery
-- offline catch-up
-- Redis storage model
-- sequence ordering
+## Product Shape
 
-The goal is to make the system easy to understand and maintain.
+AirClip has two active client apps:
 
----
+1. macOS app
+2. Android app
 
-# System Overview
+The active MVP does not depend on the backend relay for clipboard delivery. Older Redis relay, account WebSocket, sequence-number catch-up, and pending device approval assumptions are legacy and should not guide new implementation.
 
-Clipr+ consists of three main components:
+## Components
 
-```
-Client Devices
-   │
-   │ encrypted clipboard payload
-   ▼
-Backend Relay Server
-   │
-   │ WebSocket delivery
-   ▼
-Other Trusted Devices
-```
-
-Main parts:
-
-1. Mac client
-2. Android client
-3. Backend server
-4. Redis storage
-
-The backend acts as a **temporary relay**, not permanent clipboard storage.
-
----
-
-# Components
-
-## Mac Client
+### macOS App
 
 Responsibilities:
 
-- monitor clipboard changes
-- encrypt clipboard payload
-- send encrypted messages to backend
-- maintain WebSocket connection
-- receive clipboard messages from other devices
+1. Monitor local clipboard changes.
+2. Apply sync mode and sensitive clipboard policy.
+3. Encrypt clipboard packets for paired peers.
+4. Advertise `_airclip._tcp` on the LAN.
+5. Browse for paired peers over Bonjour.
+6. Accept incoming LAN WebSocket connections on TCP `7878`.
+7. Store local clipboard history with saved-item protection.
+8. Show device presence, history, settings, and pairing UI.
 
-Key features:
-
-- clipboard monitoring
-- encryption
-- message sending
-- message receiving
-
----
-
-## Android Client
+### Android App
 
 Responsibilities:
 
-- maintain WebSocket connection
-- decrypt clipboard payloads
-- store clipboard history locally
-- display clipboard history
-- allow tap-to-copy
+1. Monitor or explicitly read clipboard depending on Android platform limits and sync mode.
+2. Apply sync mode and sensitive clipboard policy.
+3. Encrypt clipboard packets for paired peers.
+4. Advertise `_airclip._tcp` using Android NSD.
+5. Discover paired peers using Android NSD.
+6. Accept incoming LAN WebSocket connections on TCP `7878`.
+7. Keep a foreground sync service when LAN sync is active.
+8. Store local clipboard history with saved-item protection.
+9. Show device presence, history, settings, widget send, and pairing UI.
 
-Key features:
+### Backend
 
-- local clipboard history
-- offline catch-up
-- message decryption
+The backend source still exists in the repository, but it is not the active clipboard transport for the LAN-first MVP. Treat it as legacy or future optional infrastructure until a new product decision says otherwise.
 
----
+## Identity And Pairing
 
-## Backend Server
+Each device has:
 
-Responsibilities:
+1. `airclip_id`: shared network identifier for the paired AirClip group.
+2. `device_id`: unique local device identifier.
+3. Device name and platform metadata.
+4. Public/private keypair.
+5. Local paired-device registry.
 
-- device authentication
-- message relay
-- sequence ordering
-- short-term message storage
-- WebSocket delivery
-- REST catch-up endpoint
+Pairing uses QR/code-based local exchange. Paired devices store each other locally. There is no active pending-approval server workflow in the LAN-first MVP.
 
-Important property:
+## Trust Model
 
-The backend **does not permanently store clipboard data**.
+A peer is trusted only when:
 
----
+1. The peer presents the same `airclip_id`.
+2. The peer `device_id` exists in the local paired-device registry.
 
-## Redis
+Removing a device deletes it from the local registry and disconnects its active peer. Removed devices should not reconnect until paired again.
 
-Redis is used as a lightweight data layer.
+## LAN Runtime
 
-It stores:
+Each paired device starts two LAN paths when sync mode allows LAN service:
 
-- recent clipboard history
-- pending delivery queues
-- message sequence ordering
+1. Listener: WebSocket server on TCP `7878`.
+2. Discovery/advertisement: `_airclip._tcp` over Bonjour or Android NSD.
 
-Redis keys expire automatically.
+Peers authenticate after connection using:
 
----
-
-# Clipboard Sync Flow
-
-When a user copies text on Mac:
-
-### Step 1
-
-Mac detects clipboard change.
-
-### Step 2
-
-Clipboard text is encrypted.
-
-```
-plaintext clipboard
-      │
-      ▼
-encrypted payload
+```json
+{
+  "type": "auth",
+  "device_id": "device-id",
+  "airclip_id": "airclip-id",
+  "public_key": "base64-public-key"
+}
 ```
 
-### Step 3
+The receiver replies:
 
-Encrypted payload is sent to backend via REST.
-
-### Step 4
-
-Backend assigns a **sequence number**.
-
-Example:
-
-```
-seq = 101
-seq = 102
-seq = 103
+```json
+{
+  "type": "auth_ok",
+  "device_id": "device-id",
+  "public_key": "base64-public-key"
+}
 ```
 
-### Step 5
+After authentication, the connection carries live clips, history backfill clips, and heartbeat messages.
 
-Backend stores message temporarily in Redis.
+## Clipboard Flow
 
-### Step 6
+When a local clip is sent:
 
-Backend sends message to connected devices via WebSocket.
+1. App captures the clipboard packet.
+2. Sync mode is checked.
+3. Sensitive clipboard policy is checked.
+4. Packet is saved to local history.
+5. Packet is encrypted once per connected peer.
+6. Encrypted packet is sent over the authenticated LAN WebSocket.
+7. Receiver decrypts it.
+8. Receiver writes live clips to the system clipboard.
+9. Receiver stores the clip in local history.
+10. Echo suppression prevents loops.
 
-### Step 7
+History backfill uses the same encrypted packet shape, but it merges into history only and does not overwrite the active clipboard.
 
-Android receives encrypted message.
+## History
 
-### Step 8
+History is local-first:
 
-Android decrypts the payload.
+1. Mac stores SwiftData `ClipboardItem` records.
+2. Android stores `ClipItemRecord` records in DataStore JSON.
+3. Saved clips are protected from normal pruning.
+4. Unsaved clips remain bounded by platform retention and item caps.
+5. Backfill sends up to 20 recent items after peer authentication.
+6. Backfill deduplicates by message ID or source/content/timestamp window.
 
-### Step 9
+## Sync Modes
 
-Android stores message in local clipboard history.
+Active sync modes:
 
----
+1. Auto: automatic capture and LAN service.
+2. Manual: explicit send, LAN service still available.
+3. Paused: stops listener, discovery, advertisement, service, and peers.
 
-# Sequence Numbers
+## Presence And Recovery
 
-Sequence numbers maintain message ordering.
+Connected peers exchange heartbeat and heartbeat acknowledgement messages every 15 seconds. Heartbeats refresh `lastSeenMs` and improve device UI presence.
 
-Properties:
+Recovery is local-network based:
 
-- strictly increasing
-- assigned by backend
-- used for catch-up
-- stored in Redis
+1. Devices reconnect when Bonjour/NSD discovers the paired peer again.
+2. Peers authenticate using local trust checks.
+3. Each side pushes recent encrypted history after authentication.
+4. History backfill merges without changing the active clipboard.
 
-Example message stream:
+## Security
 
-```
-seq 101
-seq 102
-seq 103
-seq 104
-```
+Security properties:
 
-Devices track:
+1. Clipboard plaintext is encrypted before transport.
+2. Private keys remain local.
+3. LAN auth rejects removed or unknown devices.
+4. Sensitive-content policies can block or confirm sends before encryption.
+5. Logs should contain only lengths, hashes, categories, and metadata, not plaintext clipboard content.
 
-```
-lastSeenSeq
-```
+## Current Non-Goals
 
-This allows devices to request missed messages.
-
----
-
-# Offline Catch-Up
-
-If a device goes offline, it may miss messages.
-
-Example:
-
-Android last seen sequence:
-
-```
-lastSeenSeq = 100
-```
-
-Mac sends messages while Android is offline:
-
-```
-101
-102
-103
-104
-```
-
-When Android reconnects:
-
-### Step 1
-
-Server sends:
-
-```
-hello(latest_seq=104)
-```
-
-### Step 2
-
-Android compares:
-
-```
-lastSeenSeq = 100
-latestSeq = 104
-```
-
-### Step 3
-
-Android calls REST endpoint:
-
-```
-GET /clips?after_seq=100
-```
-
-### Step 4
-
-Server returns messages:
-
-```
-101
-102
-103
-104
-```
-
-### Step 5
-
-Android decrypts and merges into history.
-
----
-
-# WebSocket Delivery
-
-When devices are online, clipboard messages are delivered instantly.
-
-Flow:
-
-```
-Mac Client
-   │
-   │ POST /clipboard
-   ▼
-Backend
-   │
-   │ deliver_clipboard
-   ▼
-Android Client
-```
-
-WebSocket message types include:
-
-- hello
-- deliver_clipboard
-- connection events
-
----
-
-# Redis Storage Model
-
-Redis stores short-term clipboard data.
-
-Main structures:
-
-### Clipboard History
-
-```
-clips:hist:{account_id}
-```
-
-Type:
-
-```
-sorted set
-```
-
-Score:
-
-```
-sequence number
-```
-
-Value:
-
-```
-encrypted clipboard payload
-```
-
-Purpose:
-
-- catch-up fetch
-- ordering
-
-Retention:
-
-```
-30 minutes
-```
-
----
-
-### Pending Delivery
-
-```
-pending:{device_id}
-```
-
-Type:
-
-```
-list
-```
-
-Purpose:
-
-store messages for temporarily disconnected devices.
-
-TTL:
-
-```
-~60 seconds
-```
-
-Used for quick reconnect recovery.
-
----
-
-# Local Clipboard History
-
-Each device keeps its own local history.
-
-Properties:
-
-- newest items first
-- max **20 items**
-- oldest items removed automatically
-- stored locally
-- independent from server
-
-Example:
-
-```
-[112]
-[111]
-[110]
-[109]
-...
-```
-
----
-
-# Encryption Model
-
-Clipboard data is encrypted on the client before transmission.
-
-Encryption flow:
-
-```
-Clipboard Text
-      │
-      ▼
-Client Encryption
-      │
-      ▼
-Encrypted Payload
-      │
-      ▼
-Backend Relay
-      │
-      ▼
-Receiving Device
-      │
-      ▼
-Client Decryption
-```
-
-Important properties:
-
-- encryption happens on client
-- server only relays encrypted payload
-- server cannot read clipboard text
-- private keys remain on device
-
----
-
-# Message Lifecycle
-
-A clipboard message goes through these stages:
-
-```
-1 Clipboard copied
-2 Clipboard encrypted
-3 Payload sent to backend
-4 Backend assigns sequence
-5 Stored in Redis history
-6 Delivered via WebSocket
-7 Received by device
-8 Decrypted by client
-9 Stored in local history
-```
-
----
-
-# Failure Handling
-
-### WebSocket disconnect
-
-If WebSocket disconnects:
-
-- client reconnects automatically
-- catch-up logic fetches missed items
-
----
-
-### Decryption failure
-
-If decryption fails:
-
-- message ignored
-- sequence not advanced
-- client can retry later
-
----
-
-### History overflow
-
-If more than 20 items exist:
-
-- oldest items are removed.
-
----
-
-# Design Principles
-
-Clipr+ follows several core design principles.
-
-### Minimal server state
-
-The backend stores only short-lived data.
-
-### Client-owned encryption
-
-Clipboard content is encrypted before leaving the device.
-
-### Event-driven sync
-
-WebSockets provide real-time delivery.
-
-### Deterministic ordering
-
-Sequence numbers ensure consistent message ordering.
-
-### Simple failure recovery
-
-Catch-up mechanism restores missed messages.
-
----
-
-# Future Architecture Changes
-
-Future improvements may include:
-
-- multi-device fanout optimization
-- longer history retention
-- improved background sync
-- richer clipboard formats
-- device trust management
-
----
-
-# Related Documents
-
-See additional documentation:
-
-```
-docs/protocol.md
-docs/security.md
-docs/mvp-scope.md
-```
+1. Permanent cloud clipboard history.
+2. Central relay delivery.
+3. Redis sequence catch-up.
+4. Server-side device approval.
+5. iOS background clipboard monitoring.
+6. Windows support before Mac + Android are trusted.

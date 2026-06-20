@@ -313,7 +313,6 @@ struct RootView: View {
             }
         }
         .preferredColorScheme(appearance.colorScheme)
-        .sensitiveClipboardPrompts()
     }
 }
 
@@ -335,47 +334,6 @@ struct WindowRootView: View {
         .frame(width: size.width, height: size.height)
         .background(MainWindowChromePalette.shell)
         .preferredColorScheme(appearance.colorScheme)
-        .sensitiveClipboardPrompts()
-    }
-}
-
-private struct SensitiveClipboardPromptModifier: ViewModifier {
-    @ObservedObject private var protection = SensitiveClipboardProtectionStore.shared
-
-    func body(content: Content) -> some View {
-        content
-        .alert(item: Binding(
-            get: { protection.prompt },
-            set: { if $0 == nil { protection.dismissPrompt() } }
-        )) { prompt in
-            switch prompt.kind {
-            case .automaticBlocked:
-                return Alert(
-                    title: Text("Sensitive clipboard item blocked"),
-                    message: Text("\(prompt.finding.category.label) detected. AirClip kept it on this Mac."),
-                    dismissButton: .default(Text("OK")) {
-                        protection.dismissPrompt()
-                    }
-                )
-            case .manualConfirmation:
-                return Alert(
-                    title: Text("Send sensitive clipboard item?"),
-                    message: Text("\(prompt.finding.category.label) detected. Only continue if you intend to share it with your paired devices."),
-                    primaryButton: .destructive(Text("Send Anyway")) {
-                        protection.confirmManualSend()
-                    },
-                    secondaryButton: .cancel {
-                        protection.dismissPrompt()
-                    }
-                )
-            }
-        }
-    }
-}
-
-private extension View {
-    func sensitiveClipboardPrompts() -> some View {
-        modifier(SensitiveClipboardPromptModifier())
     }
 }
 

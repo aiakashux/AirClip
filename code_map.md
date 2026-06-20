@@ -1,6 +1,6 @@
 # Code Map
 
-Important components in Clipr+
+Important components in AirClip
 
 Backend
 

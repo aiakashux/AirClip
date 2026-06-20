@@ -1,67 +1,73 @@
-# Ring macOS Client
+# AirClip macOS App
 
-Native Swift menu-bar app for Ring. Requires macOS 14 (Sonoma) or later.
+Native SwiftUI macOS app for AirClip.
+
+The current macOS app is part of the LAN-first Mac + Android MVP. It advertises and discovers `_airclip._tcp` peers, listens on TCP `7878`, encrypts clipboard packets for paired devices, and stores local history with SwiftData.
 
 ## Requirements
 
-- Xcode 15 or later
-- macOS 14+ SDK
-- Apple Developer account (free tier is fine for local builds)
+1. Xcode 15 or later.
+2. macOS SDK compatible with the project.
+3. Local signing team when running from Xcode.
 
-## Build & Run
+## Build
 
-1. Open `Ring.xcodeproj` in Xcode
-2. Select the **Ring** scheme and your Mac as the run destination
-3. In **Signing & Capabilities**, set your development team
-4. Press **⌘R** to build and run
+From the repository root:
 
-The app hides from the Dock (`LSUIElement = YES`). Look for the clipboard icon in the menu bar.
-
-## Project Layout
-
-```
-mac/
-  Ring/
-    RingApp.swift          @main entry point + AppDelegate
-    AppConfig.swift             Default server URL + constants
-    MenuBar/
-      StatusBarController.swift NSStatusItem + NSPopover management
-    Views/
-      PopoverView.swift         Clipboard history list (SwiftUI)
-      SettingsView.swift        Account, devices, server URL (SwiftUI)
-      OnboardingView.swift      Register/login + device approval flow
-    Core/
-      ClipboardMonitor.swift    NSPasteboard polling + loop prevention
-      CryptoManager.swift       X25519 keypair + AES-GCM encrypt/decrypt
-      SyncEngine.swift          WebSocket connection + catch-up flow
-      LocalHistoryStore.swift   SwiftData model (ClipboardItem, cap 20)
-      AuthManager.swift         Keychain token management
-      APIClient.swift           REST calls (URLSession async/await)
-    Resources/
-      Info.plist
-    Ring.entitlements
-  Ring.xcodeproj/
+```bash
+xcodebuild \
+  -project mac/AirClip.xcodeproj \
+  -scheme AirClip \
+  -configuration Debug \
+  -destination 'platform=macOS' \
+  -disableAutomaticPackageResolution \
+  -onlyUsePackageVersionsFromResolvedFile \
+  CODE_SIGNING_ALLOWED=NO \
+  build
 ```
 
-## Security Properties
+For interactive development, open `mac/AirClip.xcodeproj` and run the `AirClip` scheme.
 
-| Property | Implementation |
-|---|---|
-| E2E encryption | X25519 key agreement → HKDF-SHA256 → AES-GCM |
-| Private key storage | Keychain (`kSecClassGenericPassword`, `AfterFirstUnlock`) |
-| WebSocket auth | `Authorization: Bearer <device_token>` header only |
-| Loop prevention | `remoteUpdateInProgress` flag + SHA-256 hash ring (last 10) |
-| Tap-to-copy | Writes `NSPasteboard` directly; never sends to server |
-| No plaintext logs | Decryption errors swallowed; no clipboard content logged |
-| No sandbox | `com.apple.security.app-sandbox` is absent from entitlements |
+## Current Responsibilities
 
-## Server URL
+1. Pair with Android using QR/code flows.
+2. Monitor `NSPasteboard`.
+3. Apply sync mode and sensitive clipboard policies.
+4. Encrypt and send clipboard packets to paired LAN peers.
+5. Receive and decrypt live clipboard packets.
+6. Merge history backfill without changing the active clipboard.
+7. Store local history in SwiftData.
+8. Show devices, settings, history, saved clips, and diagnostics.
 
-Default: `https://api.ring.com`
+## Important Files
 
-To switch to a dev server, open **Settings** from the popover and update the Server URL field.
+```text
+mac/AirClip/
+  AirClipApp.swift
+  AppConfig.swift
+  Core/
+    AirClipIdentity.swift
+    ClipboardMonitor.swift
+    CryptoManager.swift
+    LanBrowser.swift
+    LanServer.swift
+    LocalHistoryStore.swift
+    PeerConnection.swift
+    PeerManager.swift
+    SensitiveClipboardPolicy.swift
+    SensitiveClipboardProtectionStore.swift
+    SyncEngine.swift
+    SyncModeStore.swift
+  MenuBar/
+    StatusBarController.swift
+  Views/
+    ClipTypeDetector.swift
+    MainWindowView.swift
+    OnboardingView.swift
+    PopoverView.swift
+    SettingsView.swift
+```
 
-## Distribution
+## Notes
 
-Build a Release archive in Xcode (**Product → Archive**) and export as a
-"Developer ID" or "Direct Distribution" app. No App Store required.
+The previous README described account auth, backend WebSocket connection, and server catch-up. That is legacy for the current MVP. The active transport is LAN peer-to-peer with local pairing state.

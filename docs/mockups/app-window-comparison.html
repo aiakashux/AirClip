@@ -1,0 +1,739 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<script src="https://mcp.figma.com/mcp/html-to-design/capture.js" async></script>
+<title>AirClip · App Window Concept</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: #111113 url('file:///Users/cosmic-sky/.claude/image-cache/77a8f08a-0664-4d63-bd27-7574bc9e6008/16.png') center / cover no-repeat fixed;
+  font-family: -apple-system, "SF Pro Text", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  padding: 48px 56px 80px;
+  display: flex;
+  flex-direction: column;
+  gap: 56px;
+  min-height: 100vh;
+}
+
+/* ─── Section labels ─── */
+.section-title {
+  font-size: 11px;
+  font-weight: 500;
+  color: rgba(255,255,255,0.30);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  margin-bottom: 14px;
+}
+.section-sub {
+  font-size: 13px;
+  color: rgba(255,255,255,0.38);
+  margin-top: 5px;
+  line-height: 1.5;
+  max-width: 680px;
+}
+
+/* ════════════════════════════════════════
+   MAIN APP WINDOW  (900 × 580)
+════════════════════════════════════════ */
+.main-window {
+  width: 900px;
+  height: 580px;
+  background: rgba(22,22,24,0.88);
+  backdrop-filter: blur(40px) saturate(160%);
+  -webkit-backdrop-filter: blur(40px) saturate(160%);
+  border-radius: 12px;
+  border: 0.5px solid rgba(255,255,255,0.12);
+  box-shadow:
+    0 32px 80px rgba(0,0,0,0.72),
+    0 6px 24px rgba(0,0,0,0.45),
+    inset 0 0.5px 0 rgba(255,255,255,0.10);
+  overflow: hidden;
+  display: flex;
+  flex-direction: row;
+}
+
+/* ── Window sidebar (180px) ── */
+.win-sidebar {
+  width: 180px;
+  flex-shrink: 0;
+  background: rgba(0,0,0,0.20);
+  border-right: 0.5px solid rgba(255,255,255,0.07);
+  display: flex;
+  flex-direction: column;
+}
+
+.win-sidebar-top {
+  height: 52px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px;
+  border-bottom: 0.5px solid rgba(255,255,255,0.06);
+  flex-shrink: 0;
+}
+
+.traffic-lights { display: flex; gap: 6px; flex-shrink: 0; }
+.tl { width: 12px; height: 12px; border-radius: 50%; }
+.tl-close  { background: #FF5F57; }
+.tl-min    { background: #FEBC2E; }
+.tl-max    { background: #28C840; }
+
+.win-nav {
+  flex: 1;
+  padding: 10px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.win-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background 0.10s;
+  user-select: none;
+}
+.win-nav-item:hover { background: rgba(255,255,255,0.06); }
+.win-nav-item.active { background: rgba(255,255,255,0.10); }
+.win-nav-icon { width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; opacity: 0.45; flex-shrink: 0; }
+.win-nav-item.active .win-nav-icon { opacity: 0.85; }
+.win-nav-label { font-size: 13px; font-weight: 400; color: rgba(255,255,255,0.45); }
+.win-nav-item.active .win-nav-label { color: rgba(255,255,255,0.88); font-weight: 500; }
+
+.win-sidebar-bottom {
+  padding: 10px 8px 14px;
+  border-top: 0.5px solid rgba(255,255,255,0.06);
+  flex-shrink: 0;
+}
+.status-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  height: 30px;
+}
+.status-dot { width: 6px; height: 6px; border-radius: 50%; background: #59D499; animation: pulse 1.5s ease-in-out infinite alternate; flex-shrink: 0; }
+.status-label { font-size: 11px; color: rgba(255,255,255,0.30); }
+@keyframes pulse { from { opacity:1; } to { opacity:0.3; } }
+
+/* ── Window content area ── */
+.win-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Content header (matches sidebar top height) */
+.win-content-header {
+  height: 52px;
+  display: flex;
+  align-items: center;
+  padding: 0 14px 0 16px;
+  border-bottom: 0.5px solid rgba(255,255,255,0.07);
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.win-search-wrap {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.win-search-icon { color: rgba(255,255,255,0.28); flex-shrink: 0; }
+.win-search-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-size: 15px;
+  font-weight: 400;
+  color: rgba(255,255,255,0.85);
+  caret-color: #FF6363;
+}
+.win-search-input::placeholder { color: rgba(255,255,255,0.22); }
+
+/* Filter */
+.filter-btn {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  padding: 0 11px;
+  background: rgba(255,255,255,0.07);
+  border: 0.5px solid rgba(255,255,255,0.11);
+  border-radius: 7px;
+  cursor: pointer;
+  user-select: none;
+  flex-shrink: 0;
+}
+.filter-btn-label { font-size: 12.5px; font-weight: 500; color: rgba(255,255,255,0.75); }
+.filter-chevron { color: rgba(255,255,255,0.38); }
+
+/* ── Split pane ── */
+.win-split {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* List pane */
+.win-list {
+  width: 268px;
+  flex-shrink: 0;
+  border-right: 0.5px solid rgba(255,255,255,0.07);
+  overflow-y: auto;
+  padding: 4px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.win-list::-webkit-scrollbar { width: 4px; }
+.win-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.10); border-radius: 2px; }
+
+.list-section { font-size: 11px; font-weight: 500; color: rgba(255,255,255,0.26); padding: 10px 8px 4px; }
+
+.clip-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px;
+  height: 44px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.10s;
+}
+.clip-row:hover    { background: rgba(255,255,255,0.06); }
+.clip-row.selected { background: rgba(255,255,255,0.10); }
+
+.type-icon {
+  width: 28px; height: 28px;
+  border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 500;
+  flex-shrink: 0;
+}
+.type-icon.url   { background: rgba(86,194,255,0.14);  color: #56C2FF; }
+.type-icon.code  { background: rgba(89,212,153,0.14);  color: #59D499; }
+.type-icon.text  { background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.40); }
+.type-icon.email { background: rgba(255,197,49,0.14);  color: #FFC531; }
+.type-icon.color { background: rgba(255,99,99,0.14);   color: #FF6363; }
+.img-thumb {
+  width: 28px; height: 28px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: rgba(255,255,255,0.06);
+  border: 0.5px solid rgba(255,255,255,0.08);
+  flex-shrink: 0;
+}
+.img-thumb img { width: 100%; height: 100%; object-fit: cover; }
+
+.row-label {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  color: rgba(255,255,255,0.82);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.row-label.mono { font-family: "SF Mono","Menlo",monospace; font-size: 11.5px; }
+
+/* Preview pane */
+.win-preview {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: rgba(28,28,30,0.30);
+}
+.pv-content {
+  flex: 1;
+  padding: 18px 18px 12px;
+  overflow: hidden;
+  cursor: default;
+}
+.pv-url {
+  font-size: 13.5px;
+  color: #789BFA;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  line-height: 1.65;
+  word-break: break-all;
+}
+.pv-mono {
+  font-family: "SF Mono","Menlo",monospace;
+  font-size: 12.5px;
+  color: rgba(247,249,252,0.50);
+  line-height: 1.70;
+  white-space: pre-wrap;
+}
+.pv-info {
+  border-top: 0.5px solid rgba(255,255,255,0.07);
+  padding: 14px 18px 16px;
+  flex-shrink: 0;
+}
+.pv-info-title {
+  font-size: 11px;
+  font-weight: 500;
+  color: rgba(255,255,255,0.26);
+  margin-bottom: 10px;
+}
+.pv-info-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 5px 0;
+}
+.pv-info-row + .pv-info-row { border-top: 0.5px solid rgba(255,255,255,0.05); }
+.pv-info-key { font-size: 12px; color: rgba(255,255,255,0.33); }
+.pv-info-val { font-size: 12px; color: rgba(255,255,255,0.70); }
+
+/* Window footer */
+.win-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 40px;
+  padding: 0 16px;
+  border-top: 0.5px solid rgba(255,255,255,0.07);
+  flex-shrink: 0;
+}
+.win-footer-left { display: flex; align-items: center; gap: 8px; }
+.app-mark { position: relative; width: 18px; height: 18px; }
+.app-mark-back { position: absolute; bottom:0; right:0; width:13px; height:13px; border-radius:4px; border:1.5px solid rgba(255,255,255,0.18); }
+.app-mark-front { position: absolute; top:0; left:0; width:13px; height:13px; border-radius:4px; background:rgba(255,255,255,0.14); border:1.5px solid rgba(255,255,255,0.28); }
+.win-footer-appname { font-size: 12px; font-weight: 500; color: rgba(255,255,255,0.35); }
+
+.win-footer-right { display: flex; align-items: center; gap: 0; }
+.footer-action { display:flex; align-items:center; gap:6px; padding:0 10px; }
+.footer-sep { width:0.5px; height:14px; background:rgba(255,255,255,0.14); }
+.footer-label { font-size:12px; color:rgba(255,255,255,0.50); }
+kbd {
+  font-family: -apple-system,system-ui,sans-serif;
+  font-size:11px; color:rgba(255,255,255,0.38);
+  background:rgba(255,255,255,0.07);
+  border:0.5px solid rgba(255,255,255,0.13);
+  border-radius:4px;
+  display:inline-flex; align-items:center; justify-content:center;
+  min-width:20px; height:20px; padding:0 5px; line-height:1;
+}
+
+
+/* ════════════════════════════════════════
+   SIMPLE POPOVER  (320 × 400)
+════════════════════════════════════════ */
+.simple-popover {
+  width: 320px;
+  height: 390px;
+  background: rgba(22,22,24,0.86);
+  backdrop-filter: blur(32px) saturate(160%);
+  -webkit-backdrop-filter: blur(32px) saturate(160%);
+  border-radius: 12px;
+  border: 0.5px solid rgba(255,255,255,0.12);
+  box-shadow:
+    0 20px 60px rgba(0,0,0,0.68),
+    0 4px 16px rgba(0,0,0,0.40),
+    inset 0 0.5px 0 rgba(255,255,255,0.10);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Simple popover header */
+.sp-header {
+  height: 46px;
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  gap: 8px;
+  border-bottom: 0.5px solid rgba(255,255,255,0.07);
+  flex-shrink: 0;
+}
+.sp-title { font-size: 13px; font-weight: 600; color: rgba(255,255,255,0.82); }
+.sp-spacer { flex: 1; }
+.sp-badge {
+  display: flex; align-items: center; gap: 5px;
+}
+.sp-dot { width: 6px; height: 6px; border-radius: 50%; background: #59D499; animation: pulse 1.5s ease-in-out infinite alternate; }
+.sp-badge-label { font-size: 11px; color: rgba(255,255,255,0.35); }
+
+/* Simple clip list */
+.sp-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.sp-list::-webkit-scrollbar { display: none; }
+
+.sp-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 44px;
+  padding: 0 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.10s;
+  position: relative;
+}
+.sp-row:hover { background: rgba(255,255,255,0.07); }
+
+.sp-row-label {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  color: rgba(255,255,255,0.80);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sp-row-label.mono { font-family: "SF Mono","Menlo",monospace; font-size: 11.5px; }
+
+.sp-copy-btn {
+  opacity: 0;
+  transition: opacity 0.10s;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 5px;
+  background: rgba(255,255,255,0.09);
+  border: 0.5px solid rgba(255,255,255,0.14);
+  font-size: 11.5px;
+  font-weight: 500;
+  color: rgba(255,255,255,0.60);
+  cursor: pointer;
+  display: flex; align-items: center;
+  flex-shrink: 0;
+  user-select: none;
+  transition: background 0.10s, opacity 0.10s;
+}
+.sp-row:hover .sp-copy-btn { opacity: 1; }
+.sp-copy-btn:hover { background: rgba(255,255,255,0.14); color: rgba(255,255,255,0.88); }
+
+/* Simple popover footer */
+.sp-footer {
+  height: 44px;
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  gap: 10px;
+  border-top: 0.5px solid rgba(255,255,255,0.07);
+  flex-shrink: 0;
+}
+.sp-footer-spacer { flex: 1; }
+.sp-open-btn {
+  display: flex; align-items: center; gap: 6px;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 7px;
+  background: rgba(255,255,255,0.07);
+  border: 0.5px solid rgba(255,255,255,0.12);
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.10s;
+}
+.sp-open-btn:hover { background: rgba(255,255,255,0.12); }
+.sp-open-label { font-size: 12px; font-weight: 500; color: rgba(255,255,255,0.55); }
+.sp-open-btn:hover .sp-open-label { color: rgba(255,255,255,0.80); }
+.sp-gear-icon { color: rgba(255,255,255,0.35); }
+</style>
+</head>
+<body>
+
+<!-- ════ SECTION: Main app window ════ -->
+<div>
+  <div class="section-title">Proposed — Main App Window <span style="color:rgba(255,255,255,0.18);font-size:10px;letter-spacing:0;text-transform:none;font-weight:400;margin-left:8px;">900 × 580</span></div>
+  <div class="section-sub">Full clipboard history, search, type filters, and preview pane. Launched via ⌘⇧V, the popover, or the Dock.</div>
+</div>
+
+<div class="main-window">
+
+  <!-- Sidebar -->
+  <div class="win-sidebar">
+    <div class="win-sidebar-top">
+      <div class="traffic-lights">
+        <div class="tl tl-close"></div>
+        <div class="tl tl-min"></div>
+        <div class="tl tl-max"></div>
+      </div>
+    </div>
+
+    <nav class="win-nav">
+      <div class="win-nav-item active">
+        <span class="win-nav-icon">
+          <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
+            <rect x="2" y="1" width="9" height="11" rx="1.5" stroke="currentColor" stroke-width="1.2" fill="none"/>
+            <path d="M5 1.5h3a1 1 0 011 1v.5H4v-.5a1 1 0 011-1z" stroke="currentColor" stroke-width="1.1" fill="none"/>
+            <path d="M5 6.5h4M5 8.5h3" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>
+          </svg>
+        </span>
+        <span class="win-nav-label">Clipboard</span>
+      </div>
+
+      <div class="win-nav-item">
+        <span class="win-nav-icon">
+          <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
+            <rect x="1" y="3" width="9" height="7" rx="1.5" stroke="currentColor" stroke-width="1.2" fill="none"/>
+            <rect x="11" y="5" width="3" height="5" rx="1" stroke="currentColor" stroke-width="1.2" fill="none"/>
+          </svg>
+        </span>
+        <span class="win-nav-label">Devices</span>
+      </div>
+
+      <div class="win-nav-item">
+        <span class="win-nav-icon">
+          <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
+            <path fill-rule="evenodd" clip-rule="evenodd" d="M6.3 1.5a.7.7 0 00-.67.50l-.33 1.18a4.7 4.7 0 00-.81.47l-1.18-.30a.7.7 0 00-.72.32L1.24 5.33a.7.7 0 00.13.84l.89.79a4.8 4.8 0 000 .94l-.89.79a.7.7 0 00-.13.84l1.35 2.34a.7.7 0 00.72.32l1.18-.30c.26.18.53.34.81.47l.33 1.18a.7.7 0 00.67.50h2.7a.7.7 0 00.67-.50l.33-1.18c.28-.13.55-.29.81-.47l1.18.30a.7.7 0 00.72-.32l1.35-2.34a.7.7 0 00-.13-.84l-.89-.79a4.8 4.8 0 000-.94l.89-.79a.7.7 0 00-.13-.84L12.47 3.67a.7.7 0 00-.72-.32l-1.18.30a4.71 4.71 0 00-.81-.47L9.43 2a.7.7 0 00-.67-.50H6.3zM7.5 5a2.5 2.5 0 100 5 2.5 2.5 0 000-5z" fill="currentColor" opacity=".6"/>
+          </svg>
+        </span>
+        <span class="win-nav-label">Settings</span>
+      </div>
+    </nav>
+
+    <div class="win-sidebar-bottom">
+      <div class="status-row">
+        <div class="status-dot"></div>
+        <span class="status-label">3 devices live</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Content -->
+  <div class="win-content">
+
+    <!-- Content header with search + filter -->
+    <div class="win-content-header">
+      <div class="win-search-wrap">
+        <svg class="win-search-icon" width="14" height="14" viewBox="0 0 14 14" fill="none">
+          <circle cx="6" cy="6" r="4.5" stroke="currentColor" stroke-width="1.3"/>
+          <line x1="9.5" y1="9.5" x2="12.5" y2="12.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+        </svg>
+        <input class="win-search-input" type="text" placeholder="Search clipboard history…" readonly>
+      </div>
+      <div class="filter-btn">
+        <span class="filter-btn-label">All Types</span>
+        <svg class="filter-chevron" width="10" height="6" viewBox="0 0 10 6" fill="none">
+          <path d="M1 1L5 5L9 1" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+    </div>
+
+    <!-- Split: list + preview -->
+    <div class="win-split">
+
+      <!-- List pane -->
+      <div class="win-list">
+
+        <div class="list-section">Today</div>
+
+        <div class="clip-row selected">
+          <div class="type-icon url">↗</div>
+          <span class="row-label">https://developer.apple.com/doc…</span>
+        </div>
+
+        <div class="clip-row">
+          <div class="img-thumb">
+            <img src="file:///Users/cosmic-sky/.claude/image-cache/77a8f08a-0664-4d63-bd27-7574bc9e6008/16.png" alt="">
+          </div>
+          <span class="row-label">Image (640 × 853)</span>
+        </div>
+
+        <div class="clip-row">
+          <div class="type-icon code">&lt;/&gt;</div>
+          <span class="row-label mono">func fetchItems() async throws</span>
+        </div>
+
+        <div class="clip-row">
+          <div class="type-icon text">T</div>
+          <span class="row-label">Meeting notes from design review</span>
+        </div>
+
+        <div class="clip-row">
+          <div class="type-icon email">@</div>
+          <span class="row-label">hello@example.com</span>
+        </div>
+
+        <div class="clip-row">
+          <div class="type-icon color">●</div>
+          <span class="row-label mono">#FF6363</span>
+        </div>
+
+        <div class="list-section">Yesterday</div>
+
+        <div class="clip-row">
+          <div class="type-icon url">↗</div>
+          <span class="row-label">https://github.com/anthropics/…</span>
+        </div>
+
+        <div class="clip-row">
+          <div class="type-icon code">&lt;/&gt;</div>
+          <span class="row-label mono">@State private var isConnected</span>
+        </div>
+
+        <div class="clip-row">
+          <div class="type-icon text">T</div>
+          <span class="row-label">Don't forget to push staging branch</span>
+        </div>
+
+        <div class="clip-row">
+          <div class="type-icon url">↗</div>
+          <span class="row-label">https://www.figma.com/design/p6…</span>
+        </div>
+
+      </div>
+
+      <!-- Preview pane -->
+      <div class="win-preview">
+        <div class="pv-content">
+          <div class="pv-url">https://developer.apple.com/documentation/swiftui/view-layout</div>
+        </div>
+        <div class="pv-info">
+          <div class="pv-info-title">Information</div>
+          <div class="pv-info-row"><span class="pv-info-key">Source</span><span class="pv-info-val">Safari</span></div>
+          <div class="pv-info-row"><span class="pv-info-key">Content type</span><span class="pv-info-val">URL</span></div>
+          <div class="pv-info-row"><span class="pv-info-key">Characters</span><span class="pv-info-val">62</span></div>
+          <div class="pv-info-row"><span class="pv-info-key">Device</span><span class="pv-info-val">iPhone</span></div>
+          <div class="pv-info-row"><span class="pv-info-key">Copied</span><span class="pv-info-val">Today at 2:14 PM</span></div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Window footer -->
+    <div class="win-footer">
+      <div class="win-footer-left">
+        <div class="app-mark">
+          <div class="app-mark-back"></div>
+          <div class="app-mark-front"></div>
+        </div>
+        <span class="win-footer-appname">AirClip</span>
+      </div>
+      <div class="win-footer-right">
+        <div class="footer-action">
+          <span class="footer-label">Copy</span>
+          <kbd>↵</kbd>
+        </div>
+        <div class="footer-sep"></div>
+        <div class="footer-action">
+          <span class="footer-label">Actions</span>
+          <kbd>⌘</kbd><kbd>K</kbd>
+        </div>
+        <div class="footer-sep"></div>
+        <div class="footer-action">
+          <span class="footer-label">Settings</span>
+          <kbd>⌘</kbd><kbd>,</kbd>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+
+<!-- ════ SECTION: Simple popover ════ -->
+<div>
+  <div class="section-title">Proposed — Menu Bar Popover <span style="color:rgba(255,255,255,0.18);font-size:10px;letter-spacing:0;text-transform:none;font-weight:400;margin-left:8px;">320 × 390</span></div>
+  <div class="section-sub">Quick-grab surface. Recent 6 clips only. Click to copy. No preview, no search. Opens the full window if you need more.</div>
+</div>
+
+<div style="display:flex; gap:32px; align-items:flex-start;">
+<div class="simple-popover">
+
+  <div class="sp-header">
+    <div class="app-mark" style="flex-shrink:0;">
+      <div class="app-mark-back"></div>
+      <div class="app-mark-front"></div>
+    </div>
+    <span class="sp-title">AirClip</span>
+    <div class="sp-spacer"></div>
+    <div class="sp-badge">
+      <div class="sp-dot"></div>
+      <span class="sp-badge-label">3 live</span>
+    </div>
+  </div>
+
+  <div class="sp-list">
+
+    <div class="sp-row">
+      <div class="type-icon url">↗</div>
+      <span class="sp-row-label">https://developer.apple.com/doc…</span>
+      <div class="sp-copy-btn">Copy</div>
+    </div>
+
+    <div class="sp-row">
+      <div class="img-thumb">
+        <img src="file:///Users/cosmic-sky/.claude/image-cache/77a8f08a-0664-4d63-bd27-7574bc9e6008/16.png" alt="">
+      </div>
+      <span class="sp-row-label">Image (640 × 853)</span>
+      <div class="sp-copy-btn">Copy</div>
+    </div>
+
+    <div class="sp-row">
+      <div class="type-icon code">&lt;/&gt;</div>
+      <span class="sp-row-label mono">func fetchItems() async throws</span>
+      <div class="sp-copy-btn">Copy</div>
+    </div>
+
+    <div class="sp-row">
+      <div class="type-icon text">T</div>
+      <span class="sp-row-label">Meeting notes from design review</span>
+      <div class="sp-copy-btn">Copy</div>
+    </div>
+
+    <div class="sp-row">
+      <div class="type-icon email">@</div>
+      <span class="sp-row-label">hello@example.com</span>
+      <div class="sp-copy-btn">Copy</div>
+    </div>
+
+    <div class="sp-row">
+      <div class="type-icon color">●</div>
+      <span class="sp-row-label mono">#FF6363</span>
+      <div class="sp-copy-btn">Copy</div>
+    </div>
+
+  </div>
+
+  <div class="sp-footer">
+    <div class="sp-spacer"></div>
+    <div class="sp-open-btn">
+      <svg class="sp-gear-icon" width="13" height="13" viewBox="0 0 13 13" fill="none">
+        <path fill-rule="evenodd" d="M5.3 1.2a.6.6 0 00-.57.43l-.28 1a4 4 0 00-.7.4l-1-.26a.6.6 0 00-.62.28l-1.15 2a.6.6 0 00.11.72l.76.67a4.1 4.1 0 000 .80l-.76.67a.6.6 0 00-.11.72l1.15 2c.12.21.36.30.62.28l1-.26c.22.15.45.29.70.40l.28 1a.6.6 0 00.57.43h2.3a.6.6 0 00.57-.43l.28-1c.25-.11.48-.25.70-.40l1 .26a.6.6 0 00.62-.28l1.15-2a.6.6 0 00-.11-.72l-.76-.67a4.1 4.1 0 000-.80l.76-.67a.6.6 0 00-.11-.72l-1.15-2a.6.6 0 00-.62-.28l-1 .26a4 4 0 00-.70-.40l-.28-1a.6.6 0 00-.57-.43H5.3zM6.5 4.5a2 2 0 100 4 2 2 0 000-4z" fill="currentColor"/>
+      </svg>
+      <span class="sp-open-label">Open AirClip</span>
+    </div>
+  </div>
+
+</div>
+
+<!-- Annotation notes -->
+<div style="padding-top:8px; display:flex; flex-direction:column; gap:16px; max-width:300px;">
+  <div style="font-size:12px; color:rgba(255,255,255,0.35); line-height:1.6;">
+    <span style="color:rgba(255,255,255,0.55); font-weight:500;">Popover role:</span> Instant access. Click menu bar icon → grab a recent clip → dismiss. No friction.
+  </div>
+  <div style="font-size:12px; color:rgba(255,255,255,0.35); line-height:1.6;">
+    <span style="color:rgba(255,255,255,0.55); font-weight:500;">"Open AirClip"</span> launches the full window — or bind a global shortcut like ⌘⇧V.
+  </div>
+  <div style="font-size:12px; color:rgba(255,255,255,0.35); line-height:1.6;">
+    <span style="color:rgba(255,255,255,0.55); font-weight:500;">Copy button</span> appears on hover. Single-click copies and dismisses the popover.
+  </div>
+  <div style="font-size:12px; color:rgba(255,255,255,0.35); line-height:1.6;">
+    <span style="color:rgba(255,255,255,0.55); font-weight:500;">3 live</span> replaces the old connection badge — tells you how many devices are syncing at a glance.
+  </div>
+</div>
+</div>
+
+</body>
+</html>

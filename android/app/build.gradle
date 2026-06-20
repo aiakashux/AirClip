@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace 'com.cliprplus.clipr'
+    namespace 'com.airclip.airclip'
     compileSdk 34
 
     defaultConfig {
-        applicationId "com.cliprplus.clipr"
+        applicationId "com.airclip.airclip"
         minSdk 26
         targetSdk 34
         versionCode 1
@@ -41,12 +41,17 @@ android {
     packagingOptions {
         resources {
             excludes += '/META-INF/{AL2.0,LGPL2.1}'
+            excludes += '/META-INF/INDEX.LIST'
+            excludes += '/META-INF/io.netty.versions.properties'
+        }
+        jniLibs {
+            useLegacyPackaging = false
         }
     }
 }
 
 dependencies {
-    def composeBom = platform('androidx.compose:compose-bom:2023.09.00')
+    def composeBom = platform('androidx.compose:compose-bom:2024.06.00')
     implementation composeBom
 
     implementation 'androidx.core:core-ktx:1.12.0'
@@ -56,17 +61,21 @@ dependencies {
     implementation 'androidx.compose.ui:ui-graphics'
     implementation 'androidx.compose.ui:ui-tooling-preview'
     implementation 'androidx.compose.material3:material3'
+    implementation 'androidx.compose.material:material-icons-extended'
     implementation 'androidx.lifecycle:lifecycle-viewmodel-compose:2.6.2'
 
-    // HTTP + WebSocket (single library for both)
+    // HTTP + WebSocket client
     implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+
+    // WebSocket server (LAN peer listener)
+    implementation 'org.java-websocket:Java-WebSocket:1.5.6'
 
     // JSON
     implementation 'com.google.code.gson:gson:2.10.1'
 
     // Crypto — lazy-sodium (libsodium JNI bindings for Android)
     implementation 'com.goterl:lazysodium-android:5.1.0@aar'
-    implementation 'net.java.dev.jna:jna:5.13.0@aar'
+    implementation 'net.java.dev.jna:jna:5.14.0@aar'
 
     // Coroutines
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
@@ -76,4 +85,15 @@ dependencies {
 
     // EncryptedSharedPreferences — AES-256-GCM keypair persistence via Android Keystore master key
     implementation 'androidx.security:security-crypto:1.0.0'
+
+    // QR code generation (no UI, pure encoding)
+    implementation 'com.google.zxing:core:3.5.3'
+
+    // QR code scanning (launches Intent, returns string result)
+    implementation 'com.journeyapps:zxing-android-embedded:4.3.0'
+
+    // Coil — display QR bitmap in Compose via AsyncImage
+    implementation 'io.coil-kt:coil-compose:2.6.0'
+
+    testImplementation 'junit:junit:4.13.2'
 }

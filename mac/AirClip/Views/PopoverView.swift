@@ -246,7 +246,7 @@ struct PopoverView: View {
         copyFlowSession &+= 1
         let activeCopyFlow = copyFlowSession
 
-        ClipboardMonitor.shared.suppressNextChange()
+        ClipboardMonitor.shared.suppressPacket(item.clipboardPacket)
         ClipboardCapture.write(item.clipboardPacket, to: NSPasteboard.general)
 
         withAnimation(reduceMotion ? .easeOut(duration: 0.01) : .interpolatingSpring(stiffness: 520, damping: 34)) {
@@ -335,12 +335,18 @@ private struct ClipCard: View {
     let item: ClipboardItem
     let onTap: () -> Void
 
+    @ObservedObject private var revealStore = SensitiveContentRevealStore.shared
     @Environment(\.colorScheme) private var colorScheme
 
     @State private var isHovered = false
 
     private var type: ClipType { item.clipType }
     private var isDarkMode: Bool { colorScheme == .dark }
+    private var shouldRedact: Bool {
+        item.clipType != .image
+            && SensitiveClipboardClassifier.classify(item.text).isSensitive
+            && !revealStore.isRevealed(item.id)
+    }
 
     var body: some View {
         Button(action: onTap) {
@@ -444,6 +450,7 @@ private struct ClipCard: View {
                         .lineSpacing(4.5)
                         .lineLimit(2)
                         .truncationMode(.tail)
+                        .blur(radius: shouldRedact ? 4 : 0)
                         .frame(minHeight: 19.5, alignment: .top)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     metaRowJustified
@@ -464,6 +471,7 @@ private struct ClipCard: View {
                         .lineSpacing(4.5)
                         .lineLimit(2)
                         .truncationMode(.tail)
+                        .blur(radius: shouldRedact ? 4 : 0)
                         .frame(minHeight: 19.5, alignment: .top)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     metaRowJustified
@@ -524,6 +532,7 @@ private struct ClipCard: View {
                         .lineSpacing(4.5)
                         .lineLimit(2)
                         .truncationMode(.tail)
+                        .blur(radius: shouldRedact ? 4 : 0)
                         .frame(minHeight: 19.5, alignment: .top)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     metaRowJustified
@@ -544,6 +553,7 @@ private struct ClipCard: View {
                         .lineSpacing(4.5)
                         .lineLimit(2)
                         .truncationMode(.tail)
+                        .blur(radius: shouldRedact ? 4 : 0)
                         .frame(minHeight: 19.5, alignment: .top)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     metaRowJustified

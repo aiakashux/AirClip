@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Local network access — required for NWListener + NWBrowser -->
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>AirClip uses your local network to sync clipboard content directly between your devices. No data leaves your network.</string>
+
+    <!-- mDNS service types to browse/advertise -->
+    <key>NSBonjourServices</key>
+    <array>
+        <string>_airclip._tcp</string>
+    </array>
+
+    <!-- URL scheme for deep links from widget + share extension -->
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLSchemes</key>
+            <array>
+				<string>airclip</string>
+            </array>
+        </dict>
+    </array>
+
+    <!-- Background task identifiers -->
+    <key>BGTaskSchedulerPermittedIdentifiers</key>
+    <array>
+        <string>com.airclip.airclip.refresh</string>
+    </array>
+
+    <!-- Required background modes -->
+    <key>UIBackgroundModes</key>
+    <array>
+        <string>fetch</string>
+    </array>
+</dict>
+</plist>

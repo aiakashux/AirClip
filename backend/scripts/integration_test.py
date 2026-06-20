@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Clipr+ Backend Integration Smoke Test
+AirClip Backend Integration Smoke Test
 
 Starts the FastAPI server in-process, exercises every REST and WS
 endpoint, validates security invariants, then prints a PASS/FAIL scorecard.
@@ -681,7 +681,7 @@ async def main() -> None:
         sys.exit(1)
 
     print("=" * 55)
-    print("  Clipr+ Integration Smoke Test")
+    print("  AirClip Integration Smoke Test")
     print("=" * 55)
 
     exit_code = 0

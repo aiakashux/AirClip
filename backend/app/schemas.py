@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import List, Literal, Optional
+from typing import Literal, Optional
 
-from pydantic import BaseModel, EmailStr, field_serializer, field_validator
+from pydantic import BaseModel, EmailStr
 
 
 # --- Auth ---
@@ -23,20 +23,11 @@ class TokenResponse(BaseModel):
     account_id: str
 
 
-# --- Account ---
-
-class Account(BaseModel):
-    id: str
-    email: str
-    password_hash: str
-    created_at: datetime
-
-
 # --- Device ---
 
 class DeviceRegisterRequest(BaseModel):
     device_name: str
-    platform: Literal["mac", "android"]
+    platform: Literal["mac", "android", "ios"]
     public_key: str  # base64-encoded X25519 public key
 
 
@@ -55,76 +46,45 @@ class DeviceRegisterResponse(DeviceResponse):
     token: str
 
 
-# --- WebSocket Messages (Client → Server) ---
-
-class ClipboardPayload(BaseModel):
-    to_device_id: str
-    ciphertext: str  # base64
-    nonce: str  # base64
+class DeviceUpdateRequest(BaseModel):
+    device_name: str
 
 
-class WSSendClipboard(BaseModel):
-    type: Literal["send_clipboard"] = "send_clipboard"
-    payloads: list[ClipboardPayload]
+# --- Account ---
+
+class ShortcutBindings(BaseModel):
+    open_airclip: str = "cmd+shift+v"
+    paste_last: str = "cmd+shift+p"
 
 
-class WSAck(BaseModel):
-    type: Literal["ack"] = "ack"
-    message_id: str
+class AccountSettings(BaseModel):
+    sync_enabled: bool = True
+    history_days: int = 30  # 7 | 30 | 90
+    encryption_enabled: bool = True
+    shortcuts: ShortcutBindings = ShortcutBindings()
 
 
-# --- WebSocket Messages (Server → Client) ---
-
-class WSHello(BaseModel):
-    type: Literal["hello"] = "hello"
-    latest_seq: int  # serialised as string — see field_serializer below
-
-    @field_serializer("latest_seq")
-    def serialize_latest_seq(self, v: int) -> str:
-        return str(v)
+class AccountSettingsUpdate(BaseModel):
+    sync_enabled: Optional[bool] = None
+    history_days: Optional[int] = None
+    encryption_enabled: Optional[bool] = None
+    shortcuts: Optional[dict] = None
 
 
-class WSDeliverClipboard(BaseModel):
-    type: Literal["deliver_clipboard"] = "deliver_clipboard"
-    message_id: str
-    from_device_id: str
-    ciphertext: str  # base64
-    nonce: str  # base64
-    seq: int  # monotonic per-account seq; required, must be >= 1; serialised as string
-
-    @field_validator("seq")
-    @classmethod
-    def seq_must_be_positive(cls, v: int) -> int:
-        if v < 1:
-            raise ValueError(f"seq must be >= 1, got {v}")
-        return v
-
-    @field_serializer("seq")
-    def serialize_seq(self, v: int) -> str:
-        return str(v)
-
-
-# --- Stored clipboard message ---
-
-class ClipboardMessage(BaseModel):
-    id: str
-    from_device_id: str
-    to_device_id: str
+class AccountProfile(BaseModel):
+    account_id: str
+    email: str
+    plan: str  # "free" for all accounts in v1
     created_at: datetime
-    ciphertext: str
-    nonce: str
-    version: int = 1
 
 
-# --- Clip history REST response ---
+# --- Account mutations ---
 
-class ClipHistoryItem(BaseModel):
-    seq: int  # serialised as string — see field_serializer below
-    message_id: str
-    from_device_id: str
-    ciphertext: str  # base64 — encrypted for the requesting device
-    nonce: str       # base64
+class EmailChangeRequest(BaseModel):
+    new_email: EmailStr
+    current_password: str
 
-    @field_serializer("seq")
-    def serialize_seq(self, v: int) -> str:
-        return str(v)
+
+class PasswordChangeRequest(BaseModel):
+    current_password: str
+    new_password: str

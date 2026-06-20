@@ -1,54 +1,38 @@
-# Clipr+ Backend
+# AirClip Backend
 
-FastAPI server for Clipr+ — E2E encrypted clipboard sync.
+Status: legacy / inactive for the current LAN-first MVP.
 
-## Setup
+The backend source remains in the repository from an earlier relay-based product direction. The current Mac + Android MVP syncs clipboard content directly over LAN and does not use this backend as the active clipboard transport.
 
-```bash
-cd backend
-python -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-```
+## Current Guidance
 
-## Environment Variables
+Do not use this backend README as the source of truth for current AirClip sync behavior.
 
-Create a `.env` file in the `backend/` directory:
+Use:
 
-```
-REDIS_URL=redis://localhost:6379
-JWT_SECRET=your-secret-key
-```
+1. `docs/PRODUCT_REQUIREMENTS.md`
+2. `docs/ROADMAP_STATUS.md`
+3. `docs/architecture.md`
+4. `docs/protocol.md`
 
-## Running
+## Legacy Purpose
 
-Start Redis, then:
+The backend was originally intended for:
 
-```bash
-uvicorn app.main:app --reload
-```
+1. Account registration/login.
+2. Device registration.
+3. Device approval.
+4. WebSocket relay.
+5. Redis-backed short-term history and catch-up.
 
-The server starts at `http://localhost:8000`.
+Those assumptions are not active in the LAN-first MVP.
 
-## API
+## If Reactivated Later
 
-### REST
+If cloud relay returns, it should be:
 
-- `POST /auth/register` — create account (email, password)
-- `POST /auth/login` — login, returns JWT
-- `POST /devices/register` — register a device (requires JWT)
-- `GET /devices/` — list account devices (requires JWT)
-- `POST /devices/{device_id}/approve` — approve a pending device (requires JWT)
-
-### WebSocket
-
-Connect to `/ws` with a device-scoped JWT via header:
-
-```
-Authorization: Bearer <device_token>
-```
-
-Client messages: `register_device`, `approve_device`, `send_clipboard`, `ack`
-Server messages: `device_pending`, `deliver_clipboard`
-
-See `docs/protocol.md` for full protocol spec.
+1. Explicit opt-in.
+2. End-to-end encrypted.
+3. Sensitive-policy aware.
+4. Clear about remote-network status.
+5. Re-documented before implementation resumes.

@@ -1,465 +1,126 @@
-# Clipr+ MVP Scope
+# AirClip MVP Scope
 
-This document defines the **exact scope of the Clipr+ Minimum Viable Product (MVP)**.
+Status: Current LAN-first MVP scope.
 
-It clarifies:
+The MVP goal is to make Mac + Android clipboard sync feel reliable, private, and understandable on the same local network.
 
-- what features are included
-- what behaviors are guaranteed
-- what is intentionally excluded
-- what future versions may add
+## Objective
 
-The purpose is to prevent scope creep and keep development focused.
+Prove that a user can pair a Mac and Android phone, sync clipboard content privately over LAN, and control what is sent, stored, paused, or removed.
 
----
+## Included Platforms
 
-# 1. MVP Objective
+| Platform | MVP role |
+| --- | --- |
+| macOS | Sender, receiver, history, pairing, device management |
+| Android | Sender, receiver, history, pairing, device management, widget send |
 
-The goal of the MVP is to prove that **secure cross-device clipboard sync works reliably across networks**.
+## Not Included Yet
 
-The MVP focuses on:
+| Platform / feature | Status |
+| --- | --- |
+| Windows | Future |
+| iOS | Future, with clipboard-limitations UX required |
+| Optional cloud relay | Future opt-in only |
+| Permanent cloud history | Not in MVP |
 
-```
-Mac → Android clipboard synchronization
-```
+## Core Features
 
-Key design principles:
+### LAN Clipboard Sync
 
-- simple architecture
-- encrypted clipboard transport
-- minimal server state
-- reliable reconnect behavior
+Clipboard content can move between paired Mac and Android devices over the same local network.
 
-The MVP is not intended to be a complete product.
+Target behavior:
 
----
+1. Normal text syncs in both directions.
+2. URLs, code-like text, emails, colors, and image packets are classified for history display.
+3. Image sync remains in scope where platform capture/send paths support it.
+4. Sync works without a central relay server.
 
-# 2. Supported Platforms
+### Pairing
 
-### Included
+Pairing uses local QR/code exchange. After pairing:
 
-| Platform | Status |
-|--------|-------|
-| macOS | Sender + receiver |
-| Android | Receiver + history |
+1. Both devices share an `airclip_id`.
+2. Each device stores the other device's public key and metadata.
+3. Peers are trusted only if they present the shared `airclip_id` and a locally paired `device_id`.
 
----
+### Sync Modes
 
-### Not Included
+The MVP includes three global sync modes:
 
-| Platform | Status |
-|--------|-------|
-| Windows | Not implemented |
-| iOS | Not implemented |
-| Linux desktop | Not implemented |
+1. Auto: automatic capture plus LAN service.
+2. Manual: explicit sends only, LAN service available.
+3. Paused: no LAN listener, discovery, advertisement, active service, or peers.
 
----
+### Sensitive Clipboard Protection
 
-# 3. Core Features
+Sensitive-content protection is local and applies before sending:
 
-## 3.1 Cross-Device Clipboard Sync
+1. Block prevents automatic and explicit sends.
+2. Ask blocks automatic sends and requires confirmation for explicit sends.
+3. Allow permits the category.
 
-Clipboard text copied on one device appears on other trusted devices.
+Covered categories include password-like strings, API keys/tokens, private keys, recovery phrases, payment cards, and one-time codes.
 
-Example flow:
+### Device Management
 
-```
-User copies text on Mac
-        ↓
-Mac encrypts clipboard
-        ↓
-Backend relays encrypted message
-        ↓
-Android receives message
-        ↓
-Android decrypts and stores item
-```
+Users can view paired devices, see presence/last-seen information, remove paired devices, and re-pair devices.
 
-Target latency:
+Required behavior:
 
-```
-< 2 seconds
-```
+1. Removed devices disconnect immediately.
+2. Removed devices cannot reconnect until re-paired.
+3. Heartbeats keep last-seen information fresh while connected.
+4. UI distinguishes paused, unpaired, no-nearby-peer, listener/discovery failure, and online states.
 
----
+### Local History
 
-## 3.2 End-to-End Encrypted Clipboard
+Each platform stores local history.
 
-Clipboard content is encrypted before leaving the device.
+Required behavior:
 
-Properties:
+1. Newest-first ordering.
+2. Search.
+3. Saved clips.
+4. Delete one item.
+5. Clear all history.
+6. Retention options where supported.
+7. Type filters for text, links, and images.
+8. Source device labels and relative time.
+9. Saved clips protected from normal retention pruning.
 
-- encryption performed client-side
-- server only sees encrypted payload
-- devices decrypt locally
+### Recovery
 
-The server cannot read clipboard text.
+The MVP should recover from ordinary LAN interruptions:
 
----
+1. App restart.
+2. Device sleep/wake.
+3. Wi-Fi disconnect/reconnect.
+4. Bonjour/NSD rediscovery.
 
-## 3.3 Trusted Device Model
-
-Devices must be approved before participating in clipboard sync.
-
-Rules:
-
-- first device is automatically trusted
-- new devices start as `pending`
-- trusted devices must approve them
-
-Only trusted devices may:
-
-- send clipboard messages
-- receive clipboard messages
-
----
-
-## 3.4 Device Keypairs
-
-Each device generates a cryptographic keypair.
-
-Algorithm:
-
-```
-X25519
-```
-
-Private key:
-
-- stored locally
-- never sent to server
-
-Public key:
-
-- uploaded during device registration
-
-Used for encrypting clipboard payloads.
-
----
-
-## 3.5 Clipboard History
-
-Each device maintains local clipboard history.
-
-Properties:
-
-```
-max items: 20
-ordering: newest first
-storage: local device only
-```
-
-History allows users to tap previous entries and copy them again.
-
----
-
-## 3.6 Real-Time Delivery
-
-Devices maintain a persistent WebSocket connection.
-
-This enables near-instant clipboard delivery.
-
-Transport:
-
-```
-WSS (WebSocket over TLS)
-```
-
----
-
-## 3.7 Offline Catch-Up
-
-If a device is offline, it can recover missed clipboard messages.
-
-Mechanism:
-
-```
-sequence numbers
-```
-
-Each message receives a `seq`.
-
-Devices track:
-
-```
-lastSeenSeq
-```
-
-Reconnect flow:
-
-```
-client reconnects
-server sends latest_seq
-client requests missing messages
-server returns encrypted messages
-client decrypts and merges history
-```
-
----
-
-# 4. Server Responsibilities
-
-The backend server acts as a **temporary relay**.
-
-Responsibilities:
-
-- device authentication
-- message routing
-- sequence assignment
-- short-term storage
-- WebSocket delivery
-
-The server does **not permanently store clipboard data**.
-
----
-
-# 5. Server Storage Model
-
-The server uses Redis.
-
-Redis stores:
-
-```
-short clipboard history
-sequence ordering
-pending reconnect messages
-```
-
-History properties:
-
-```
-max entries: 20
-retention: ~30 minutes
-```
-
-Older entries expire automatically.
-
----
-
-# 6. Clipboard Message Size
-
-MVP assumes small clipboard text.
-
-Typical examples:
-
-```
-URLs
-short text
-code snippets
-```
-
-Large payloads are not optimized.
-
----
-
-# 7. Loop Prevention
-
-Clipboard systems can create infinite loops.
-
-Example:
-
-```
-Mac → Android → Mac → Android
-```
-
-MVP clients implement protections:
-
-- ignore messages from self
-- hash recent clipboard values
-- ignore duplicate hashes
-- ignore remote-triggered clipboard events
-
----
-
-# 8. Reliability Expectations
-
-The MVP aims to be reliable but not production-grade.
-
-Expected behavior:
-
-| Scenario | Expected Result |
-|-------|---------------|
-| Both devices online | instant sync |
-| Android reconnects | catch-up occurs |
-| Temporary disconnect | automatic recovery |
-| Clipboard duplicates | ignored |
-
----
-
-# 9. Security Guarantees
-
-Clipboard content is protected by:
-
-- client-side encryption
-- device keypairs
-- token-based device identity
-- TLS transport
-
-The relay server cannot read clipboard text.
-
----
-
-# 10. Known MVP Limitations
-
-The following limitations are intentional.
-
-### Platform Coverage
-
-- Windows not supported
-- iOS not supported
-
----
-
-### Clipboard Types
-
-Supported:
-
-```
-plain text only
-```
-
-Not supported:
-
-```
-images
-files
-rich clipboard formats
-```
-
----
-
-### Server Role
-
-Server still sees:
-
-- device IDs
-- timestamps
-- message sizes
-
-Metadata protection is not implemented.
-
----
-
-### Background Behavior
-
-Android background reliability may vary depending on device manufacturer.
-
-Stealth background mode is not implemented.
-
----
-
-### Device Management UX
-
-Device approval UI is minimal.
-
-Advanced device management features are not included.
-
----
-
-# 11. Performance Targets
-
-MVP targets:
-
-```
-clipboard sync latency < 2 seconds
-```
-
-Assumes:
-
-- stable network
-- active WebSocket connection
-
----
-
-# 12. Out of Scope for MVP
-
-The following features are intentionally excluded.
-
-```
-cross-device clipboard search
-pinned clipboard items
-permanent cloud clipboard history
-LAN peer-to-peer sync
-image clipboard sync
-file clipboard sync
-multi-device group encryption
-advanced device trust UI
-analytics
-telemetry
-```
-
----
-
-# 13. Future Roadmap
-
-Potential improvements after MVP.
-
-### Platform Support
-
-```
-Windows client
-iOS client
-Linux desktop
-```
-
----
-
-### Clipboard Features
-
-```
-image clipboard sync
-file clipboard sync
-rich content clipboard
-searchable history
-pinned clips
-```
-
----
-
-### Sync Improvements
-
-```
-improved Android background service
-better reconnect handling
-larger history window
-LAN optimization
-```
-
----
-
-### Security Enhancements
-
-```
-hardware-backed keys
-QR-code device pairing
-forward secrecy sessions
-group encryption
-```
-
----
-
-# 14. Definition of MVP Success
-
-The MVP is considered successful if:
-
-1. Clipboard text copied on Mac reliably appears on Android.
-2. Clipboard payloads remain encrypted end-to-end.
-3. Offline reconnect successfully recovers missed messages.
-4. Clipboard loops are prevented.
-5. Sync works across different networks.
-
----
-
-# Related Documentation
-
-See other project documentation:
-
-```
-docs/architecture.md
-docs/protocol.md
-docs/security.md
-```
-
----
-
-# End of MVP Scope
+On reconnect, peers push recent encrypted history to each other. Backfill must not overwrite the active clipboard.
+
+## Explicit Non-Goals
+
+1. Cross-network sync over mobile data.
+2. Cloud relay as default behavior.
+3. Server-side clipboard history.
+4. Redis-backed sequence ordering.
+5. Account-based pending device approval.
+6. Background clipboard monitoring on platforms that do not permit it.
+7. Enterprise admin controls.
+
+## Completion Definition
+
+The Mac + Android MVP is trusted when:
+
+1. Pairing works from reset state.
+2. Normal text sync works in both directions.
+3. Manual and Paused modes behave predictably.
+4. Sensitive policies block/ask/allow correctly.
+5. Remove/re-pair behavior is reliable.
+6. History survives restart and respects saved clips.
+7. Recovery after restart/sleep/Wi-Fi interruption works without duplicate loops.
+8. Diagnostics explain common connection failures.
+9. Manual validation queue passes on physical Mac + Android devices.

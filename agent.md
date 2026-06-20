@@ -1,6 +1,6 @@
 # AGENTS.md
 
-This file defines how AI coding agents should work inside the Clipr+ repository.
+This file defines how AI coding agents should work inside the AirClip repository.
 
 It exists to protect the project architecture, reduce accidental regressions, and keep changes understandable.
 
@@ -10,7 +10,7 @@ Agents must follow these rules before making code changes.
 
 # 1. Project Purpose
 
-Clipr+ is a secure cross-device clipboard sync system.
+AirClip is a secure cross-device clipboard sync system.
 
 Current MVP goal:
 

@@ -1,530 +1,223 @@
-# Clipr+ Security Model
+# AirClip Security Model
 
-This document describes the security architecture of Clipr+.
+This document describes the active LAN-first security model for the Mac + Android AirClip MVP.
 
-It explains:
+The older relay-server security model is legacy. AirClip currently syncs paired devices directly over the local network and stores clipboard history locally on each device.
 
-- identity model
-- cryptography
-- key management
-- threat model
-- server trust assumptions
-- attack protections
-- MVP limitations
+## Security Goals
 
-The goal is to clearly document how clipboard data remains private even when passing through a relay server.
+AirClip is designed around these goals:
 
----
+1. Clipboard plaintext should stay on the user's trusted devices.
+2. Clipboard packets should be encrypted before network transfer.
+3. Only paired devices should be allowed to exchange clips.
+4. Removed devices should stop syncing immediately.
+5. Sensitive clipboard content should be blocked or confirmed before it is sent.
+6. Local history should be under user control.
+7. Logs and diagnostics should avoid clipboard plaintext.
 
-# 1. Security Goals
+## Active Trust Boundary
 
-Clipr+ is designed with the following security goals.
+The active MVP trust boundary is:
 
-## Confidentiality
-
-Clipboard content must remain private.
-
-The relay server must **not be able to read clipboard content**.
-
-Clipboard data is encrypted before leaving the sender device.
-
----
-
-## Device Identity Integrity
-
-Only trusted devices belonging to the same account should be able to:
-
-- send clipboard messages
-- receive clipboard messages
-
-Device identity must be strongly bound to cryptographic keys.
-
----
-
-## Message Authenticity
-
-Devices must be able to verify that messages originate from legitimate trusted devices.
-
----
-
-## Minimal Server Trust
-
-The server should act only as a relay.
-
-If the server is compromised, attackers must **not gain access to clipboard plaintext**.
-
----
-
-# 2. Identity Model
-
-Each user has an **account identity** and one or more **device identities**.
-
-```
-Account
-   ├── Device A (Mac)
-   ├── Device B (Android)
-   └── Device C (future devices)
+```text
+Mac AirClip app
+  <-> encrypted LAN WebSocket packet
+Android AirClip app
 ```
 
-Each device has its own:
+There is no active relay server in the clipboard delivery path.
 
-- device_id
-- keypair
-- device token
+The backend source still exists in the repository, but it is not currently trusted with clipboard transport, storage, or catch-up for the LAN-first MVP.
 
-Devices operate independently.
+## Device Identity
 
----
+Each device owns a local AirClip identity:
 
-# 3. Device Keypairs
+1. Stable local device ID.
+2. Shared AirClip pairing ID.
+3. Public/private key material.
+4. Locally stored trusted peer records.
 
-Each device generates a keypair locally.
+Pairing exchanges enough metadata for each device to recognize the other later. A device is trusted only if it is present in the local paired-device registry and matches the expected AirClip identity.
 
-Algorithm:
+Unknown devices are rejected. Removed devices are rejected even if they still know the old shared AirClip ID.
 
-```
-X25519
-```
+## Pairing
 
-Properties:
+Pairing is local and user initiated.
 
-- fast
-- secure
-- widely used for key exchange
-- small key size
+Expected pairing properties:
 
----
+1. The user intentionally opens pairing on both devices.
+2. QR or code exchange carries device identity metadata.
+3. Each device stores the paired peer locally.
+4. Pairing does not require account login for the active MVP.
+5. Re-pairing after removal should create a new trusted state.
 
-## Key Generation
+Manual validation still needs to confirm fresh pairing, removal, reconnect rejection, and re-pairing on physical devices.
 
-Keypair generation occurs **locally on the device**.
+## Transport Security
 
-```
-private_key ← generated locally
-public_key ← derived
-```
+Peers communicate over local WebSocket connections on TCP `7878`.
 
-The private key:
+The transport sequence is:
 
-- never leaves the device
-- never transmitted to server
-- never logged
+1. Device discovers a peer through local network discovery.
+2. Device opens a LAN WebSocket connection.
+3. Peers exchange auth metadata.
+4. Each side checks local pairing records.
+5. Authenticated peers can exchange clip, history, and heartbeat messages.
+6. Invalid or unknown peers are disconnected.
 
-The public key:
+Transport auth is local-device trust, not account-token trust.
 
-- uploaded during device registration
-- stored server-side
+## Payload Encryption
 
----
+Clipboard packets are encrypted before they are sent to a peer.
 
-# 4. Key Storage
+Current payload rule:
 
-## Mac Client
+1. Sender captures clipboard data.
+2. Sender classifies sensitivity.
+3. Sender applies Block, Ask, or Allow policy.
+4. Sender encrypts the allowed payload for the peer.
+5. Sender transmits the encrypted packet over the authenticated LAN connection.
+6. Receiver decrypts locally.
 
-Private key stored locally.
+The network should only carry encrypted clipboard payloads plus metadata needed for routing, deduplication, and diagnostics.
 
-Storage depends on platform implementation.
+## Sensitive Clipboard Protection
 
-Expected production storage:
+Sensitive classification runs locally on macOS and Android.
 
-- macOS Keychain
+Covered categories include:
 
----
+1. Password-like strings.
+2. API keys and tokens.
+3. Private keys.
+4. Recovery phrases.
+5. Payment cards.
+6. One-time codes.
 
-## Android Client
+Each category supports:
 
-Private key stored securely on disk.
+1. Block: never send automatically or manually.
+2. Ask: block automatic transfer and require explicit confirmation for manual send.
+3. Allow: permit automatic and manual sends.
 
-Implementation uses:
+Policy checks are expected on:
 
-```
-EncryptedSharedPreferences
-```
+1. macOS automatic clipboard capture.
+2. macOS main-window send.
+3. macOS menu-bar send.
+4. Android main-app send.
+5. Android widget send.
+6. Transport fallback paths that could bypass normal UI.
 
-Backed by:
+## Local History
 
-```
-Android Keystore
-```
+History is local to each device.
 
-Properties:
+Security expectations:
 
-- AES encryption at rest
-- keys tied to device security
-- survives application restart
-- inaccessible to other apps
+1. Retention is enforced locally.
+2. Saved clips are protected from normal pruning.
+3. Clear-history and delete-one-item actions persist after restart.
+4. History search runs locally.
+5. History backfill merges into history without overwriting the active clipboard.
 
-Key persistence ensures that:
+History backfill is a peer-to-peer recovery feature, not cloud storage.
 
-- clipboard messages received after reconnect can be decrypted
-- keys survive process death
+## Device Removal
 
----
+Removing a paired device should:
 
-# 5. Encryption Model
+1. Delete the local trust record.
+2. Disconnect the active peer connection.
+3. Reject future auth attempts from that device.
+4. Require explicit re-pairing before sync can resume.
 
-Clipboard encryption occurs **before network transmission**.
+This behavior is implemented in code and still waiting for physical end-to-end validation.
 
-The server never receives plaintext.
+## Presence and Heartbeat
 
-Encryption flow:
+Presence is local runtime state.
 
-```
-Clipboard text
-     │
-     ▼
-Client encryption
-     │
-     ▼
-Encrypted payload
-     │
-     ▼
-Relay server
-     │
-     ▼
-Receiving device
-     │
-     ▼
-Client decryption
-```
+Current behavior:
 
----
+1. Peers exchange heartbeat and heartbeat acknowledgement messages.
+2. Heartbeats refresh each paired device's last-seen time.
+3. UI displays connected or last-seen status.
+4. Paused mode tears down listener, browser, advertisement, and active peers.
 
-# 6. Per-Recipient Encryption
+Presence is not Redis-backed in the active MVP.
 
-When a clipboard message is sent:
+## Diagnostics
 
-1. Sender fetches all trusted devices.
-2. For each device:
+Diagnostics should help users fix local-network issues without exposing clipboard content.
 
-```
-ciphertext = encrypt(plaintext, recipient_public_key)
-```
+Allowed diagnostic content:
 
-3. Separate encrypted payload is generated per recipient.
+1. Listener startup failure.
+2. Discovery startup failure.
+3. Advertisement startup failure.
+4. Paused state.
+5. Paired-but-no-peer state.
+6. Same-Wi-Fi and local-network-permission hints.
 
-Example:
+Avoid logging:
 
-```
-Mac → Android
+1. Clipboard plaintext.
+2. Sensitive sample values.
+3. Private keys.
+4. Full decrypted payloads.
 
-plaintext: "example"
+Acceptable logs can include lengths, hashes, categories, device labels, and connection lifecycle events when they are useful for debugging.
 
-ciphertext_A = encrypt(example, Android_public_key)
-ciphertext_B = encrypt(example, iPad_public_key)
-```
+## Legacy Backend
 
-Each recipient receives only the payload intended for them.
+The legacy backend model assumed:
 
-This avoids:
+1. Account login.
+2. Device JWTs.
+3. Redis presence.
+4. Relay WebSocket delivery.
+5. Server-side catch-up buffers.
 
-- shared group keys
-- key compromise across devices
+That model is not active for the current LAN-first MVP.
 
----
+If a backend returns later, it should have a new product/security review. At minimum:
 
-# 7. Message Contents
+1. Remote relay must be explicit opt-in.
+2. Clipboard payloads must remain end-to-end encrypted.
+3. Sensitive policies must run before upload.
+4. Cloud status must be visible to the user.
+5. Server retention must be minimal and user-controlled.
+6. Tests must clearly distinguish LAN behavior from relay behavior.
 
-Encrypted message structure:
+## Threats Addressed
 
-```
-{
-  id,
-  seq,
-  from_device_id,
-  to_device_id,
-  ciphertext,
-  nonce,
-  version
-}
-```
+Current safeguards reduce risk from:
 
-Server can see:
+1. Accidental sensitive clipboard sync.
+2. Unknown LAN peers attempting to connect.
+3. Removed devices reconnecting without user approval.
+4. Duplicate loops after send, receive, tap-to-copy, or reconnect backfill.
+5. Diagnostic logs exposing clipboard plaintext.
+6. Local history pruning deleting saved clips unexpectedly.
 
-- device IDs
-- timestamps
-- encrypted blobs
+## Remaining Validation
 
-Server cannot see:
+Security-relevant manual validation still waiting:
 
-- clipboard text
-- decrypted payload
+1. Fresh pairing from reset state.
+2. Removed device cannot reconnect.
+3. Re-pairing after removal.
+4. Sensitive Block, Ask, and Allow behavior on both platforms.
+5. Reconnect backfill does not overwrite active clipboard.
+6. Duplicate suppression across live sync, history tap-to-copy, and backfill.
+7. Local network permission failure diagnostics.
+8. Android clipboard and foreground-service restriction diagnostics.
 
----
-
-# 8. Trust Model (TOFU)
-
-Clipr+ uses **Trust On First Use (TOFU)**.
-
-Rules:
-
-1. First device is trusted automatically.
-2. New devices are `pending`.
-3. Existing trusted device must approve them.
-4. Once approved, the device public key is pinned.
-
----
-
-## Public Key Pinning
-
-Each trusted device has a pinned public key.
-
-If a device reconnects with a different key:
-
-```
-treat as new device
-```
-
-Approval required again.
-
-This prevents:
-
-- silent key replacement
-- impersonation attacks
-
----
-
-# 9. Token Security
-
-Two token types exist.
-
-## Account Token
-
-Used for account-level operations:
-
-- login
-- device registration
-- device approval
-
-Restrictions:
-
-- cannot be used for WebSocket messaging
-
----
-
-## Device Token
-
-Used for messaging.
-
-Contains:
-
-```
-device_id
-account_id
-token_type=device
-```
-
-Rules:
-
-- WebSocket must accept **only device tokens**
-- Device ID must be derived from token
-- Client-provided device_id must be ignored
-
-This prevents identity spoofing.
-
----
-
-# 10. WebSocket Security
-
-Transport:
-
-```
-WSS (WebSocket over TLS)
-```
-
-Security properties:
-
-- encrypted transport
-- protection against network sniffing
-- token-based authentication
-
-Connections require valid device token.
-
----
-
-# 11. Clipboard Loop Prevention
-
-Clipboard sync systems can accidentally create infinite loops.
-
-Example:
-
-```
-Mac → Android → Mac → Android
-```
-
-To prevent this, clients implement safeguards.
-
-Each device maintains:
-
-```
-recent_hashes
-```
-
-Rules:
-
-1. If clipboard change came from remote → ignore.
-2. If hash equals recent hash → ignore.
-3. If message originates from self → ignore.
-
----
-
-# 12. Replay Protection
-
-Replay attacks attempt to resend old messages.
-
-Protection mechanisms:
-
-- sequence numbers
-- lastSeenSeq tracking
-- deduplication checks
-
-Messages with:
-
-```
-seq <= lastSeenSeq
-```
-
-are ignored.
-
----
-
-# 13. Server Compromise Scenario
-
-If the backend server is compromised, attackers may obtain:
-
-- account IDs
-- device IDs
-- public keys
-- encrypted clipboard blobs
-- timestamps
-- message sizes
-
-Attackers **cannot obtain**:
-
-- clipboard plaintext
-- device private keys
-- decrypted clipboard history
-
-This protects user clipboard content even under server compromise.
-
----
-
-# 14. Potential Threats
-
-## Network interception
-
-Mitigation:
-
-```
-TLS (HTTPS / WSS)
-```
-
----
-
-## Server compromise
-
-Mitigation:
-
-```
-end-to-end encryption
-```
-
----
-
-## Device impersonation
-
-Mitigation:
-
-- device tokens
-- public key pinning
-- trust approval workflow
-
----
-
-## Clipboard replay attacks
-
-Mitigation:
-
-- sequence numbers
-- deduplication
-- message ordering checks
-
----
-
-# 15. MVP Security Limitations
-
-The MVP intentionally keeps scope small.
-
-Current limitations:
-
-- no secure enclave usage on Mac yet
-- Android background service still evolving
-- device approval UX is minimal
-- server still handles metadata
-- no forward secrecy group protocol yet
-
-These may be improved in future versions.
-
----
-
-# 16. Future Security Improvements
-
-Possible future enhancements:
-
-### Hardware-backed keys
-
-Use hardware secure elements when available.
-
-### Device fingerprint verification
-
-Display fingerprint during approval.
-
-### Forward secrecy
-
-Introduce ephemeral session keys.
-
-### Multi-device group encryption
-
-Replace per-recipient encryption with group key distribution.
-
-### Stronger device verification
-
-Add QR-code based pairing.
-
----
-
-# 17. Security Principles
-
-Clipr+ follows several core principles.
-
-**Encrypt before network transmission**
-
-Clipboard plaintext must never leave the device.
-
-**Minimize server trust**
-
-The server should only relay encrypted data.
-
-**Strong device identity**
-
-Every device must have a unique cryptographic identity.
-
-**Fail safely**
-
-Unknown devices must remain untrusted until explicitly approved.
-
----
-
-# Related Documents
-
-See additional documentation:
-
-```
-docs/architecture.md
-docs/protocol.md
-docs/mvp-scope.md
-```
-
----
-
-# End of Security Model
+Use `docs/MANUAL_VALIDATION_QUEUE.md` for the step-by-step validation script.

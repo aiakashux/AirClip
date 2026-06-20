@@ -1,556 +1,276 @@
-# Clipr+ Development Setup
+# AirClip Development Setup
 
-This document explains how to run the Clipr+ MVP locally for development.
+This guide describes the current AirClip MVP: native macOS plus Android clipboard sync over the local network.
 
-It covers:
+The older backend, Redis, and Electron relay setup is legacy. The backend source remains in the repo for historical or future optional work, but it is not required for the active LAN-first clipboard flow.
 
-- backend setup
-- Redis setup
-- Mac client setup
-- Android client setup
-- local network testing
-- common troubleshooting
+## Active MVP
 
-This guide assumes the current MVP scope:
+AirClip currently focuses on:
 
-- Mac ↔ Android clipboard sync
-- FastAPI backend
-- Redis short-term storage
-- Android Studio for Android app
-- Electron for Mac app
+1. Pairing one Mac and one Android device.
+2. Discovering paired devices on the same Wi-Fi network.
+3. Exchanging clipboard packets over LAN WebSocket connections on TCP `7878`.
+4. Encrypting clipboard payloads before network transfer.
+5. Supporting Auto, Manual, and Paused sync modes.
+6. Blocking or confirming sensitive clipboard content before send.
+7. Keeping local history on each device.
+8. Backfilling recent local history after peer authentication.
 
----
+## Prerequisites
 
-# 1. Prerequisites
+Install:
 
-Make sure these tools are installed.
+1. Xcode with macOS development tools.
+2. Android Studio.
+3. Android SDK and platform tools.
+4. JDK bundled with Android Studio or another compatible JDK.
+5. A Mac and Android device on the same Wi-Fi network for full manual validation.
 
-## Required
+Recommended physical-device setup:
 
-### Backend
-- Python 3.10+
-- pip
-- virtualenv or venv
-- Redis
+1. Disable VPNs that isolate local network traffic.
+2. Avoid guest Wi-Fi networks that block peer discovery.
+3. Keep both devices awake during pairing and reconnect tests.
+4. Allow Local Network permission on macOS when prompted.
+5. Allow the Android foreground service and notification permission when prompted.
 
-### Mac App
-- Node.js 18+
-- npm
-
-### Android App
-- Android Studio
-- Android SDK
-- Gradle (usually via Android Studio)
-
----
-
-# 2. Repository Structure
-
-Expected project layout:
+## Repository Layout
 
 ```text
-Clipr+
-├── backend
-├── mac
-├── android
-└── docs
+AirClip
+├── mac/          Native macOS app
+├── android/      Native Android app
+├── backend/      Legacy backend source, not active clipboard transport
+├── docs/         Product, validation, protocol, and roadmap docs
+└── scripts/      Utility scripts
 ```
 
----
+## macOS Build
 
-# 3. Backend Setup
-
-Go to the backend directory.
+From the repository root:
 
 ```bash
-cd backend
-```
-
-Create and activate a virtual environment.
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-```
-
-Install dependencies.
-
-```bash
-pip install -r requirements.txt
-```
-
-If your project uses additional packages for tests, also install them.
-
-Example:
-
-```bash
-pip install httpx pynacl
-```
-
----
-
-# 4. Start Redis
-
-Clipr+ uses Redis for:
-
-- short-term clipboard history
-- pending delivery queue
-- sequence ordering
-
-If Redis is installed locally:
-
-```bash
-redis-server
-```
-
-Default Redis port:
-
-```text
-6379
-```
-
-You should see something like:
-
-```text
-Ready to accept connections
-```
-
----
-
-# 5. Start Backend API
-
-From the `backend` directory:
-
-```bash
-source .venv/bin/activate
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-```
-
-Expected output:
-
-```text
-Uvicorn running on http://0.0.0.0:8000
-Application startup complete
-```
-
-Why `0.0.0.0` matters:
-
-- allows Android device on same Wi-Fi to access backend
-- localhost-only will not work for physical Android device testing
-
----
-
-# 6. Run Backend Tests
-
-From `backend`:
-
-## Integration smoke test
-
-```bash
-python3 scripts/integration_test.py
-```
-
-## Crypto end-to-end test
-
-```bash
-python3 scripts/crypto_e2e_test.py
+xcodebuild \
+  -project mac/AirClip.xcodeproj \
+  -scheme AirClip \
+  -configuration Debug \
+  -destination 'platform=macOS' \
+  -disableAutomaticPackageResolution \
+  -onlyUsePackageVersionsFromResolvedFile \
+  CODE_SIGNING_ALLOWED=NO \
+  build
 ```
 
 Expected result:
 
-- all tests pass
-- no failed assertions
-
----
-
-# 7. Mac Client Setup
-
-Go to the Mac app folder.
-
-```bash
-cd mac
+```text
+** BUILD SUCCEEDED **
 ```
 
-Install dependencies:
+Known warning class:
+
+1. Some AppKit menu APIs may emit deprecation warnings.
+2. Existing peer-connection diagnostics may emit warnings while the runtime is being hardened.
+
+## Run macOS App
+
+Use Xcode:
+
+1. Open `mac/AirClip.xcodeproj`.
+2. Select the `AirClip` scheme.
+3. Run on `My Mac`.
+
+Or run the built app from Xcode's derived data output after a successful build.
+
+When running for the first time, approve Local Network access if macOS prompts for it. Without that permission, peer discovery and incoming LAN connections may fail.
+
+## Android Unit Tests
+
+From `android/`:
 
 ```bash
-npm install
+JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' ./gradlew testDebugUnitTest
 ```
 
-Run the Mac app:
-
-```bash
-npm start
-```
-
-Expected output includes:
+Expected result:
 
 ```text
-Clipr starting...
-App ready
-WebSocket connected
-Clipboard polling started
+BUILD SUCCESSFUL
 ```
 
----
+Known warning class:
 
-# 8. Android Client Setup
+1. Deprecated NSD callback APIs may warn on the current Android implementation.
+2. Compose icon deprecation warnings may appear for older outlined icons.
+3. A small number of nonce parameters may be reported as unused in crypto plumbing.
 
-Open the `android` folder in **Android Studio**.
+## Run Android App
 
-Let Gradle sync finish.
+Use Android Studio:
 
-If prompted, install missing SDK packages.
+1. Open the `android/` folder.
+2. Let Gradle sync finish.
+3. Select a physical Android device or emulator.
+4. Run the debug app.
 
----
+Physical device testing is strongly preferred because LAN discovery, foreground service behavior, clipboard access, and battery restrictions are more realistic than on an emulator.
 
-## Build and Run
+## Pairing Flow
 
-Use either:
+Use the in-app pairing UI:
 
-- Android emulator
-- physical Android device
+1. Start AirClip on macOS.
+2. Start AirClip on Android.
+3. Put both devices on the same Wi-Fi network.
+4. Use QR or code pairing.
+5. Confirm that both devices show the peer in the Devices view.
+6. Wait for the LAN status to move from paired to connected.
 
-### Recommended for MVP testing
-Use a **physical Android device** on the same Wi-Fi network as your Mac.
+Pairing stores local device identity and trusted peer metadata on each device. There is no active account login or cloud approval flow in the LAN-first MVP.
 
----
+## Runtime Flow
 
-# 9. Android Local Server URL
+After pairing:
 
-When testing with a physical Android device, backend URL must use your Mac’s local IP address.
+1. Each device advertises `_airclip._tcp` on the local network.
+2. Each device listens for WebSocket peers on TCP `7878`.
+3. Peers authenticate with local identity metadata.
+4. Unknown or removed devices are rejected.
+5. Clipboard packets are encrypted and sent to authenticated peers.
+6. Peers exchange heartbeat messages to refresh last-seen presence.
+7. Recent history records may be backfilled after authentication.
 
-Find your Mac IP:
+## Sync Modes
 
-```bash
-ifconfig
-```
+Auto:
 
-Look for your active network interface. Example:
+1. Clipboard changes are captured automatically.
+2. Allowed content is sent to connected peers.
+3. Sensitive content follows the configured policy.
 
-```text
-192.168.0.48
-```
+Manual:
 
-Then use:
+1. Clipboard changes are not sent automatically.
+2. Explicit send actions still work.
+3. Sensitive content still follows the configured policy.
 
-```text
-http://192.168.0.48:8000
-```
+Paused:
 
-inside the Android app.
+1. LAN runtime is stopped.
+2. Listener, advertisement, browser, and active peers are torn down.
+3. No automatic or manual sends should leave the device.
 
----
+## Local History
 
-## Emulator special case
+History is local to each device.
 
-If using Android emulator:
+Current behavior:
 
-```text
-http://10.0.2.2:8000
-```
+1. Text, links, and images can be recorded locally.
+2. Saved clips are protected from normal retention pruning.
+3. Search matches clip text, type, and source device label.
+4. Filters support All, Text, Links, and Images.
+5. History backfill merges peer history without writing to the active clipboard.
 
-This is the emulator alias for the host machine.
+## Sensitive Clipboard Protection
 
----
+Sensitive checks run locally before sending.
 
-# 10. Android Network Security Notes
+Covered examples include:
 
-For local HTTP development, Android may block cleartext traffic by default.
+1. Password-like strings.
+2. API keys and tokens.
+3. Private keys.
+4. Recovery phrases.
+5. Payment cards.
+6. One-time codes.
 
-If needed, configure:
+Each category can be configured as:
 
-- `network_security_config.xml`
-- AndroidManifest network security settings
+1. Block.
+2. Ask.
+3. Allow.
 
-This is only for local dev.
+Block rejects automatic and explicit sends. Ask blocks automatic sends and requires confirmation for explicit sends. Allow permits sending for that category.
 
-Production should use:
+## Manual Validation Queue
 
-```text
-HTTPS / WSS
-```
+Use `docs/MANUAL_VALIDATION_QUEUE.md` for the current user-facing manual test list.
 
----
+The highest-value validation passes are:
 
-# 11. Full Local Run Order
+1. Fresh pairing from reset state.
+2. Auto and Manual text transfer both directions.
+3. Paused mode teardown.
+4. Sensitive Block, Ask, and Allow behavior.
+5. Remove device and verify reconnect rejection.
+6. Re-pair after removal.
+7. History search, filters, save, delete, clear, retention, and restart persistence.
+8. Reconnect backfill without overwriting the active clipboard.
+9. Wi-Fi disconnect and reconnect recovery.
+10. Duplicate suppression after send, receive, tap-to-copy, and backfill.
 
-Recommended startup order:
+## Troubleshooting
 
-### Terminal A — Redis
+### Devices do not see each other
 
-```bash
-redis-server
-```
+Check:
 
-### Terminal B — Backend
+1. Both devices are on the same Wi-Fi network.
+2. The network allows local peer discovery.
+3. VPN is disabled or configured to allow LAN access.
+4. macOS Local Network permission is granted.
+5. Android foreground service is running.
+6. AirClip is not in Paused mode.
 
-```bash
-cd backend
-source .venv/bin/activate
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-```
+### Devices are paired but not connected
 
-### Terminal C — Mac App
+Check:
 
-```bash
-cd mac
-npm start
-```
+1. TCP port `7878` is not already occupied.
+2. Firewall rules allow local inbound connections.
+3. Android battery restrictions have not stopped the foreground service.
+4. The Devices screen diagnostic message for listener, advertisement, or discovery errors.
 
-### Android Studio — Android App
+### Android listener reports address already in use
 
-- Run app
-- set backend URL
-- login / register
-- connect device
+The LAN server startup path is intended to be idempotent. If this warning appears during forced restart testing:
 
----
+1. Stop the Android foreground service.
+2. Relaunch the app.
+3. Toggle Paused on and off.
+4. Re-run the restart cycle and record whether the warning returns.
 
-# 12. Basic Manual Test Flow
+This remains part of the manual validation queue.
 
-## Live sync
+### Clipboard does not sync
 
-1. Open Mac app
-2. Open Android app
-3. Connect both to same account
-4. Copy text on Mac
-5. Confirm Android receives it
+Check:
 
----
+1. Current sync mode.
+2. Sensitive policy for the copied content.
+3. Whether the peer is connected in Devices.
+4. Whether the item already exists and duplicate suppression skipped it.
+5. Whether clipboard permissions are restricted by the OS.
 
-## Offline catch-up
+### History item tap causes an echo
 
-1. Close Android app or disable network
-2. Copy several texts on Mac
-3. Reopen Android
-4. Confirm missed items appear automatically
+History tap-to-copy should suppress the immediate local clipboard echo. If an item duplicates after tapping:
 
----
+1. Record which platform was tapped.
+2. Record whether the item was text, link, or image.
+3. Record whether the duplicate arrived through live sync or reconnect backfill.
 
-## Tap-to-copy
+## Backend Status
 
-1. Open Android clipboard history
-2. Tap an item
-3. Confirm it copies to Android clipboard
-4. Confirm it does **not** re-send to Mac
+The backend is not needed to build, run, pair, or sync the current MVP.
 
----
+Current backend status:
 
-# 13. Common Development States
+1. Source remains in `backend/`.
+2. Backend tests now cover the current minimal account/device bootstrap and heartbeat WebSocket behavior.
+3. Backend auth/account/device bootstrap is legacy or future optional infrastructure, not active clipboard transport.
+4. Do not treat backend relay docs, old specs, or old plans as current AirClip behavior.
 
-## Mac app healthy state
-
-Example logs:
-
-```text
-WebSocket connected
-Clipboard polling started
-Fetched devices from server
-```
-
-## Android healthy state
-
-Example state:
-
-- AccountTokenReady
-- DeviceTokenReady
-- WS Connected
-- Clipboard Monitoring ON
-
-## Backend healthy state
-
-Example logs:
-
-```text
-WebSocket /ws [accepted]
-GET /clips 200 OK
-POST /devices/register 200 OK
-```
-
----
-
-# 14. Common Problems and Fixes
-
-## Problem: Android cannot connect to backend
-
-### Possible causes
-- backend started on localhost only
-- wrong local IP
-- phone not on same Wi-Fi
-- Android cleartext HTTP blocked
-
-### Fix
-- run backend on `0.0.0.0`
-- use Mac LAN IP
-- confirm same Wi-Fi
-- configure Android network security for local dev
-
----
-
-## Problem: Mac app shows token expired
-
-### Cause
-Account token expired.
-
-### Fix
-- login again
-- app should refresh session state
-
----
-
-## Problem: Android misses offline clipboard items
-
-### Causes to check
-- backend not reachable
-- WS not reconnecting
-- device keypair not restored on cold start
-- lastSeenSeq/catch-up path issue
-
-### Fix
-- verify Android reconnect logs
-- verify key restore works
-- verify server history still within 30-minute retention window
-
----
-
-## Problem: Clipboard loops or duplicates
-
-### Causes
-- loop-prevention hash not recorded early enough
-- duplicate item merge issue
-
-### Fix
-- verify recent hash cache
-- verify duplicate suppression by msg_id / seq
-
----
-
-# 15. Resetting Local State
-
-Sometimes development requires a clean reset.
-
----
-
-## Reset Mac app state
-
-Delete Electron user data folder if needed.
-
-Example:
-
-```bash
-rm -rf ~/Library/Application\ Support/clipr-mac
-```
-
-Then restart the app.
-
----
-
-## Reset Android app state
-
-On device:
-
-- App Info
-- Storage
-- Clear storage / clear cache
-
-or uninstall and reinstall.
-
----
-
-## Reset Redis
-
-Warning: this deletes all short-term clipboard state.
-
-```bash
-redis-cli FLUSHALL
-```
-
-Use only for development reset.
-
----
-
-# 16. Useful Logs to Watch
-
-## Backend
-
-Watch for:
-
-- WebSocket accepted
-- pending delivery
-- hello latest_seq
-- catch-up requests
-- auth failures
-
----
-
-## Mac
-
-Watch for:
-
-- WebSocket connected
-- clipboard polling started
-- fetched devices
-- catch-up behavior
-- session expired
-
----
-
-## Android
-
-Watch for:
-
-- session restore
-- auto-connect decision
-- hello(latest_seq)
-- fetchMissedClips
-- decrypt success/failure
-- local history merge
-
----
-
-# 17. Recommended Dev Workflow
-
-Best workflow during MVP development:
-
-1. Start Redis
-2. Start backend
-3. Run Mac app
-4. Run Android app
-5. Test live sync
-6. Test offline reconnect
-7. Verify clipboard history
-8. Verify no duplicate resend
-
-Avoid changing protocol and UI at the same time.
-Keep one fix pass focused on one layer.
-
----
-
-# 18. Current MVP Limits
-
-Development/testing assumptions:
-
-- text only
-- history cap = 20
-- server catch-up window ≈ 30 minutes
-- one account with multiple trusted devices
-- Android may behave differently across OEM background policies
-
----
-
-# 19. Related Documentation
-
-See:
-
-```text
-README.md
-docs/architecture.md
-docs/protocol.md
-docs/security.md
-docs/mvp-scope.md
-```
-
----
-
-# End of Development Setup
+If cloud relay returns later, it should be explicitly opt-in, encrypted end to end, sensitive-policy aware, and clearly distinct from the LAN-first flow.

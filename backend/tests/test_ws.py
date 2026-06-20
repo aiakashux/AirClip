@@ -1,33 +1,27 @@
 # backend/tests/test_ws.py
 from __future__ import annotations
 
+from unittest.mock import AsyncMock, patch
+
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock, call
 
-
-# ---------------------------------------------------------------------------
-# handle_heartbeat
-# ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_heartbeat_renews_presence_and_updates_last_seen():
-    with (
-        patch("backend.app.storage.set_presence", AsyncMock()) as mock_set,
-        patch("backend.app.storage.update_device_last_seen", AsyncMock()) as mock_seen,
-    ):
-        from backend.app.ws import handle_heartbeat
-        await handle_heartbeat("dev-abc")
+async def test_heartbeat_updates_last_seen_without_redis_presence():
+    with patch("backend.app.storage.update_device_last_seen", AsyncMock()) as mock_seen:
+        from backend.app.ws import _dispatch_message
 
-    mock_set.assert_called_once_with("dev-abc")
-    mock_seen.assert_called_once_with("dev-abc")
+        await _dispatch_message(
+            account={"id": "acct-1"},
+            device_id="dev-abc",
+            data={"type": "heartbeat"},
+        )
 
+    mock_seen.assert_awaited_once_with("dev-abc")
 
-# ---------------------------------------------------------------------------
-# unrecognized event type → error response sent to caller
-# ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_unrecognized_event_sends_error():
+async def test_unrecognized_event_sends_error_to_caller():
     sent_messages = []
 
     async def fake_send_json(device_id: str, data: dict) -> bool:
@@ -37,38 +31,49 @@ async def test_unrecognized_event_sends_error():
     with patch("backend.app.ws.manager") as mock_manager:
         mock_manager.send_json = AsyncMock(side_effect=fake_send_json)
 
-        with (
-            patch("backend.app.ws.handle_heartbeat", AsyncMock()),
-            patch("backend.app.ws.handle_ack", AsyncMock()),
-            patch("backend.app.ws.handle_send_clipboard", AsyncMock()),
-        ):
-            from backend.app.ws import _dispatch_message
-            await _dispatch_message(
-                account={"id": "acct-1"},
-                device_id="dev-1",
-                data={"type": "approve_device", "target_device_id": "dev-2"},
-            )
+        from backend.app.ws import _dispatch_message
 
-    assert len(sent_messages) == 1
-    device_id, payload = sent_messages[0]
-    assert device_id == "dev-1"
-    assert payload["type"] == "error"
-    assert "unrecognized" in payload["message"].lower()
+        await _dispatch_message(
+            account={"id": "acct-1"},
+            device_id="dev-1",
+            data={"type": "approve_device", "target_device_id": "dev-2"},
+        )
 
+    assert sent_messages == [
+        (
+            "dev-1",
+            {"type": "error", "message": "unrecognized event: approve_device"},
+        )
+    ]
 
-# ---------------------------------------------------------------------------
-# presence set on connect, deleted on disconnect
-# ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_presence_set_and_deleted_via_storage():
-    with (
-        patch("backend.app.storage.set_presence", AsyncMock()) as mock_set,
-        patch("backend.app.storage.delete_presence", AsyncMock()) as mock_del,
-    ):
-        from backend.app import storage as st
-        await st.set_presence("dev-xyz")
-        await st.delete_presence("dev-xyz")
+async def test_authenticate_ws_rejects_account_tokens():
+    from backend.app.auth import create_token
+    from backend.app.ws import authenticate_ws
 
-    mock_set.assert_called_once_with("dev-xyz")
-    mock_del.assert_called_once_with("dev-xyz")
+    ws = AsyncMock()
+    ws.headers = {"authorization": f"Bearer {create_token('acct-1', token_type='account')}"}
+
+    result = await authenticate_ws(ws)
+
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_authenticate_ws_accepts_device_token_with_account():
+    from backend.app.auth import create_token
+    from backend.app.ws import authenticate_ws
+
+    ws = AsyncMock()
+    ws.headers = {
+        "authorization": f"Bearer {create_token('acct-1', token_type='device', device_id='dev-1')}"
+    }
+
+    with patch(
+        "backend.app.storage.get_account_by_id",
+        AsyncMock(return_value={"id": "acct-1", "email": "a@test.com"}),
+    ):
+        result = await authenticate_ws(ws)
+
+    assert result == ({"id": "acct-1", "email": "a@test.com"}, "dev-1")

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Clipr+ Crypto E2E Proof Test
+AirClip Crypto E2E Proof Test
 
 Proves that real NaCl encryption works end-to-end through the backend:
 plaintext is never visible to the server, only ciphertext transits Redis,
@@ -280,7 +280,7 @@ async def main() -> None:
         sys.exit(1)
 
     print("=" * 55)
-    print("  Clipr+ Crypto E2E Proof Test")
+    print("  AirClip Crypto E2E Proof Test")
     print("=" * 55)
 
     exit_code = 0

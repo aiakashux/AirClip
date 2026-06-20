@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Base theme; Compose MaterialTheme handles the rest -->
-    <style name="Theme.CliprPlus" parent="android:Theme.Material.Light.NoActionBar" />
+    <style name="Theme.AirClip" parent="android:Theme.Material.Light.NoActionBar" />
 </resources>

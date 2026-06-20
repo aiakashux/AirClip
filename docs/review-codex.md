@@ -1,4 +1,7 @@
-Project: Clipr+ (cross-platform E2E encrypted clipboard sync)
+> Status: Historical review note.
+> This note reflects an earlier backend-relay MVP review. Use it as context only; current product planning lives in `docs/PRODUCT_REQUIREMENTS.md`.
+
+Project: AirClip (cross-platform E2E encrypted clipboard sync)
 	•	MVP scope: Central relay server (cross-network)
 	•	Non-goals (for now): cloud sync, multi-user sharing, images/files, iOS
 	•	Hard requirements:

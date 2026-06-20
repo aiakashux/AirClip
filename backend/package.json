@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "@hugeicons/react": "file:hugeicons-pro/core-stroke-rounded@hugeicons-pro/core-solid-rounded"
+  }
+}

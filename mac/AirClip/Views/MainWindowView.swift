@@ -56,6 +56,8 @@ private enum MainWindowLayout {
     static let deviceOrbitNodeSize: CGFloat = 56
     static let deviceOrbitTooltipWidth: CGFloat = 76
     static let deviceOrbitTooltipHeight: CGFloat = 38
+    static let deviceOrbitTooltipGap: CGFloat = 8
+    static let deviceOrbitTooltipTextGap: CGFloat = 4
     static let deviceOrbitStroke: CGFloat = 1
     static let textBadgeFill = Color(hex: "#78A57F").opacity(0.16)
     static let textBadgeForeground = Color(hex: "#78A57F")
@@ -384,15 +386,42 @@ private enum ClipFilter {
     case saved
 }
 
+private enum ClipTypeFilter: String, CaseIterable {
+    case all
+    case text
+    case links
+    case images
+
+    var title: String {
+        switch self {
+        case .all: return "All"
+        case .text: return "Text"
+        case .links: return "Links"
+        case .images: return "Images"
+        }
+    }
+
+    var clipType: ClipType? {
+        switch self {
+        case .all: return nil
+        case .text: return .text
+        case .links: return .url
+        case .images: return .image
+        }
+    }
+}
+
 private struct ClipboardWorkspace: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \ClipboardItem.receivedAt, order: .reverse) private var allItems: [ClipboardItem]
+    @ObservedObject private var revealStore = SensitiveContentRevealStore.shared
 
     let filter: ClipFilter
     let workspaceWidth: CGFloat
     @Binding var isNavigationCollapsed: Bool
     @State private var selectedItem: ClipboardItem?
     @State private var searchQuery = ""
+    @State private var selectedTypeFilter: ClipTypeFilter = .all
     @State private var hoveredItemID: UUID?
     @FocusState private var searchFocused: Bool
 
@@ -401,8 +430,17 @@ private struct ClipboardWorkspace: View {
         if filter == .saved {
             items = items.filter(\.isSaved)
         }
-        guard !searchQuery.isEmpty else { return items }
-        return items.filter { $0.text.localizedCaseInsensitiveContains(searchQuery) }
+        if let clipType = selectedTypeFilter.clipType {
+            items = items.filter { $0.clipType == clipType }
+        }
+        let query = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return items }
+        return items.filter { item in
+            item.text.localizedCaseInsensitiveContains(query) ||
+                item.kindRaw.localizedCaseInsensitiveContains(query) ||
+                clipTypeLabel(for: item.clipType).localizedCaseInsensitiveContains(query) ||
+                deviceLabel(for: item).localizedCaseInsensitiveContains(query)
+        }
     }
 
     private var selectedItemIsValid: Bool {
@@ -420,11 +458,13 @@ private struct ClipboardWorkspace: View {
         .onChange(of: allItems) { _, _ in ensureSelection() }
         .onChange(of: filter) { _, _ in ensureSelection() }
         .onChange(of: searchQuery) { _, _ in ensureSelection() }
+        .onChange(of: selectedTypeFilter) { _, _ in ensureSelection() }
     }
 
     private var listPane: some View {
         VStack(alignment: .leading, spacing: 0) {
             searchBar
+            typeFilterRow
             sectionHeader
             if filteredItems.isEmpty {
                 emptyListState
@@ -520,6 +560,40 @@ private struct ClipboardWorkspace: View {
         }
     }
 
+    private var typeFilterRow: some View {
+        HStack(spacing: 4) {
+            ForEach(ClipTypeFilter.allCases, id: \.self) { typeFilter in
+                typeFilterButton(typeFilter)
+            }
+        }
+        .padding(.horizontal, MainWindowLayout.listSearchHorizontalInset)
+        .padding(.bottom, 8)
+    }
+
+    private func typeFilterButton(_ typeFilter: ClipTypeFilter) -> some View {
+        let selected = selectedTypeFilter == typeFilter
+        return Button {
+            selectedTypeFilter = typeFilter
+        } label: {
+            Text(typeFilter.title)
+                .font(.system(size: 10, weight: selected ? .medium : .regular))
+                .foregroundColor(selected ? MainWindowPalette.primaryText : MainWindowPalette.tertiaryText)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity)
+                .frame(height: 24)
+                .background(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(selected ? MainWindowPalette.activeFill : MainWindowPalette.searchFill.opacity(0.55))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .strokeBorder(selected ? MainWindowPalette.divider : MainWindowPalette.divider.opacity(0.5), lineWidth: 0.5)
+                )
+        }
+        .buttonStyle(.plain)
+        .help("Show \(typeFilter.title.lowercased()) clips")
+    }
+
     @ViewBuilder
     private var sectionHeader: some View {
         if let firstItem = filteredItems.first {
@@ -546,6 +620,7 @@ private struct ClipboardWorkspace: View {
                         .underline(item.clipType == .url)
                         .lineLimit(1)
                         .truncationMode(.tail)
+                        .blur(radius: shouldRedact(item) ? 4 : 0)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     HStack(spacing: 0) {
                         HStack(spacing: 4) {
@@ -661,11 +736,13 @@ private struct ClipboardWorkspace: View {
 
     private var emptyListTitle: String {
         if !searchQuery.isEmpty { return "No matches" }
+        if selectedTypeFilter != .all { return "No \(selectedTypeFilter.title.lowercased()) clips" }
         return filter == .saved ? "No saved clips" : "No clips yet"
     }
 
     private var emptyListSubtitle: String {
         if !searchQuery.isEmpty { return "Try a different search." }
+        if selectedTypeFilter != .all { return "Try another type filter." }
         return filter == .saved ? "Saved clips appear here." : "Copied text appears here."
     }
 
@@ -771,7 +848,11 @@ private struct ClipboardWorkspace: View {
         ZStack(alignment: .bottomTrailing) {
             if let selectedItem {
                 ScrollView {
-                    PreviewContent(item: selectedItem)
+                    PreviewContent(
+                        item: selectedItem,
+                        isSensitive: isSensitive(selectedItem),
+                        isRevealed: revealStore.isRevealed(selectedItem.id)
+                    )
                         .padding(.top, MainWindowLayout.previewTopInset)
                         .padding(.leading, MainWindowLayout.previewLeadingInset)
                         .padding(.trailing, MainWindowLayout.previewTrailingInset)
@@ -796,6 +877,12 @@ private struct ClipboardWorkspace: View {
                 FloatingActions(
                     isSaved: selectedItem.isSaved,
                     onOpenBrowser: selectedItem.clipType == .url ? { openInBrowser(selectedItem) } : nil,
+                    sensitiveRevealState: isSensitive(selectedItem)
+                        ? revealStore.isRevealed(selectedItem.id)
+                        : nil,
+                    onToggleSensitiveReveal: isSensitive(selectedItem)
+                        ? { revealStore.toggle(selectedItem.id) }
+                        : nil,
                     onCopy: { copy(selectedItem) },
                     onSave: { toggleSaved(selectedItem) },
                     onDelete: { delete(selectedItem) }
@@ -848,7 +935,7 @@ private struct ClipboardWorkspace: View {
     }
 
     private func copy(_ item: ClipboardItem) {
-        ClipboardMonitor.shared.suppressNextChange()
+        ClipboardMonitor.shared.suppressPacket(item.clipboardPacket)
         ClipboardCapture.write(item.clipboardPacket, to: NSPasteboard.general)
     }
 
@@ -870,8 +957,17 @@ private struct ClipboardWorkspace: View {
         if selectedItem?.id == item.id {
             selectedItem = filteredItems.first { $0.id != item.id }
         }
+        revealStore.setRevealed(false, for: item.id)
         modelContext.delete(item)
         try? modelContext.save()
+    }
+
+    private func isSensitive(_ item: ClipboardItem) -> Bool {
+        item.clipType != .image && SensitiveClipboardClassifier.classify(item.text).isSensitive
+    }
+
+    private func shouldRedact(_ item: ClipboardItem) -> Bool {
+        isSensitive(item) && !revealStore.isRevealed(item.id)
     }
 
     private func deviceLabel(for item: ClipboardItem) -> String {
@@ -880,6 +976,17 @@ private struct ClipboardWorkspace: View {
             return name.isEmpty ? "This Mac" : name
         }
         return AirClipIdentity.shared.pairedDevices[item.fromDeviceId]?.deviceName ?? "Unknown device"
+    }
+
+    private func clipTypeLabel(for type: ClipType) -> String {
+        switch type {
+        case .url: return "Link"
+        case .code: return "Code"
+        case .color: return "Color"
+        case .email: return "Email"
+        case .image: return "Image"
+        case .text: return "Text"
+        }
     }
 
     private func relativeTime(_ date: Date) -> String {
@@ -921,24 +1028,18 @@ private struct ClipboardWorkspace: View {
 
 private struct PreviewContent: View {
     let item: ClipboardItem
+    let isSensitive: Bool
+    let isRevealed: Bool
     @State private var isURLHovered = false
 
     private var type: ClipType { item.clipType }
     private var parsedColor: Color? { Color.parseHex(item.text) }
+    private var shouldRedact: Bool { isSensitive && !isRevealed }
 
     var body: some View {
         VStack(alignment: .leading, spacing: previewSpacing) {
             if type == .image, let image = previewImage {
-                Image(nsImage: image)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(maxWidth: 260, maxHeight: 220, alignment: .leading)
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .strokeBorder(MainWindowPalette.divider, lineWidth: 1)
-                    )
-                    .padding(.bottom, 4)
+                imagePreview(image)
             } else if type == .color, let parsedColor {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .fill(parsedColor)
@@ -950,17 +1051,16 @@ private struct PreviewContent: View {
                     .padding(.bottom, 4)
             }
 
-            if type == .url {
+            if type == .image {
+                EmptyView()
+            } else if type == .url {
                 Button {
                     openURL()
                 } label: {
-                    Text(item.text)
-                        .font(previewFont)
-                        .foregroundColor(isURLHovered ? previewColor.opacity(0.84) : previewColor)
-                        .underline(true, color: previewColor)
-                        .lineSpacing(previewLineSpacing)
-                        .multilineTextAlignment(.leading)
-                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                    redactedPreviewText(
+                        foregroundColor: isURLHovered ? previewColor.opacity(0.84) : previewColor,
+                        underline: true
+                    )
                 }
                 .buttonStyle(.plain)
                 .textSelection(.enabled)
@@ -970,15 +1070,59 @@ private struct PreviewContent: View {
                     }
                 }
             } else {
-                Text(item.text)
-                    .font(previewFont)
-                    .foregroundColor(previewColor)
-                    .lineSpacing(previewLineSpacing)
+                redactedPreviewText(foregroundColor: previewColor)
                     .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .topLeading)
+            }
+
+            if shouldRedact {
+                HStack(spacing: 6) {
+                    AirClipIcon(.shield, size: 12)
+                    Text("Sensitive content hidden")
+                }
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(MainWindowPalette.tertiaryText)
+                .padding(.top, 10)
             }
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
+    }
+
+    private func imagePreview(_ image: NSImage) -> some View {
+        VStack(spacing: 0) {
+            Image(nsImage: image)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(maxWidth: 420, maxHeight: 320)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(MainWindowPalette.divider, lineWidth: 1)
+                )
+                .shadow(color: MainWindowPalette.divider.opacity(0.55), radius: 8, x: 0, y: 4)
+
+            Text(item.text)
+                .font(.system(size: 10, weight: .regular))
+                .foregroundColor(MainWindowPalette.tertiaryText)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .padding(.top, 100)
+                .frame(maxWidth: 420)
+        }
+        .frame(maxWidth: .infinity, alignment: .center)
+    }
+
+    private func redactedPreviewText(
+        foregroundColor: Color,
+        underline: Bool = false
+    ) -> some View {
+        Text(item.text)
+            .font(previewFont)
+            .foregroundColor(foregroundColor)
+            .underline(underline, color: foregroundColor)
+            .lineSpacing(previewLineSpacing)
+            .multilineTextAlignment(.leading)
+            .blur(radius: shouldRedact ? 7 : 0)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
     }
 
     private var previewImage: NSImage? {
@@ -1069,6 +1213,8 @@ private extension Comparable {
 private struct FloatingActions: View {
     let isSaved: Bool
     let onOpenBrowser: (() -> Void)?
+    let sensitiveRevealState: Bool?
+    let onToggleSensitiveReveal: (() -> Void)?
     let onCopy: () -> Void
     let onSave: () -> Void
     let onDelete: () -> Void
@@ -1083,6 +1229,14 @@ private struct FloatingActions: View {
                     foregroundColor: MainWindowPalette.secondaryText,
                     help: "Open in browser",
                     action: onOpenBrowser
+                )
+            }
+            if let sensitiveRevealState, let onToggleSensitiveReveal {
+                ActionIconButton(
+                    icon: .eye,
+                    foregroundColor: sensitiveRevealState ? MainWindowPalette.primaryText : MainWindowPalette.secondaryText,
+                    help: sensitiveRevealState ? "Hide sensitive content" : "Show sensitive content",
+                    action: onToggleSensitiveReveal
                 )
             }
             ActionIconButton(
@@ -1129,7 +1283,9 @@ private struct FloatingActions: View {
     }
 
     private var actionBarWidth: CGFloat {
-        let buttonCount = 3 + (onOpenBrowser == nil ? 0 : 1)
+        let buttonCount = 3
+            + (onOpenBrowser == nil ? 0 : 1)
+            + (onToggleSensitiveReveal == nil ? 0 : 1)
         return CGFloat(18 + (40 * buttonCount) + (8 * max(buttonCount - 1, 0)))
     }
 }
@@ -1212,6 +1368,8 @@ private struct CodeGridIcon: View {
 private struct DevicesPanel: View {
     @ObservedObject private var identity = AirClipIdentity.shared
     @ObservedObject private var peerManager = PeerManager.shared
+    @ObservedObject private var syncModeStore = SyncModeStore.shared
+    @ObservedObject private var lanDiagnostics = LanRuntimeDiagnostics.shared
 
     @State private var hoveredDeviceID: String?
     @State private var pinnedDeviceID: String?
@@ -1237,11 +1395,14 @@ private struct DevicesPanel: View {
         pinnedDeviceID ?? hoveredDeviceID
     }
 
-    private var onlineCountIncludingLocal: Int {
-        max(1, orbitItems.filter(\.isOnline).count + 1)
+    private var remoteOnlineCount: Int {
+        orbitItems.filter(\.isOnline).count
     }
 
     private var networkLabel: String {
+        if let currentNetwork = CurrentWiFiNetwork.name(), !currentNetwork.isEmpty {
+            return currentNetwork
+        }
         let names = orbitItems
             .filter(\.isOnline)
             .compactMap { $0.device.wifiNetwork }
@@ -1249,7 +1410,7 @@ private struct DevicesPanel: View {
         if let first = names.first, names.allSatisfy({ $0 == first }) {
             return first
         }
-        return "AirClip network"
+        return "Wi-Fi network"
     }
 
     var body: some View {
@@ -1305,7 +1466,9 @@ private struct DevicesPanel: View {
                     } else {
                         NetworkHubView(
                             networkName: networkLabel,
-                            deviceCount: onlineCountIncludingLocal,
+                            remoteOnlineCount: remoteOnlineCount,
+                            isPaused: syncModeStore.mode == .paused,
+                            diagnostic: lanDiagnostics.diagnostic,
                             hasDevices: true
                         )
                         .position(center)
@@ -1535,7 +1698,9 @@ private struct OrbitBackdrop: View {
 
 private struct NetworkHubView: View {
     let networkName: String
-    let deviceCount: Int
+    let remoteOnlineCount: Int
+    let isPaused: Bool
+    let diagnostic: LanRuntimeDiagnostic
     let hasDevices: Bool
 
     var body: some View {
@@ -1557,7 +1722,7 @@ private struct NetworkHubView: View {
                             .strokeBorder(MainWindowPalette.divider.opacity(0.88), lineWidth: 1)
                     )
                     .shadow(color: MainWindowPalette.divider.opacity(0.85), radius: 1, x: 0, y: 1)
-                AirClipIcon(.signalFull, size: 24)
+                AirClipIcon(.wifi, size: 24, variant: .stroke)
                     .foregroundColor(MainWindowPalette.saved)
             }
             .frame(width: MainWindowLayout.deviceOrbitHubSize, height: MainWindowLayout.deviceOrbitHubSize)
@@ -1567,12 +1732,28 @@ private struct NetworkHubView: View {
                     .font(.system(size: 10, weight: .medium))
                     .foregroundColor(MainWindowPalette.primaryText)
                     .lineLimit(1)
-                Text(deviceCount == 1 ? "1 device online" : "\(deviceCount) devices online")
+                Text(statusText)
                     .font(.system(size: 10))
                     .foregroundColor(MainWindowPalette.secondaryText.opacity(0.72))
+                    .multilineTextAlignment(.center)
             }
         }
         .opacity(hasDevices ? 1 : 0.92)
+    }
+
+    private var statusText: String {
+        if isPaused {
+            return "Sync paused · resume to reconnect"
+        }
+        switch diagnostic.issue {
+        case .serverFailed:
+            return "Listener blocked · restart AirClip"
+        case .discoveryFailed:
+            return "Discovery blocked · check network access"
+        case .none:
+            break
+        }
+        return DeviceConnectionStatusText.onlineRemoteDevices(remoteOnlineCount)
     }
 }
 
@@ -1672,9 +1853,8 @@ private struct DevicesEmptyState: View {
 
 private struct AddDevicePairingSheet: View {
     @ObservedObject private var pairing = PairingSession.shared
+    @StateObject private var pairingSheet = AddDevicePairingSheetController()
     @Environment(\.dismiss) private var dismiss
-
-    @State private var didPairDevice = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -1688,11 +1868,11 @@ private struct AddDevicePairingSheet: View {
                 .frame(width: 44, height: 44)
 
                 VStack(alignment: .leading, spacing: 5) {
-                    Text(didPairDevice ? "Device added" : "Add a device")
+                    Text(pairingSheet.didPairDevice ? "Device added" : "Add a device")
                         .font(.system(size: 20, weight: .semibold))
                         .foregroundColor(MainWindowPalette.primaryText)
 
-                    Text(didPairDevice ? "The new device is now part of this AirClip network." : "Scan the QR code or enter the numeric code on the device you want to add.")
+                    Text(pairingSheet.didPairDevice ? "The new device is now part of this AirClip network." : "Scan the QR code or enter the numeric code on the device you want to add.")
                         .font(.system(size: 12))
                         .foregroundColor(MainWindowPalette.secondaryText)
                         .lineSpacing(3)
@@ -1769,15 +1949,20 @@ private struct AddDevicePairingSheet: View {
         .frame(width: 420)
         .background(MainWindowPalette.card)
         .onAppear {
-            didPairDevice = false
+            pairingSheet.reset()
             PairingSession.shared.onPairSuccess = {
                 withAnimation(.easeOut(duration: 0.18)) {
-                    didPairDevice = true
+                    pairingSheet.handlePairSuccess()
                 }
             }
             LanServer.shared.start()
             LanBrowser.shared.start()
             PairingSession.shared.start()
+        }
+        .onChange(of: pairingSheet.shouldDismiss) { _, shouldDismiss in
+            if shouldDismiss {
+                dismiss()
+            }
         }
         .onDisappear {
             PairingSession.shared.onPairSuccess = nil
@@ -1807,6 +1992,12 @@ private struct OrbitDeviceNode: View {
         isActive || isVisible
     }
 
+    private var tooltipOffset: CGFloat {
+        (MainWindowLayout.deviceOrbitNodeSize / 2)
+            + MainWindowLayout.deviceOrbitTooltipGap
+            + (MainWindowLayout.deviceOrbitTooltipHeight / 2)
+    }
+
     var body: some View {
         ZStack {
             if tooltipVisible {
@@ -1814,7 +2005,7 @@ private struct OrbitDeviceNode: View {
                     device: item.device,
                     isOnline: item.isOnline
                 )
-                .offset(y: tooltipPlacement == .above ? -44 : 44)
+                .offset(y: tooltipPlacement == .above ? -tooltipOffset : tooltipOffset)
                 .opacity(isActive || isVisible ? 1 : 0)
                 .scaleEffect(isActive || isVisible ? 1 : 0.98)
                 .animation(.easeOut(duration: MainWindowMotion.hoverDuration), value: isActive || isVisible)
@@ -1867,23 +2058,40 @@ private struct OrbitDeviceTooltip: View {
     let isOnline: Bool
 
     private var statusText: String {
-        isOnline ? "Online" : "Offline"
+        if isOnline {
+            return device.lastSeenMs > 0 ? "Online · \(relativeLastSeen)" : "Online now"
+        }
+        return device.lastSeenMs > 0 ? "Last seen \(relativeLastSeen)" : "Offline"
+    }
+
+    private var relativeLastSeen: String {
+        let lastSeen = Date(timeIntervalSince1970: TimeInterval(device.lastSeenMs) / 1000)
+        let diff = max(0, Int(Date().timeIntervalSince(lastSeen)))
+        if diff < 60 { return "just now" }
+        let minutes = diff / 60
+        if minutes < 60 { return "\(minutes)m ago" }
+        let hours = minutes / 60
+        if hours < 24 { return "\(hours)h ago" }
+        return "\(hours / 24)d ago"
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(device.deviceName)
+        VStack(alignment: .leading, spacing: MainWindowLayout.deviceOrbitTooltipTextGap) {
+            Text(DeviceDisplayText.clipped(device.deviceName))
                 .font(.system(size: 10, weight: .medium))
                 .foregroundColor(MainWindowPalette.primaryText)
                 .lineLimit(1)
+                .help(device.deviceName)
 
             Text(statusText)
                 .font(.system(size: 10))
                 .foregroundColor(MainWindowPalette.secondaryText.opacity(0.72))
+                .lineLimit(1)
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
-        .frame(width: MainWindowLayout.deviceOrbitTooltipWidth, height: MainWindowLayout.deviceOrbitTooltipHeight, alignment: .leading)
+        .fixedSize(horizontal: true, vertical: false)
+        .frame(minHeight: MainWindowLayout.deviceOrbitTooltipHeight, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 6, style: .continuous)
                 .fill(MainWindowPalette.card)
@@ -1901,26 +2109,41 @@ private struct OrbitDeviceArtwork: View {
     let isOnline: Bool
 
     var body: some View {
-        Group {
-            switch visual {
-            case .iphone15Pro:
-                MiniPhoneOrbitArtwork(shell: [Color(hex: "#15171C"), Color(hex: "#31343B")], screen: [Color(hex: "#111827"), Color(hex: "#334155")], accent: Color(hex: "#8B93A8"))
-            case .genericPhone:
-                MiniPhoneOrbitArtwork(shell: [Color(hex: "#6F7581"), Color(hex: "#A3A8B2")], screen: [Color(hex: "#CBD5E1"), Color(hex: "#F8FAFC")], accent: Color(hex: "#64748B"))
-            case .samsungS25Plus:
-                MiniPhoneOrbitArtwork(shell: [Color(hex: "#4A4A58"), Color(hex: "#A08BEF")], screen: [Color(hex: "#1E293B"), Color(hex: "#4F46E5")], accent: Color(hex: "#C4B5FD"))
-            case .onePlus6:
-                MiniPhoneOrbitArtwork(shell: [Color(hex: "#111827"), Color(hex: "#4B5563")], screen: [Color(hex: "#F1F5F9"), Color(hex: "#CBD5E1")], accent: Color(hex: "#EF4444"))
-            case .macBook:
-                MiniLaptopOrbitArtwork()
-            case .macMini:
-                MiniDesktopOrbitArtwork()
-            case .genericMonitor:
-                MiniMonitorOrbitArtwork()
-            }
-        }
+        AirClipDeviceIcon(deviceIcon, size: MainWindowLayout.deviceOrbitNodeSize, tint: tint)
         .frame(width: MainWindowLayout.deviceOrbitNodeSize, height: MainWindowLayout.deviceOrbitNodeSize)
         .opacity(isOnline ? 1 : 0.50)
+    }
+
+    private var deviceIcon: AirClipDeviceIconName {
+        switch visual {
+        case .iphone15Pro, .genericPhone, .samsungS25Plus, .onePlus6:
+            return .smartPhone
+        case .macBook:
+            return .laptop
+        case .macMini:
+            return .computer
+        case .genericMonitor:
+            return .tv
+        }
+    }
+
+    private var tint: Color {
+        switch visual {
+        case .iphone15Pro:
+            return Color(hex: "#31343B")
+        case .genericPhone:
+            return Color(hex: "#8A909A")
+        case .samsungS25Plus:
+            return Color(hex: "#8B7AE6")
+        case .onePlus6:
+            return Color(hex: "#4B5563")
+        case .macBook:
+            return Color(hex: "#0A7F9A")
+        case .macMini:
+            return Color(hex: "#3A9B47")
+        case .genericMonitor:
+            return Color(hex: "#8A8F20")
+        }
     }
 }
 
@@ -2620,38 +2843,70 @@ private struct SettingsPanel: View {
 
     private var sensitiveProtectionContent: some View {
         VStack(spacing: 0) {
-            ForEach(Array(SensitiveCategory.allCases.enumerated()), id: \.element.rawValue) {
-                index,
-                category in
-                HStack {
-                    Text(category.label)
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Sensitive sync")
                         .font(.system(size: 12))
                         .foregroundColor(MainWindowPalette.primaryText)
-                    Spacer()
-                    Picker(
-                        category.label,
-                        selection: Binding(
-                            get: { sensitiveProtection.action(for: category) },
-                            set: { sensitiveProtection.setAction($0, for: category) }
-                        )
-                    ) {
-                        ForEach(SensitiveRuleAction.allCases, id: \.rawValue) { action in
-                            Text(action.label).tag(action)
-                        }
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.menu)
-                    .frame(width: 92)
+                    Text(sensitiveProtection.masterAction == .allow ? "All sensitive clips are allowed by default." : "Category rules apply below.")
+                        .font(.system(size: 11))
+                        .foregroundColor(MainWindowPalette.tertiaryText)
                 }
-                .padding(.horizontal, 14)
-                .frame(height: 38)
+                Spacer()
+                Picker(
+                    "Sensitive sync",
+                    selection: Binding(
+                        get: { sensitiveProtection.masterAction },
+                        set: { sensitiveProtection.setMasterAction($0) }
+                    )
+                ) {
+                    ForEach(SensitiveRuleAction.allCases, id: \.rawValue) { action in
+                        Text(action.label).tag(action)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .frame(width: 92)
+            }
+            .padding(.horizontal, 14)
+            .frame(minHeight: 46)
 
-                if index < SensitiveCategory.allCases.count - 1 {
-                    settingsDivider
+            if sensitiveProtection.masterAction != .allow {
+                settingsDivider
+
+                ForEach(Array(SensitiveCategory.allCases.enumerated()), id: \.element.rawValue) {
+                    index,
+                    category in
+                    HStack {
+                        Text(category.label)
+                            .font(.system(size: 12))
+                            .foregroundColor(MainWindowPalette.primaryText)
+                        Spacer()
+                        Picker(
+                            category.label,
+                            selection: Binding(
+                                get: { sensitiveProtection.action(for: category) },
+                                set: { sensitiveProtection.setAction($0, for: category) }
+                            )
+                        ) {
+                            ForEach(SensitiveRuleAction.allCases, id: \.rawValue) { action in
+                                Text(action.label).tag(action)
+                            }
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.menu)
+                        .frame(width: 92)
+                    }
+                    .padding(.horizontal, 14)
+                    .frame(height: 38)
+
+                    if index < SensitiveCategory.allCases.count - 1 {
+                        settingsDivider
+                    }
                 }
             }
 
-            Text("Ask blocks automatic sync and confirms explicit sends.")
+            Text("Ask prevents automatic sync for matching clips. Explicit copy/send actions stay quiet.")
                 .font(.system(size: 11))
                 .foregroundColor(MainWindowPalette.tertiaryText)
                 .padding(.horizontal, 14)
