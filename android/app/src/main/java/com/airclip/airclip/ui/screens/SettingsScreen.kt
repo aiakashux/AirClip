@@ -1,723 +1,411 @@
 package com.airclip.airclip.ui.screens
 
-import android.graphics.Bitmap
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.*
-import androidx.compose.material.icons.automirrored.outlined.ExitToApp
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.airclip.airclip.AppAppearanceSetting
 import com.airclip.airclip.MainViewModel
-import com.airclip.airclip.SensitiveCategory
+import com.airclip.airclip.R
 import com.airclip.airclip.SensitiveRuleAction
 import com.airclip.airclip.SyncMode
-import com.airclip.airclip.ui.theme.*
+import com.airclip.airclip.ui.theme.LocalAirClipColors
+
+private val BearyFontFamily = FontFamily(Font(R.font.beary))
+private val SettingsText = Color.Black
+private val SettingsMuted = Color(0xFF655B76)
+private val SettingsDanger = Color(0xFFD50B0B)
+private val SettingsDangerBody = Color(0xFFDC3838)
+private val SettingsDivider = Color(0xFFE9EAEC)
 
 @Composable
-fun SettingsScreen(viewModel: MainViewModel, uiState: MainViewModel.UiState) {
-    var showSignOutDialog by remember { mutableStateOf(false) }
-    var historyDays by remember { mutableStateOf(30) }
-    var deviceNameDraft by remember(uiState.deviceName) { mutableStateOf(uiState.deviceName) }
-    val isPairingVisible = uiState.isPairingWaiting
+fun SettingsScreen(viewModel: MainViewModel, uiState: SettingsTabUiState) {
+    val c = LocalAirClipColors.current
+    var showResetDialog by remember { mutableStateOf(false) }
+    val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    val headerHeight = statusBarTop + 88.dp
 
-    Column(
+    val appearanceOptions = listOf("System (Default)", "Light", "Dark")
+    val historyOptions = listOf("1 Day", "3 Days", "7 Days", "15 Days", "30 Days", "Forever")
+    val syncOptions = listOf("Auto", "Manual", "Paused")
+    val sensitiveOptions = listOf("Allowed (Default)", "Ask", "Block")
+
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState()),
+            .background(color = c.bgBase),
     ) {
-        // Header
-        Text(
-            "Settings",
-            style = MaterialTheme.typography.titleLarge,
-            color = AirClipTextPrimary,
+        Column(
             modifier = Modifier
-                .padding(horizontal = 20.dp)
-                .padding(top = 20.dp, bottom = 20.dp),
-        )
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(top = headerHeight),
+        ) {
 
-        // ── Account card ────────────────────────────────────────────────────
-        AirClipCard(deviceName = uiState.deviceName, myDeviceId = uiState.myDeviceId)
-
-        Spacer(Modifier.height(24.dp))
-
-        // ── Profile section ─────────────────────────────────────────────────
-        SectionHeader("Account")
-
-        SettingsGroup {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text(
-                    "Device name",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = AirClipTextTertiary,
-                )
-                Spacer(Modifier.height(8.dp))
-                AirClipTextField(
-                    value = deviceNameDraft,
-                    onValueChange = { deviceNameDraft = it },
-                    placeholder = "This device",
-                    label = "Name",
-                )
-                Spacer(Modifier.height(12.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Button(
-                        onClick = { viewModel.onRenameDevice(deviceNameDraft) },
-                        enabled = deviceNameDraft.trim().isNotEmpty(),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = AirClipAccent,
-                            contentColor = Color.White,
-                            disabledContainerColor = AirClipAccent.copy(alpha = 0.36f),
-                            disabledContentColor = Color.White.copy(alpha = 0.7f),
-                        ),
-                    ) {
-                        Text("Save name")
-                    }
-                    TextButton(
-                        onClick = { deviceNameDraft = uiState.deviceName },
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                    ) {
-                        Text("Reset", color = AirClipTextSecondary)
-                    }
-                }
-
-                Spacer(Modifier.height(14.dp))
-                SettingsDivider()
-                Spacer(Modifier.height(14.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(Icons.Outlined.Tag, null, tint = AirClipTextSecondary, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(12.dp))
-                    Text(
-                        "AirClip ID",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = AirClipTextPrimary,
-                    )
-                    Spacer(Modifier.weight(1f))
-                    Text(
-                        uiState.myDeviceId?.take(8)?.lowercase()?.plus("…") ?: "Not paired",
-                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
-                        color = AirClipTextTertiary,
-                    )
-                }
-            }
-        }
-
-        Spacer(Modifier.height(24.dp))
-
-        // ── Devices section ─────────────────────────────────────────────────
-        SectionHeader("Devices")
-
-        SettingsGroup {
-            ActionRow(
-                icon = Icons.Outlined.AddCircleOutline,
-                label = "Add device to AirClip",
-                onClick = { viewModel.onStartPairingSession() },
-            )
-            SettingsDivider()
-            InfoRow(
-                icon = Icons.Outlined.Devices,
-                label = "Paired devices",
-                value = uiState.pairedDevices.size.toString(),
-            )
-        }
-
-        Spacer(Modifier.height(24.dp))
-
-        // ── Sync section ─────────────────────────────────────────────────────
-        SectionHeader("Sync")
-
-        SettingsGroup {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text(
-                    "Sync mode",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = AirClipTextTertiary,
-                )
-                Spacer(Modifier.height(10.dp))
-                SyncModeSelector(
-                    selectedMode = uiState.syncMode,
-                    onSelect = viewModel::onSyncModeChanged,
+            SettingsGroup(topPadding = 8.dp) {
+                SettingsSelectableRow(
+                    iconRes = R.drawable.ic_settings_sun_03,
+                    title = "Appearance",
+                    value = displayAppearance(uiState.appearanceSetting),
+                    options = appearanceOptions,
+                    onSelect = { label ->
+                        when (label) {
+                            "System (Default)" -> viewModel.onAppearanceSettingChanged(AppAppearanceSetting.SYSTEM)
+                            "Light" -> viewModel.onAppearanceSettingChanged(AppAppearanceSetting.LIGHT)
+                            "Dark" -> viewModel.onAppearanceSettingChanged(AppAppearanceSetting.DARK)
+                        }
+                    },
                 )
             }
-        }
 
-        Spacer(Modifier.height(24.dp))
+            SettingsGroupDivider()
 
-        // ── History section ──────────────────────────────────────────────────
-        SectionHeader("History")
-
-        SettingsGroup {
-            HistoryDepthRow(
-                days = historyDays,
-                onSelect = { historyDays = it },
-            )
-        }
-
-        Spacer(Modifier.height(24.dp))
-
-        // ── Security section ─────────────────────────────────────────────────
-        SectionHeader("Security")
-
-        SettingsGroup {
-            InfoRow(
-                icon = Icons.Outlined.Lock,
-                label = "End-to-end encryption",
-                value = "Enabled",
-                valueColor = AirClipGreen,
-            )
-            SettingsDivider()
-            Column(modifier = Modifier.padding(vertical = 4.dp)) {
-                Text(
-                    "Sensitive clipboard protection",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = AirClipTextTertiary,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+            SettingsGroup {
+                SettingsSelectableRow(
+                    iconRes = R.drawable.ic_settings_clock_02,
+                    title = "Keep History for",
+                    value = historyOptions[uiState.historyDepth.coerceIn(0, historyOptions.lastIndex)],
+                    options = historyOptions,
+                    onSelect = { label ->
+                        val index = historyOptions.indexOf(label)
+                        if (index >= 0) viewModel.onHistoryDepthChanged(index)
+                    },
                 )
-                SensitiveCategory.entries.forEachIndexed { index, category ->
-                    SensitiveRuleRow(
-                        category = category,
-                        action = uiState.sensitiveRules[category] ?: SensitiveRuleAction.ASK,
-                        onSelect = { viewModel.onSensitiveRuleChanged(category, it) },
-                    )
-                    if (index < SensitiveCategory.entries.lastIndex) {
-                        SettingsDivider()
-                    }
-                }
-                Text(
-                    "Ask blocks automatic sync and confirms explicit sends.",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = AirClipTextTertiary,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                SettingsSelectableRow(
+                    iconRes = R.drawable.ic_settings_database_sync,
+                    title = "Sync Clipboard",
+                    value = displaySyncMode(uiState.syncMode),
+                    options = syncOptions,
+                    onSelect = { label ->
+                        when (label) {
+                            "Auto" -> viewModel.onSyncModeChanged(SyncMode.AUTO)
+                            "Manual" -> viewModel.onSyncModeChanged(SyncMode.MANUAL_ONLY)
+                            "Paused" -> viewModel.onSyncModeChanged(SyncMode.PAUSED)
+                        }
+                    },
+                )
+                SettingsSelectableRow(
+                    iconRes = R.drawable.ic_settings_security_lock,
+                    title = "Sensitive Data Sync",
+                    value = displaySensitiveAction(uiState.sensitiveMasterAction),
+                    options = sensitiveOptions,
+                    onSelect = { label ->
+                        when (label) {
+                            "Allowed (Default)" -> viewModel.onSensitiveMasterRuleChanged(SensitiveRuleAction.ALLOW)
+                            "Ask" -> viewModel.onSensitiveMasterRuleChanged(SensitiveRuleAction.ASK)
+                            "Block" -> viewModel.onSensitiveMasterRuleChanged(SensitiveRuleAction.ALWAYS_BLOCK)
+                        }
+                    },
+                )
+                SettingsStaticRow(
+                    iconRes = R.drawable.ic_settings_encrypt,
+                    title = "End-to-End Encrypted",
+                    value = "Always On",
                 )
             }
+
+            SettingsGroupDivider()
+
+            SettingsGroup {
+                SettingsStaticRow(
+                    iconRes = R.drawable.ic_settings_information_circle,
+                    title = "Version",
+                    value = "1.2.0",
+                )
+                SettingsStaticRow(
+                    iconRes = R.drawable.ic_settings_wrench_01,
+                    title = "Build",
+                    value = "2025.1",
+                )
+            }
+
+            SettingsGroupDivider()
+
+            SettingsGroup {
+                SettingsDangerRow(
+                    iconRes = R.drawable.ic_settings_logout_03,
+                    title = "Leave Network",
+                    value = "Disconnect this device from AirClip; keep others connected.",
+                    onClick = { showResetDialog = true },
+                )
+            }
+
+            Spacer(Modifier.height(40.dp))
         }
 
-        Spacer(Modifier.height(24.dp))
-
-        // ── AirClip actions ─────────────────────────────────────────────────────
-        SectionHeader("AirClip")
-
-        SettingsGroup {
-            ActionRow(
-                icon = Icons.AutoMirrored.Outlined.ExitToApp,
-                label = "Reset AirClip network",
-                labelColor = AirClipDestructive,
-                onClick = { showSignOutDialog = true },
-            )
-        }
-
-        Spacer(Modifier.height(32.dp))
+        SettingsHeader(modifier = Modifier.align(Alignment.TopCenter))
     }
 
-    if (isPairingVisible) {
-        PairingDialog(
-            qrBitmap = uiState.pairingQr,
-            pairingCode = uiState.pairingCode,
-            onCancel = {
-                viewModel.onCancelPairing()
-            },
-            onRefresh = { viewModel.onRefreshPairingCode() },
-        )
-    }
-
-    // Reset confirmation
-    if (showSignOutDialog) {
+    if (showResetDialog) {
         AlertDialog(
-            onDismissRequest = { showSignOutDialog = false },
-            title = { Text("Reset AirClip?", color = AirClipTextPrimary) },
+            onDismissRequest = { showResetDialog = false },
+            title = { Text("Leave Network?", color = c.textPrimary, fontWeight = FontWeight.SemiBold) },
             text = {
                 Text(
-                    "This will remove all pairings and clipboard history from this device. You'll need to create or join a AirClip again.",
-                    color = AirClipTextSecondary,
+                    "This removes this device from AirClip and clears local pairing data. Other devices stay connected.",
+                    color = c.textSecondary,
                     style = MaterialTheme.typography.bodySmall,
                 )
             },
             confirmButton = {
-                TextButton(
-                    onClick = { showSignOutDialog = false; viewModel.onResetAirClip() },
-                ) {
-                    Text("Reset", color = AirClipDestructive)
+                TextButton(onClick = { showResetDialog = false; viewModel.onResetAirClip() }) {
+                    Text("Leave", color = c.destructive, fontWeight = FontWeight.SemiBold)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showSignOutDialog = false }) {
-                    Text("Cancel", color = AirClipTextSecondary)
+                TextButton(onClick = { showResetDialog = false }) {
+                    Text("Cancel", color = c.textSecondary)
                 }
             },
-            containerColor = AirClipBgFloating,
-            titleContentColor = AirClipTextPrimary,
+            containerColor = c.bgFloating,
         )
     }
 }
 
 @Composable
-private fun SyncModeSelector(
-    selectedMode: SyncMode,
-    onSelect: (SyncMode) -> Unit,
-) {
-    val options = listOf(
-        SyncMode.AUTO to "Auto",
-        SyncMode.MANUAL_ONLY to "Manual",
-        SyncMode.PAUSED to "Paused",
-    )
-    val shape = RoundedCornerShape(10.dp)
-
-    Row(
-        modifier = Modifier
+private fun SettingsHeader(modifier: Modifier = Modifier) {
+    val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    Box(
+        modifier = modifier
             .fillMaxWidth()
-            .height(44.dp)
-            .clip(shape)
-            .border(0.5.dp, AirClipBorderDefault, shape),
-    ) {
-        options.forEachIndexed { index, (mode, label) ->
-            val isSelected = selectedMode == mode
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
-                    .background(if (isSelected) AirClipSelectionFill else Color.Transparent)
-                    .clickable { onSelect(mode) },
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    label,
-                    style = MaterialTheme.typography.labelLarge,
-                    color = if (isSelected) AirClipGreen else AirClipTextSecondary,
-                )
-            }
-
-            if (index < options.lastIndex) {
-                VerticalDivider(
-                    color = AirClipBorderSubtle,
-                    thickness = 0.5.dp,
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun SensitiveRuleRow(
-    category: SensitiveCategory,
-    action: SensitiveRuleAction,
-    onSelect: (SensitiveRuleAction) -> Unit,
-) {
-    var expanded by remember { mutableStateOf(false) }
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .background(Color.White)
+            .padding(top = statusBarTop + 24.dp, bottom = 24.dp),
     ) {
         Text(
-            category.label,
-            style = MaterialTheme.typography.bodyMedium,
-            color = AirClipTextPrimary,
-            modifier = Modifier.weight(1f),
+            "Settings",
+            fontSize = 36.sp,
+            lineHeight = 40.sp,
+            fontFamily = BearyFontFamily,
+            fontWeight = FontWeight.Normal,
+            color = Color(0xFF202327),
+            letterSpacing = (-0.6).sp,
+            modifier = Modifier.padding(horizontal = 20.dp),
         )
-        Box {
-            TextButton(
-                onClick = { expanded = true },
-                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-            ) {
-                Text(
-                    action.label,
-                    style = MaterialTheme.typography.labelLarge,
-                    color = when (action) {
-                        SensitiveRuleAction.ALWAYS_BLOCK -> AirClipDestructive
-                        SensitiveRuleAction.ASK -> AirClipAccent
-                        SensitiveRuleAction.ALLOW -> AirClipTextSecondary
-                    },
-                )
-                Spacer(Modifier.width(4.dp))
-                Icon(
-                    Icons.Outlined.ArrowDropDown,
-                    contentDescription = "Change ${category.label} protection",
-                    tint = AirClipTextTertiary,
-                    modifier = Modifier.size(16.dp),
-                )
-            }
-            DropdownMenu(
-                expanded = expanded,
-                onDismissRequest = { expanded = false },
-            ) {
-                SensitiveRuleAction.entries.forEach { option ->
-                    DropdownMenuItem(
-                        text = {
-                            Text(
-                                option.label,
-                                color = if (option == action) AirClipAccent else AirClipTextPrimary,
-                            )
-                        },
-                        onClick = {
-                            onSelect(option)
-                            expanded = false
-                        },
-                    )
-                }
-            }
-        }
     }
 }
 
 @Composable
-private fun PairingDialog(
-    qrBitmap: Bitmap?,
-    pairingCode: String?,
-    onCancel: () -> Unit,
-    onRefresh: () -> Unit,
+private fun SettingsGroup(
+    topPadding: Dp = 20.dp,
+    content: @Composable ColumnScope.() -> Unit,
 ) {
-    Dialog(onDismissRequest = onCancel) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(22.dp))
-                .background(AirClipBgFloating)
-                .border(0.5.dp, AirClipBorderSubtle, RoundedCornerShape(22.dp))
-                .padding(20.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Text(
-                "Add device to AirClip",
-                style = MaterialTheme.typography.titleMedium,
-                color = AirClipTextPrimary,
-            )
-            Spacer(Modifier.height(6.dp))
-            Text(
-                "Scan this code from another device to pair it with the same AirClip network.",
-                style = MaterialTheme.typography.bodySmall,
-                color = AirClipTextSecondary,
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-            )
-
-            Spacer(Modifier.height(18.dp))
-
-            if (qrBitmap != null) {
-                Image(
-                    bitmap = qrBitmap.asImageBitmap(),
-                    contentDescription = "Pairing QR code",
-                    modifier = Modifier
-                        .size(190.dp)
-                        .clip(RoundedCornerShape(18.dp))
-                        .background(Color.White),
-                )
-            } else {
-                Box(
-                    modifier = Modifier
-                        .size(190.dp)
-                        .clip(RoundedCornerShape(18.dp))
-                        .background(AirClipBgElevated),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    CircularProgressIndicator(
-                        color = AirClipAccent,
-                        strokeWidth = 2.dp,
-                        modifier = Modifier.size(24.dp),
-                    )
-                }
-            }
-
-            Spacer(Modifier.height(16.dp))
-
-            if (!pairingCode.isNullOrBlank()) {
-                Text(
-                    pairingCode,
-                    style = MaterialTheme.typography.headlineSmall.copy(fontFamily = FontFamily.Monospace),
-                    color = AirClipTextPrimary,
-                )
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    "Refreshes automatically",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = AirClipTextTertiary,
-                )
-            }
-
-            Spacer(Modifier.height(18.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                OutlinedButton(
-                    onClick = onCancel,
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = AirClipTextSecondary),
-                    border = BorderStroke(0.5.dp, AirClipBorderDefault),
-                ) {
-                    Text("Cancel")
-                }
-                Button(
-                    onClick = onRefresh,
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = AirClipAccent,
-                        contentColor = Color.White,
-                    ),
-                ) {
-                    Text("Refresh code")
-                }
-            }
-        }
-    }
-}
-
-// ── AirClip card ─────────────────────────────────────────────────────────────────
-
-@Composable
-private fun AirClipCard(deviceName: String, myDeviceId: String?) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp)
-            .clip(RoundedCornerShape(14.dp))
-            .background(AirClipBgElevated)
-            .border(0.5.dp, AirClipBorderSubtle, RoundedCornerShape(14.dp))
-            .padding(16.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
-        Box(
-            modifier = Modifier
-                .size(44.dp)
-                .clip(CircleShape)
-                .background(
-                    Brush.linearGradient(colors = listOf(Color(0xFF6C34F8), Color(0xFFFF6363)))
-                ),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                Icons.Outlined.RadioButtonChecked,
-                null,
-                tint = Color.White,
-                modifier = Modifier.size(22.dp),
-            )
-        }
-
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                deviceName.ifBlank { "This device" },
-                style = MaterialTheme.typography.bodyMedium,
-                color = AirClipTextPrimary,
-            )
-            Spacer(Modifier.height(3.dp))
-            Text(
-                myDeviceId?.take(8)?.let { "ID: $it…" } ?: "Not paired",
-                style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
-                color = AirClipTextTertiary,
-            )
-        }
-    }
-}
-
-// ── Settings rows ─────────────────────────────────────────────────────────────
-
-@Composable
-private fun SettingsGroup(content: @Composable ColumnScope.() -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp)
-            .clip(RoundedCornerShape(14.dp))
-            .background(AirClipBgElevated)
-            .border(0.5.dp, AirClipBorderSubtle, RoundedCornerShape(14.dp)),
+            .padding(top = topPadding, bottom = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
         content = content,
     )
 }
 
 @Composable
-private fun ToggleRow(
-    icon: ImageVector,
-    label: String,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(icon, null, tint = AirClipTextSecondary, modifier = Modifier.size(18.dp))
-        Spacer(Modifier.width(12.dp))
-        Text(
-            label,
-            style = MaterialTheme.typography.bodyMedium,
-            color = AirClipTextPrimary,
-            modifier = Modifier.weight(1f),
-        )
-        Switch(
-            checked = checked,
-            onCheckedChange = onCheckedChange,
-            modifier = Modifier.height(24.dp),
-            colors = SwitchDefaults.colors(
-                checkedThumbColor  = Color.White,
-                checkedTrackColor  = AirClipAccent,
-                uncheckedThumbColor = AirClipTextTertiary,
-                uncheckedTrackColor = AirClipBgFloating,
-                uncheckedBorderColor = AirClipBorderDefault,
-            ),
-        )
-    }
+private fun SettingsGroupDivider() {
+    HorizontalDivider(
+        modifier = Modifier.padding(horizontal = 20.dp),
+        thickness = 1.dp,
+        color = SettingsDivider,
+    )
+    Spacer(Modifier.height(0.dp))
 }
 
 @Composable
-private fun HistoryDepthRow(days: Int, onSelect: (Int) -> Unit) {
-    var showPicker by remember { mutableStateOf(false) }
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(Icons.Outlined.History, null, tint = AirClipTextSecondary, modifier = Modifier.size(18.dp))
-        Spacer(Modifier.width(12.dp))
-        Text(
-            "Keep history for",
-            style = MaterialTheme.typography.bodyMedium,
-            color = AirClipTextPrimary,
-            modifier = Modifier.weight(1f),
+private fun SettingsSelectableRow(
+    iconRes: Int,
+    title: String,
+    value: String,
+    options: List<String>,
+    onSelect: (String) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        SettingsListRow(
+            iconRes = iconRes,
+            title = title,
+            value = value,
+            showArrow = true,
+            onClick = { expanded = true },
         )
-        TextButton(
-            onClick = { showPicker = true },
-            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+        Box(
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .padding(end = 20.dp),
         ) {
-            Text(
-                if (days == 0) "Forever" else "$days days",
-                style = MaterialTheme.typography.labelLarge,
-                color = AirClipTextSecondary,
+            AirClipDropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false },
+                selectedLabel = value,
+                items = options.map { option ->
+                    AirClipDropdownItem(
+                        label = option,
+                        onClick = { onSelect(option) },
+                    )
+                },
             )
-            Spacer(Modifier.width(4.dp))
-            Icon(Icons.Outlined.ArrowDropDown, null, tint = AirClipTextTertiary, modifier = Modifier.size(16.dp))
         }
     }
-
-    if (showPicker) {
-        AlertDialog(
-            onDismissRequest = { showPicker = false },
-            title = { Text("Keep history for", color = AirClipTextPrimary) },
-            text = {
-                Column {
-                    listOf(7, 30, 90).forEach { d ->
-                        TextButton(
-                            onClick = { onSelect(d); showPicker = false },
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Text(
-                                "$d days",
-                                color = if (d == days) AirClipAccent else AirClipTextPrimary,
-                                modifier = Modifier.fillMaxWidth(),
-                            )
-                        }
-                    }
-                    TextButton(
-                        onClick = { onSelect(0); showPicker = false },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text(
-                            "Forever",
-                            color = if (days == 0) AirClipAccent else AirClipTextPrimary,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                    }
-                }
-            },
-            confirmButton = {},
-            containerColor = AirClipBgFloating,
-        )
-    }
 }
 
 @Composable
-private fun InfoRow(
-    icon: ImageVector,
-    label: String,
+private fun SettingsStaticRow(
+    iconRes: Int,
+    title: String,
     value: String,
-    valueColor: Color = AirClipTextSecondary,
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(icon, null, tint = AirClipTextSecondary, modifier = Modifier.size(18.dp))
-        Spacer(Modifier.width(12.dp))
-        Text(
-            label,
-            style = MaterialTheme.typography.bodyMedium,
-            color = AirClipTextPrimary,
-            modifier = Modifier.weight(1f),
-        )
-        Text(value, style = MaterialTheme.typography.bodySmall, color = valueColor)
-    }
+    SettingsListRow(
+        iconRes = iconRes,
+        title = title,
+        value = value,
+        showArrow = false,
+        onClick = null,
+    )
 }
 
 @Composable
-private fun ActionRow(
-    icon: ImageVector,
-    label: String,
-    labelColor: Color = AirClipTextPrimary,
+private fun SettingsDangerRow(
+    iconRes: Int,
+    title: String,
+    value: String,
     onClick: () -> Unit,
 ) {
-    TextButton(
+    SettingsListRow(
+        iconRes = iconRes,
+        title = title,
+        value = value,
+        showArrow = false,
+        tint = SettingsDanger,
+        valueColor = SettingsDangerBody,
+        rowHeight = 105.dp,
+        valueMaxLines = 3,
         onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
-        shape = RoundedCornerShape(0.dp),
-    ) {
-        Icon(icon, null, tint = labelColor, modifier = Modifier.size(18.dp))
-        Spacer(Modifier.width(12.dp))
-        Text(
-            label,
-            style = MaterialTheme.typography.bodyMedium,
-            color = labelColor,
-            modifier = Modifier.weight(1f),
+    )
+}
+
+@Composable
+private fun SettingsListRow(
+    iconRes: Int,
+    title: String,
+    value: String,
+    showArrow: Boolean,
+    onClick: (() -> Unit)?,
+    tint: Color = SettingsMuted,
+    valueColor: Color = tint,
+    rowHeight: Dp = 73.dp,
+    valueMaxLines: Int = 1,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val clickableModifier = if (onClick != null) {
+        Modifier.clickable(
+            interactionSource = interactionSource,
+            indication = null,
+            onClick = onClick,
         )
+    } else {
+        Modifier
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(rowHeight)
+            .then(clickableModifier),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 20.dp),
+            verticalAlignment = if (rowHeight > 73.dp) Alignment.Top else Alignment.CenterVertically,
+        ) {
+            Icon(
+                painter = painterResource(iconRes),
+                contentDescription = null,
+                tint = Color.Unspecified,
+                modifier = Modifier
+                    .padding(top = if (rowHeight > 73.dp) 12.dp else 0.dp)
+                    .size(24.dp),
+            )
+
+            Spacer(Modifier.width(23.dp))
+
+            Column(
+                modifier = Modifier
+                    .padding(top = if (rowHeight > 73.dp) 12.dp else 0.dp)
+                    .weight(1f),
+            ) {
+                Text(
+                    title,
+                    fontSize = 16.sp,
+                    lineHeight = 24.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = if (tint == SettingsDanger) SettingsDanger else SettingsText,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    value,
+                    fontSize = 14.sp,
+                    lineHeight = if (tint == SettingsDanger) 20.sp else 14.sp,
+                    fontWeight = FontWeight.Normal,
+                    color = valueColor,
+                    maxLines = valueMaxLines,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+
+            if (showArrow) {
+                Spacer(Modifier.width(16.dp))
+                Icon(
+                    painter = painterResource(R.drawable.ic_settings_arrow_down_01),
+                    contentDescription = null,
+                    tint = Color.Unspecified,
+                    modifier = Modifier.size(24.dp),
+                )
+            }
+        }
     }
 }
 
-@Composable
-private fun SettingsDivider() {
-    HorizontalDivider(
-        modifier = Modifier.padding(start = 46.dp),
-        thickness = 0.5.dp,
-        color = AirClipBorderSubtle,
-    )
-}
+private fun displayAppearance(setting: AppAppearanceSetting): String =
+    when (setting) {
+        AppAppearanceSetting.SYSTEM -> "System (Default)"
+        AppAppearanceSetting.LIGHT -> "Light"
+        AppAppearanceSetting.DARK -> "Dark"
+    }
 
-@Composable
-private fun SectionHeader(title: String) {
-    Text(
-        title,
-        style = MaterialTheme.typography.labelMedium,
-        color = AirClipTextTertiary,
-        modifier = Modifier
-            .padding(horizontal = 20.dp)
-            .padding(bottom = 6.dp),
-    )
-}
+private fun displaySyncMode(mode: SyncMode): String =
+    when (mode) {
+        SyncMode.AUTO -> "Auto"
+        SyncMode.MANUAL_ONLY -> "Manual"
+        SyncMode.PAUSED -> "Paused"
+    }
+
+private fun displaySensitiveAction(action: SensitiveRuleAction): String =
+    when (action) {
+        SensitiveRuleAction.ALLOW -> "Allowed (Default)"
+        SensitiveRuleAction.ASK -> "Ask"
+        SensitiveRuleAction.ALWAYS_BLOCK -> "Block"
+    }

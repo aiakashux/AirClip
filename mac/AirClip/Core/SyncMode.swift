@@ -2,15 +2,14 @@ import Foundation
 
 enum SyncMode: String, CaseIterable {
     case auto
-    case manualOnly
     case paused
 
     var allowsAutomaticCapture: Bool {
         self == .auto
     }
 
-    var allowsManualSend: Bool {
-        self != .paused
+    var allowsOutboundSync: Bool {
+        self == .auto
     }
 
     var keepsLanServiceRunning: Bool {
@@ -20,7 +19,6 @@ enum SyncMode: String, CaseIterable {
     var label: String {
         switch self {
         case .auto: return "Auto"
-        case .manualOnly: return "Manual"
         case .paused: return "Paused"
         }
     }
@@ -28,17 +26,18 @@ enum SyncMode: String, CaseIterable {
     var detail: String {
         switch self {
         case .auto:
-            return "New clipboard changes sync automatically."
-        case .manualOnly:
-            return "Only clips you explicitly send are synced."
+            return "New clips sync automatically with nearby paired devices."
         case .paused:
-            return "Clipboard monitoring and nearby sync are stopped."
+            return "AirClip stops watching the clipboard and disconnects nearby sync."
         }
     }
 
     static func fromStoredValue(_ value: String?) -> SyncMode {
+        if value == "manualOnly" {
+            return .auto
+        }
         guard let value, let mode = SyncMode(rawValue: value) else {
-            return .manualOnly
+            return .auto
         }
         return mode
     }

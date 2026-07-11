@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct SettingsView: View {
@@ -188,13 +189,6 @@ struct SettingsView: View {
                         .font(.system(size: 11))
                         .foregroundColor(Color.textSecondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
-
-                    Button("Send current clipboard") {
-                        syncModeStore.sendCurrentClipboard()
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(!syncModeStore.mode.allowsManualSend)
-                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .padding(14)
             }
@@ -247,6 +241,12 @@ struct SettingsView: View {
                             .foregroundColor(Color.textPrimary)
                             .textFieldStyle(.plain)
                             .multilineTextAlignment(.trailing)
+                            .onChange(of: deviceName) { _, newValue in
+                                let limitedName = DeviceDisplayText.limitedName(newValue)
+                                if limitedName != newValue {
+                                    deviceName = limitedName
+                                }
+                            }
                             .onSubmit { saveDeviceName() }
                     }
                     if let airClipId = identity.airClipId {
@@ -271,6 +271,25 @@ struct SettingsView: View {
 
     private var privacyPage: some View {
         VStack(spacing: 18) {
+            section("Network access") {
+                VStack(spacing: 0) {
+                    row("Wi-Fi network name") {
+                        Button("Open Location Services") {
+                            openLocationServicesSettings()
+                        }
+                        .buttonStyle(.plain)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(Color.textLink)
+                    }
+                    DividerLine()
+                    row("Used for pairing") {
+                        Text("Same network check")
+                            .font(.system(size: 12))
+                            .foregroundColor(Color.textSecondary)
+                    }
+                }
+            }
+
             section("Encryption") {
                 VStack(spacing: 0) {
                     row("End-to-end encryption") {
@@ -479,6 +498,18 @@ struct SettingsView: View {
         let trimmed = deviceName.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return }
         AirClipIdentity.shared.setDeviceName(trimmed)
+    }
+
+    private func openLocationServicesSettings() {
+        CurrentWiFiNetwork.shared.requestAccessAndRefresh()
+        let urls = [
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_LocationServices",
+            "x-apple.systempreferences:com.apple.preference.security"
+        ]
+        for rawURL in urls {
+            guard let url = URL(string: rawURL), NSWorkspace.shared.open(url) else { continue }
+            return
+        }
     }
 }
 

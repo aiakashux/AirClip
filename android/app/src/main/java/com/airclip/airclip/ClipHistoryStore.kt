@@ -62,7 +62,7 @@ data class ClipItemRecord(
 
 /**
  * Persists clipboard history across process kills. Unsaved items are bounded by both
- * [MAX_ITEMS] count and [TTL_MS] age; saved items are retained until explicitly removed.
+ * [MAX_ITEMS] count and the configured history depth; saved items are retained until explicitly removed.
  *
  * All public functions are suspend and safe to call from IO coroutines.
  */
@@ -71,14 +71,19 @@ object ClipHistoryStore {
     private val listType = object : TypeToken<List<ClipItemRecord>>() {}.type
 
     const val MAX_ITEMS = 20
-    const val TTL_MS    = 30 * 60 * 1000L   // 30 minutes
     internal const val RECONCILIATION_WINDOW_MS = 2_000L
+    internal const val MAX_PERSISTED_TEXT_CHARS = 16_384
+    internal const val MAX_HISTORY_JSON_CHARS = 1_500_000
 
     internal fun deduplicate(items: List<ClipItemRecord>): List<ClipItemRecord> {
         val deduplicated = mutableListOf<ClipItemRecord>()
         for (record in items) {
             val existingIndex = deduplicated.indexOfFirst { existing ->
                 existing.messageId == record.messageId ||
+                    (
+                        (existing.kind == ClipKind.IMAGE.name || record.kind == ClipKind.IMAGE.name) &&
+                            existing.cipherHash == record.cipherHash
+                    ) ||
                     (
                         existing.fromDeviceId == record.fromDeviceId &&
                             existing.cipherHash == record.cipherHash &&
@@ -103,8 +108,18 @@ object ClipHistoryStore {
         return deduplicated
     }
 
+    internal fun prepareForStorage(items: List<ClipItemRecord>): List<ClipItemRecord> =
+        items.map { record ->
+            val trimmedContent = record.contentText?.take(MAX_PERSISTED_TEXT_CHARS)
+            record.copy(
+                contentText = trimmedContent,
+                preview = record.preview.take(120),
+                imageDataBase64 = null,
+            )
+        }
+
     /**
-     * Drop unsaved items older than [TTL_MS], sort newest-first by [ClipItemRecord.timestampMs],
+     * Drop unsaved items older than the configured history depth, sort newest-first by [ClipItemRecord.timestampMs],
      * then cap unsaved items around saved clips. Saved clips can temporarily exceed [MAX_ITEMS].
      */
     private fun prune(
@@ -114,8 +129,18 @@ object ClipHistoryStore {
         val sorted = items.sortedByDescending { it.timestampMs }
         val saved = sorted.filter { it.isSaved }
         val unsavedSlots = (MAX_ITEMS - saved.size).coerceAtLeast(0)
+        val retentionDays = if (Prefs.isInitialized) {
+            Prefs.historyRetentionDays[Prefs.historyDepth]
+        } else {
+            30
+        }
+        val cutoff = if (retentionDays > 0) {
+            now - retentionDays * 24L * 60L * 60L * 1000L
+        } else {
+            Long.MIN_VALUE
+        }
         val unsaved = sorted
-            .filter { !it.isSaved && now - it.timestampMs <= TTL_MS }
+            .filter { !it.isSaved && it.timestampMs >= cutoff }
             .take(unsavedSlots)
 
         return (saved + unsaved).sortedByDescending { it.timestampMs }
@@ -128,12 +153,18 @@ object ClipHistoryStore {
     suspend fun load(context: Context): List<ClipItemRecord> {
         val prefs = context.clipHistoryDataStore.data.firstOrNull() ?: return emptyList()
         val json  = prefs[KEY_HISTORY] ?: return emptyList()
+        if (json.length > MAX_HISTORY_JSON_CHARS) {
+            context.clipHistoryDataStore.edit { it.remove(KEY_HISTORY) }
+            return emptyList()
+        }
         val raw   = try {
             gson.fromJson<List<ClipItemRecord>>(json, listType) ?: emptyList()
         } catch (_: Exception) {
             emptyList()
         }
-        return prune(raw)
+        return runCatching {
+            prepareForStorage(prune(deduplicate(raw.mapNotNull(::sanitize))))
+        }.getOrDefault(emptyList())
     }
 
     /**
@@ -141,7 +172,7 @@ object ClipHistoryStore {
      *   1. combine existing + new
      *   2. deduplicate by messageId or matching source/content within the
      *      transport reconciliation window (existing wins on conflict)
-     *   3. drop unsaved items older than [TTL_MS]
+     *   3. drop unsaved items older than the configured history depth
      *   4. sort by timestampMs descending (newest first)
      *   5. trim unsaved items to [MAX_ITEMS], protecting saved clips
      *
@@ -150,11 +181,13 @@ object ClipHistoryStore {
     suspend fun merge(context: Context, newItems: List<ClipItemRecord>): List<ClipItemRecord> {
         val existing = load(context)
         val savedById = existing.associateBy { it.messageId }.mapValues { it.value.isSaved }
-        val merged = prune(
-            deduplicate(existing + newItems)
-                .map { record ->
-                    record.copy(isSaved = savedById[record.messageId] == true || record.isSaved)
-                }
+        val merged = prepareForStorage(
+            prune(
+                deduplicate(existing + newItems)
+                    .map { record ->
+                        record.copy(isSaved = savedById[record.messageId] == true || record.isSaved)
+                    }
+            )
         )
         context.clipHistoryDataStore.edit { prefs ->
             prefs[KEY_HISTORY] = gson.toJson(merged)
@@ -188,8 +221,39 @@ object ClipHistoryStore {
         return updated
     }
 
+    suspend fun pruneToRetention(context: Context, days: Int): List<ClipItemRecord> {
+        val existing = load(context)
+        if (days <= 0) return existing
+
+        val cutoff = System.currentTimeMillis() - days * 24L * 60L * 60L * 1000L
+        val updated = existing.filter { it.isSaved || it.timestampMs >= cutoff }
+        context.clipHistoryDataStore.edit { prefs ->
+            if (updated.isEmpty()) prefs.remove(KEY_HISTORY)
+            else prefs[KEY_HISTORY] = gson.toJson(updated)
+        }
+        return updated
+    }
+
     /** Clear persisted history from disk (called on logout or device session reset). */
     suspend fun clear(context: Context) {
         context.clipHistoryDataStore.edit { it.remove(KEY_HISTORY) }
     }
+
+    private fun sanitize(record: ClipItemRecord): ClipItemRecord? = runCatching {
+        val messageId = record.messageId.takeIf { it.isNotBlank() } ?: return null
+        val fromDeviceId = record.fromDeviceId.takeIf { it.isNotBlank() } ?: "unknown"
+        val timestampMs = record.timestampMs.takeIf { it > 0L } ?: System.currentTimeMillis()
+        val preview = record.preview
+        val kind = runCatching { ClipKind.valueOf(record.kind) }
+            .getOrElse { detectClipKind(record.displayText) }
+        record.copy(
+            messageId = messageId,
+            fromDeviceId = fromDeviceId,
+            timestampMs = timestampMs,
+            preview = preview,
+            contentText = record.contentText,
+            kind = kind.name,
+            cipherHash = record.cipherHash.takeIf { it.isNotBlank() } ?: record.displayText.hashCode().toString(),
+        )
+    }.getOrNull()
 }

@@ -19,7 +19,7 @@ extension Color {
     static let textSubtle    = adaptive("#CACDD3", light: "#30343B")  // toast, secondary labels
     static let textSecondary = adaptive("#8F949D", light: "#5B6270")  // subtitles, captions
     static let textTertiary  = adaptive("#626875", light: "#7A8392")  // section headers, placeholders
-    static let textLink      = adaptive("#FF7A7A", light: "#C92E2A")
+    static let textLink      = adaptive("#5647F2", light: "#4436D9")
 
     // MARK: Borders — 4 tiers
 
@@ -30,15 +30,15 @@ extension Color {
 
     // MARK: Interactive fills
 
-    static let selectionFill   = adaptive("#FF7A7A", light: "#C92E2A").opacity(0.16)
+    static let selectionFill   = adaptive("#5647F2", light: "#4436D9").opacity(0.14)
     static let hoverFill       = adaptive("#FFFFFF", light: "#1C1D20").opacity(0.06)
     static let activeFill      = adaptive("#FFFFFF", light: "#1C1D20").opacity(0.10)
     static let segmentSelected = adaptive("#FFFFFF", light: "#1C1D20").opacity(0.12)
 
     // MARK: Accent — signal only, not decoration
 
-    static let accent         = adaptive("#FF7A7A", light: "#B92421")
-    static let accentDeep     = adaptive("#FF5B55", light: "#971A18")  // hover / pressed state
+    static let accent         = adaptive("#5647F2", light: "#4436D9")
+    static let accentDeep     = adaptive("#4436D9", light: "#3427B6")  // hover / pressed state
 
     // MARK: Semantic status
 
@@ -51,16 +51,27 @@ extension Color {
 
     static func parseHex(_ hex: String) -> Color? {
         var h = hex.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let range = h.range(of: #"#[0-9A-Fa-f]{3,8}\b"#, options: .regularExpression) {
+            h = String(h[range])
+        }
         guard h.hasPrefix("#") else { return nil }
         h = String(h.dropFirst())
-        if h.count == 3 { h = h.map { "\($0)\($0)" }.joined() }
+        if h.count == 3 || h.count == 4 { h = h.map { "\($0)\($0)" }.joined() }
         guard h.count == 6 || h.count == 8 else { return nil }
         var rgb: UInt64 = 0
         guard Scanner(string: h).scanHexInt64(&rgb) else { return nil }
+        if h.count == 6 {
+            return Color(
+                red: Double((rgb >> 16) & 0xFF) / 255,
+                green: Double((rgb >> 8) & 0xFF) / 255,
+                blue: Double(rgb & 0xFF) / 255
+            )
+        }
         return Color(
-            red:   Double((rgb >> 16) & 0xFF) / 255,
-            green: Double((rgb >> 8)  & 0xFF) / 255,
-            blue:  Double( rgb        & 0xFF) / 255
+            red: Double((rgb >> 24) & 0xFF) / 255,
+            green: Double((rgb >> 16) & 0xFF) / 255,
+            blue: Double((rgb >> 8) & 0xFF) / 255,
+            opacity: Double(rgb & 0xFF) / 255
         )
     }
 

@@ -1,34 +1,40 @@
 package com.airclip.airclip.ui.screens
 
+import android.Manifest
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.airclip.airclip.R
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
 import com.airclip.airclip.MainViewModel
@@ -37,374 +43,320 @@ import com.airclip.airclip.SyncMode
 import com.airclip.airclip.device.WifiNetworkName
 import com.airclip.airclip.lan.LanRuntimeIssue
 import com.airclip.airclip.lan.PeerManager
+import com.airclip.airclip.pairing.AirClipCaptureActivity
 import com.airclip.airclip.ui.theme.*
-import kotlin.math.cos
-import kotlin.math.sin
+import kotlinx.coroutines.delay
+
+private val BearyFontFamily = FontFamily(Font(R.font.beary))
 
 @Composable
-fun DevicesScreen(viewModel: MainViewModel, uiState: MainViewModel.UiState) {
+fun DevicesScreen(
+    viewModel: MainViewModel,
+    uiState: DevicesTabUiState,
+    listState: LazyListState,
+) {
+    val c = LocalAirClipColors.current
     val context = LocalContext.current
-    val currentWifiName = remember(uiState.connectedPeerCount, uiState.pairedDevices) {
-        WifiNetworkName.current(context)
+    val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    val headerHeight = statusBarTop + 224.dp
+    var wifiNetwork by remember { mutableStateOf(WifiNetworkName.current(context)) }
+    var statusClockMs by remember { mutableStateOf(System.currentTimeMillis()) }
+    fun refreshWifiNetworkName() {
+        wifiNetwork = WifiNetworkName.current(context)
     }
-    val onlineDevices = remember(uiState.pairedDevices, uiState.connectedPeerCount) {
-        uiState.pairedDevices.filter { PeerManager.hasPeer(it.deviceId) }
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) {
+        refreshWifiNetworkName()
     }
 
-    // QR scanner for "Add device" (an existing network member scans a new device's QR).
-    val scanLauncher = rememberLauncherForActivityResult(ScanContract()) { result ->
-        result.contents?.let { qrContent ->
-            viewModel.onQrScanned(qrContent)
+    LaunchedEffect(Unit) {
+        refreshWifiNetworkName()
+        if (!WifiNetworkName.hasLocationPermission(context)) {
+            locationPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        // Header
+    LaunchedEffect(uiState.pairedDevices.isNotEmpty()) {
+        if (uiState.pairedDevices.isEmpty()) return@LaunchedEffect
+        while (true) {
+            delay(30_000L)
+            statusClockMs = System.currentTimeMillis()
+        }
+    }
+
+    val scanLauncher = rememberLauncherForActivityResult(ScanContract()) { result ->
+        result.contents?.let { viewModel.onQrScanned(it) }
+    }
+
+    fun launchPairingScanner() {
+        val opts = ScanOptions().apply {
+            setPrompt("Scan a new device's QR code to pair it")
+            setBeepEnabled(false)
+            setCaptureActivity(AirClipCaptureActivity::class.java)
+            setOrientationLocked(true)
+        }
+        scanLauncher.launch(opts)
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(color = c.bgBase),
+    ) {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            state = listState,
+            contentPadding = PaddingValues(
+                top = headerHeight,
+                bottom = if (uiState.pairedDevices.isEmpty()) 112.dp else 32.dp,
+            ),
+        ) {
+            // ── Diagnostic banner ─────────────────────────────────────────────────
+            val diagnostic = if (uiState.pairedDevices.isEmpty()) null else deviceDiagnostic(uiState)
+            if (diagnostic != null) {
+                item {
+                    DiagnosticBanner(diagnostic, modifier = Modifier.padding(horizontal = 16.dp))
+                    Spacer(Modifier.height(8.dp))
+                }
+            }
+
+            // ── Device list ───────────────────────────────────────────────────────
+            if (uiState.pairedDevices.isNotEmpty()) {
+                itemsIndexed(uiState.pairedDevices, key = { _, d -> d.deviceId }) { index, device ->
+                    val isReachable = PeerManager.hasPeer(device.deviceId)
+                    val isLast = index == uiState.pairedDevices.lastIndex
+                    DeviceFeedRow(
+                        device = device,
+                        isReachable = isReachable,
+                        nowMs = statusClockMs,
+                        isLast = isLast,
+                        onRefresh = viewModel::onReconnectDevice,
+                        onRemove = { viewModel.onRemoveDevice(device.deviceId) },
+                    )
+                }
+            }
+        }
+
+        if (uiState.pairedDevices.isEmpty()) {
+            AirClipEmptyState(
+                iconRes = R.drawable.ic_devices_empty_state,
+                text = "Connect another device to start copying and pasting across devices.",
+            )
+
+            AddNewDeviceButton(
+                onClick = { launchPairingScanner() },
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .offset(y = 170.dp),
+            )
+        }
+
+        DevicesPageHeader(
+            network = wifiNetwork,
+            connectedCount = uiState.connectedPeerCount,
+            onPairClick = { launchPairingScanner() },
+            modifier = Modifier.align(Alignment.TopCenter),
+        )
+    }
+}
+
+@Composable
+private fun DevicesPageHeader(
+    network: WifiNetworkName.Result,
+    connectedCount: Int,
+    onPairClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(Color.White)
+            .padding(top = statusBarTop + 24.dp, bottom = 24.dp),
+    ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 20.dp)
-                .padding(top = 20.dp, bottom = 8.dp),
+                .height(48.dp)
+                .padding(horizontal = 20.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
                 "Devices",
-                style = MaterialTheme.typography.titleLarge,
-                color = AirClipTextPrimary,
-                modifier = Modifier.weight(1f),
+                fontSize = 36.sp,
+                lineHeight = 40.sp,
+                fontFamily = BearyFontFamily,
+                fontWeight = FontWeight.Normal,
+                color = Color(0xFF202327),
+                letterSpacing = (-0.6).sp,
             )
-            IconButton(onClick = {
-                val opts = ScanOptions().apply {
-                    setPrompt("Scan a new device's QR code to pair it")
-                    setBeepEnabled(false)
-                    setOrientationLocked(false)
-                }
-                scanLauncher.launch(opts)
-            }) {
-                Icon(
-                    Icons.Outlined.QrCodeScanner,
-                    contentDescription = "Pair new device",
-                    tint = AirClipTextSecondary,
-                    modifier = Modifier.size(22.dp),
-                )
-            }
-            IconButton(onClick = viewModel::onRefreshDevices) {
-                Icon(
-                    Icons.Outlined.Refresh,
-                    contentDescription = "Refresh",
-                    tint = AirClipTextSecondary,
-                    modifier = Modifier.size(20.dp),
-                )
-            }
-        }
-
-        // Peer count strip
-        PeerCountStrip(peerCount = uiState.connectedPeerCount)
-
-        val diagnostic = deviceDiagnostic(uiState)
-        if (diagnostic != null) {
-            DeviceDiagnosticHint(diagnostic)
-        }
-
-        if (uiState.pairedDevices.isEmpty() && uiState.myDeviceId == null) {
-            DevicesEmptyState()
-        } else {
-            DeviceOrbitPanel(
-                networkName = currentWifiName ?: "Wi-Fi network",
-                devices = uiState.pairedDevices,
-                onlineCount = onlineDevices.size,
-            )
-
-            Spacer(Modifier.height(14.dp))
-
-            LazyColumn(
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                if (uiState.pairedDevices.isNotEmpty()) {
-                    item(key = "header") {
-                        SectionLabel("Paired devices")
-                    }
-                    items(uiState.pairedDevices, key = { it.deviceId }) { device ->
-                        val isOnline = PeerManager.hasPeer(device.deviceId)
-                        DeviceCard(
-                            device = device,
-                            isOnline = isOnline,
-                            onRemove = { viewModel.onRemoveDevice(device.deviceId) },
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun DeviceOrbitPanel(
-    networkName: String,
-    devices: List<PairedDevice>,
-    onlineCount: Int,
-) {
-    var pinnedId by remember { mutableStateOf<String?>(null) }
-    val placements = remember(devices) {
-        devices.mapIndexed { index, device ->
-            val base = -90.0
-            val step = if (devices.size <= 1) 0.0 else 360.0 / devices.size
-            val jitter = ((device.deviceId.hashCode() % 17) - 8) * 0.9
-            OrbitPlacement(
-                device = device,
-                angleDeg = base + index * step + jitter,
-            )
-        }
-    }
-
-    Column(
-        modifier = Modifier
-            .padding(horizontal = 16.dp)
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(24.dp))
-            .background(AirClipBgElevated)
-            .border(0.5.dp, AirClipBorderSubtle, RoundedCornerShape(24.dp))
-            .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text(
-            "Network map",
-            style = MaterialTheme.typography.labelMedium,
-            color = AirClipTextTertiary,
-            modifier = Modifier.fillMaxWidth(),
-        )
-
-        Spacer(Modifier.height(12.dp))
-
-            BoxWithConstraints(
+            Spacer(Modifier.weight(1f))
+            Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(1f)
-                    .pointerInput(devices) {
-                        detectTapGestures { pinnedId = null }
-                    }
+                    .size(48.dp)
+                    .clip(CircleShape)
+                    .background(Color.White.copy(alpha = 0.8f))
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                    ) { onPairClick() },
+                contentAlignment = Alignment.Center,
             ) {
-            val diameter = if (maxWidth < maxHeight) maxWidth else maxHeight
-            val center = Offset(diameter.value / 2f, diameter.value / 2f)
-            val hubRadius = diameter.value * 0.18f
-            val orbitRadii = listOf(diameter.value * 0.24f, diameter.value * 0.37f, diameter.value * 0.50f)
-
-            Canvas(modifier = Modifier.matchParentSize()) {
-                val stroke = 1.dp.toPx()
-                orbitRadii.forEach { radius ->
-                    drawCircle(
-                        color = AirClipBorderSubtle,
-                        radius = radius,
-                        center = center,
-                        style = androidx.compose.ui.graphics.drawscope.Stroke(width = stroke),
-                    )
-                }
+                Icon(
+                    painter = painterResource(R.drawable.ic_pair_qr),
+                    contentDescription = "Pair new device",
+                    tint = Color(0xFF141B34),
+                    modifier = Modifier.size(28.dp),
+                )
             }
-
-            OrbitNode(
-                modifier = Modifier.offset {
-                    IntOffset((center.x - hubRadius).toInt(), (center.y - hubRadius).toInt())
-                },
-                size = hubRadius * 2,
-                title = networkName,
-                subtitle = when (onlineCount) {
-                    0 -> "No devices nearby"
-                    1 -> "1 other device online"
-                    else -> "$onlineCount other devices online"
-                },
-                icon = Icons.Outlined.Wifi,
-                tint = AirClipGreen,
-                isOnline = true,
-                selected = true,
-            )
-
-            placements.forEachIndexed { index, placement ->
-                val radius = orbitRadii[index % orbitRadii.size]
-                val rad = Math.toRadians(placement.angleDeg)
-                val x = center.x + (cos(rad) * radius).toFloat()
-                val y = center.y + (sin(rad) * radius).toFloat()
-                val isPinned = pinnedId == placement.device.deviceId
-                val isOnline = PeerManager.hasPeer(placement.device.deviceId)
-                val nodeSize = if (isPinned) diameter.value * 0.22f else diameter.value * 0.18f
-                val tooltipY = if (y < center.y) y + nodeSize + 10f else y - 54f
-                val icon = platformIcon(placement.device.platform)
-
-                Box(
-                    modifier = Modifier
-                        .offset { IntOffset((x - nodeSize / 2f).toInt(), (y - nodeSize / 2f).toInt()) }
-                ) {
-                    OrbitNode(
-                        modifier = Modifier.size(nodeSize.dp),
-                        size = nodeSize,
-                        title = placement.device.deviceName,
-                        subtitle = if (isOnline) "Online" else "Offline",
-                        icon = icon,
-                        tint = platformTint(placement.device.platform),
-                        isOnline = isOnline,
-                        selected = isPinned,
-                        onClick = { pinnedId = if (isPinned) null else placement.device.deviceId },
-                    )
-
-                    if (isPinned) {
-                        DeviceTooltip(
-                            title = placement.device.deviceName,
-                            subtitle = if (isOnline) "Online" else "Offline",
-                            modifier = Modifier
-                                .offset { IntOffset(0, tooltipY.toInt()) }
-                        )
-                    }
-                }
-            }
-
         }
+        Spacer(Modifier.height(32.dp))
+        NetworkStatusCard(
+            network = network,
+            connectedCount = connectedCount,
+            modifier = Modifier.padding(horizontal = 20.dp),
+        )
     }
 }
 
-private data class OrbitPlacement(
-    val device: PairedDevice,
-    val angleDeg: Double,
-)
+// ── Network status card ───────────────────────────────────────────────────────
 
 @Composable
-private fun OrbitNode(
-    modifier: Modifier,
-    size: Float,
-    title: String,
-    subtitle: String,
-    icon: ImageVector,
-    tint: Color,
-    isOnline: Boolean,
-    selected: Boolean,
-    onClick: (() -> Unit)? = null,
+private fun NetworkStatusCard(
+    network: WifiNetworkName.Result,
+    connectedCount: Int,
+    modifier: Modifier = Modifier,
 ) {
-    val alpha = if (isOnline) 1f else 0.5f
-    Column(
+    val networkName = network.name ?: "Wi-Fi name unavailable"
+    val subtitle = network.unavailableReason?.let { reason ->
+        when (reason) {
+            WifiNetworkName.UnavailableReason.PermissionRequired ->
+                "Allow Location access to show your Wi-Fi network name."
+            WifiNetworkName.UnavailableReason.LocationDisabled ->
+                "Turn on Location to show your Wi-Fi network name."
+            WifiNetworkName.UnavailableReason.Unknown ->
+                "Wi-Fi network name could not be read."
+        }
+    } ?: when {
+        connectedCount == 0 -> "No devices"
+        connectedCount == 1 -> "1 device"
+        else -> "$connectedCount devices"
+    }
+
+    Box(
         modifier = modifier
-            .clip(RoundedCornerShape(18.dp))
-            .background(if (selected) AirClipActiveFill else AirClipBgFloating)
-            .border(0.5.dp, if (selected) tint.copy(alpha = 0.35f) else AirClipBorderSubtle, RoundedCornerShape(18.dp))
-            .let { base ->
-                if (onClick != null) base.clickableWithoutRipple(onClick) else base
-            }
-            .padding(8.dp)
-            .alpha(alpha),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
+            .fillMaxWidth()
+            .height(80.dp)
+            .clip(RoundedCornerShape(24.dp))
+            .background(Color(0xFFF9FAF9))
+            .border(1.dp, Color.Black.copy(alpha = 0.05f), RoundedCornerShape(24.dp))
+            .clipToBounds(),
     ) {
+        val ringColor = Color(0xFFECEEF3)
+        Canvas(modifier = Modifier.matchParentSize()) {
+            val strokeWidth = 1.dp.toPx()
+            val rings = listOf(
+                Triple(-16f, -24f, 128f),
+                Triple(-56f, -64f, 208f),
+                Triple(-96f, -104f, 288f),
+                Triple(-136f, -144f, 368f),
+                Triple(-176f, -184f, 448f),
+            )
+            val ringAlphas = listOf(1f, 0.7f, 0.5f, 0.4f, 0.3f)
+            rings.forEachIndexed { index, (x, y, size) ->
+                drawOval(
+                    color = ringColor.copy(alpha = ringAlphas[index]),
+                    topLeft = androidx.compose.ui.geometry.Offset(x.dp.toPx(), y.dp.toPx()),
+                    size = androidx.compose.ui.geometry.Size(size.dp.toPx(), size.dp.toPx()),
+                    style = Stroke(width = strokeWidth),
+                )
+            }
+        }
+
         Box(
             modifier = Modifier
-                .size((size * 0.52f).dp)
-                .background(tint.copy(alpha = 0.16f), RoundedCornerShape(14.dp)),
+                .offset(x = 24.dp, y = 16.dp)
+                .size(48.dp)
+                .clip(CircleShape)
+                .background(Color.White)
+                .border(1.dp, Color(0xFFECEEF3), CircleShape),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
-                imageVector = icon,
-                contentDescription = title,
-                tint = tint,
-                modifier = Modifier.size((size * 0.25f).dp),
+                imageVector = Icons.Outlined.Wifi,
+                contentDescription = null,
+                tint = Color(0xFF3BBE73),
+                modifier = Modifier.size(24.dp),
             )
         }
-        Spacer(Modifier.height(6.dp))
-        Text(title, style = MaterialTheme.typography.labelLarge, color = AirClipTextPrimary, maxLines = 1)
-        Text(subtitle, style = MaterialTheme.typography.labelSmall, color = AirClipTextTertiary)
-    }
-}
 
-@Composable
-private fun DeviceTooltip(title: String, subtitle: String, modifier: Modifier = Modifier) {
-    Column(
-        modifier = modifier
-            .clip(RoundedCornerShape(12.dp))
-        .background(AirClipBgFloating)
-        .border(0.5.dp, AirClipBorderSubtle, RoundedCornerShape(12.dp))
-        .padding(horizontal = 12.dp, vertical = 8.dp),
-        horizontalAlignment = Alignment.Start,
-    ) {
-        Text(title, style = MaterialTheme.typography.labelLarge, color = AirClipTextPrimary)
-        Text(subtitle, style = MaterialTheme.typography.labelSmall, color = AirClipTextTertiary)
-    }
-}
-
-private fun platformIcon(platform: String): ImageVector = when (platform.lowercase()) {
-    "android" -> Icons.Outlined.PhoneAndroid
-    "mac", "macos", "darwin" -> Icons.Outlined.Laptop
-    "windows" -> Icons.Outlined.DesktopWindows
-    "linux" -> Icons.Outlined.Computer
-    else -> Icons.Outlined.Devices
-}
-
-private fun platformTint(platform: String): Color = when (platform.lowercase()) {
-    "android" -> AirClipGreen
-    "mac", "macos", "darwin" -> AirClipBlue
-    "windows" -> AirClipAccent
-    "linux" -> AirClipYellow
-    else -> AirClipTextSecondary
-}
-
-@Composable
-private fun Modifier.clickableWithoutRipple(onClick: () -> Unit): Modifier =
-    this.clickable(
-        indication = null,
-        interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
-        onClick = onClick,
-    )
-
-// ── Peer count strip ──────────────────────────────────────────────────────────
-
-@Composable
-private fun PeerCountStrip(peerCount: Int) {
-    if (peerCount == 0) return   // no strip when offline — we show OfflineHint instead
-
-    Row(
-        modifier = Modifier
-            .padding(horizontal = 20.dp)
-            .padding(bottom = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        Box(
+        Column(
             modifier = Modifier
-                .size(7.dp)
-                .background(AirClipGreen, RoundedCornerShape(4.dp)),
-        )
-        val label = if (peerCount == 1) "1 other device nearby" else "$peerCount other devices nearby"
-        Text(label, style = MaterialTheme.typography.labelSmall, color = AirClipGreen)
+                .offset(x = 88.dp, y = 16.5f.dp)
+                .width(186.dp),
+        ) {
+            Text(
+                networkName,
+                fontSize = 18.sp,
+                lineHeight = 25.sp,
+                color = Color(0xFF141B34),
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                subtitle,
+                fontSize = 14.sp,
+                lineHeight = 20.sp,
+                color = Color(0xFF8A8F99),
+                fontWeight = FontWeight.Normal,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }
 
-// ── Device diagnostics ───────────────────────────────────────────────────────
+// ── Diagnostic banner ─────────────────────────────────────────────────────────
 
 @Composable
-private fun DeviceDiagnosticHint(diagnostic: DeviceDiagnostic) {
+private fun DiagnosticBanner(diagnostic: DeviceDiagnostic, modifier: Modifier = Modifier) {
     Row(
-        modifier = Modifier
-            .padding(horizontal = 16.dp)
-            .padding(bottom = 8.dp)
+        modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .background(diagnostic.tint.copy(alpha = 0.08f))
-            .border(0.5.dp, diagnostic.tint.copy(alpha = 0.20f), RoundedCornerShape(10.dp))
-            .padding(horizontal = 14.dp, vertical = 10.dp),
+            .clip(RoundedCornerShape(12.dp))
+            .background(color = diagnostic.tint.copy(alpha = 0.07f))
+            .border(0.5.dp, diagnostic.tint.copy(alpha = 0.18f), RoundedCornerShape(12.dp))
+            .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.Top,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Icon(
-            diagnostic.icon,
-            null,
-            tint = diagnostic.tint,
-            modifier = Modifier.size(16.dp).padding(top = 2.dp),
-        )
+        if (diagnostic.iconRes != null) {
+            Icon(
+                painter = painterResource(diagnostic.iconRes),
+                contentDescription = null,
+                tint = diagnostic.tint,
+                modifier = Modifier.size(16.dp).padding(top = 1.dp),
+            )
+        } else if (diagnostic.icon != null) {
+            Icon(
+                imageVector = diagnostic.icon,
+                contentDescription = null,
+                tint = diagnostic.tint,
+                modifier = Modifier.size(16.dp).padding(top = 1.dp),
+            )
+        }
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(
                 diagnostic.title,
-                style = MaterialTheme.typography.labelSmall,
-                color = diagnostic.tint.copy(alpha = 0.92f),
+                style = MaterialTheme.typography.labelLarge,
+                color = diagnostic.tint,
             )
             Text(
                 diagnostic.body,
                 style = MaterialTheme.typography.labelSmall,
-                color = diagnostic.tint.copy(alpha = 0.78f),
+                color = diagnostic.tint.copy(alpha = 0.75f),
             )
         }
     }
@@ -413,266 +365,270 @@ private fun DeviceDiagnosticHint(diagnostic: DeviceDiagnostic) {
 private data class DeviceDiagnostic(
     val title: String,
     val body: String,
-    val icon: ImageVector,
+    val icon: ImageVector?,
     val tint: Color,
+    val iconRes: Int? = null,
 )
 
-private fun deviceDiagnostic(uiState: MainViewModel.UiState): DeviceDiagnostic? = when {
-    uiState.syncMode == SyncMode.PAUSED -> DeviceDiagnostic(
-        title = "Sync is paused",
-        body = "Resume sync to reconnect nearby devices.",
-        icon = Icons.Outlined.PauseCircle,
-        tint = AirClipTextTertiary,
-    )
-    uiState.lanRuntimeDiagnostic.issue == LanRuntimeIssue.SERVER_FAILED -> DeviceDiagnostic(
-        title = "Local listener could not start",
-        body = "Restart AirClip. If it keeps happening, another process may be using port 7878.",
-        icon = Icons.Outlined.ErrorOutline,
-        tint = AirClipYellow,
-    )
-    uiState.lanRuntimeDiagnostic.issue == LanRuntimeIssue.DISCOVERY_FAILED -> DeviceDiagnostic(
-        title = "Discovery could not start",
-        body = "Check Wi-Fi, VPN/private DNS settings, and allow nearby/local network discovery.",
-        icon = Icons.Outlined.WifiOff,
-        tint = AirClipYellow,
-    )
-    uiState.lanRuntimeDiagnostic.issue == LanRuntimeIssue.ADVERTISEMENT_FAILED -> DeviceDiagnostic(
-        title = "This device is not advertising",
-        body = "Other devices may not find it. Keep AirClip open and check Wi-Fi or hotspot settings.",
-        icon = Icons.Outlined.PortableWifiOff,
-        tint = AirClipYellow,
-    )
-    uiState.pairedDevices.isNotEmpty() && uiState.connectedPeerCount == 0 -> DeviceDiagnostic(
-        title = "No paired devices nearby",
-        body = "Keep devices awake, on the same Wi-Fi, and allow local network discovery.",
-        icon = Icons.Outlined.WifiOff,
-        tint = AirClipYellow,
-    )
-    uiState.pairedDevices.isEmpty() && uiState.myDeviceId != null -> DeviceDiagnostic(
-        title = "No paired devices yet",
-        body = "Scan a QR code or enter a pairing code from another AirClip device.",
-        icon = Icons.Outlined.QrCodeScanner,
-        tint = AirClipBlue,
-    )
-    else -> null
+private fun deviceDiagnostic(uiState: DevicesTabUiState): DeviceDiagnostic? {
+    // Access colors without composition — use fixed semantic values
+    return when {
+        uiState.syncMode == SyncMode.PAUSED -> DeviceDiagnostic(
+            "Sync is paused",
+            "Resume sync to reconnect nearby devices.",
+            Icons.Outlined.PauseCircle,
+            Color(0xFF9CA3AF),
+        )
+        uiState.lanRuntimeDiagnostic.issue == LanRuntimeIssue.SERVER_FAILED -> DeviceDiagnostic(
+            "Local listener could not start",
+            "Restart AirClip. Another process may be using port 7878.",
+            Icons.Outlined.ErrorOutline,
+            Color(0xFFD97706),
+        )
+        uiState.lanRuntimeDiagnostic.issue == LanRuntimeIssue.DISCOVERY_FAILED -> DeviceDiagnostic(
+            "Discovery could not start",
+            "Check Wi-Fi, VPN settings, and allow local network discovery.",
+            Icons.Outlined.WifiOff,
+            Color(0xFFD97706),
+        )
+        uiState.lanRuntimeDiagnostic.issue == LanRuntimeIssue.ADVERTISEMENT_FAILED -> DeviceDiagnostic(
+            "This device is not advertising",
+            "Other devices may not find it. Check Wi-Fi settings.",
+            Icons.Outlined.PortableWifiOff,
+            Color(0xFFD97706),
+        )
+        uiState.pairedDevices.isEmpty() && uiState.myDeviceId != null -> DeviceDiagnostic(
+            title = "No paired devices yet",
+            body = "Tap the QR icon to scan another AirClip device.",
+            icon = null,
+            tint = Color(0xFF2563EB),
+            iconRes = R.drawable.ic_pair_qr,
+        )
+        else -> null
+    }
 }
 
-// ── Self device card (pinned at top) ─────────────────────────────────────────
+// ── Device feed row — open list style ────────────────────────────────────────
 
 @Composable
-private fun SelfDeviceCard(deviceName: String) {
-    Row(
+private fun DeviceFeedRow(
+    device: PairedDevice,
+    isReachable: Boolean,
+    nowMs: Long,
+    isLast: Boolean,
+    onRefresh: () -> Unit,
+    onRemove: () -> Unit,
+) {
+    var showMenu by remember { mutableStateOf(false) }
+    var showConfirm by remember { mutableStateOf(false) }
+
+    val status = deviceDisplayStatus(device, isReachable, nowMs)
+    val contentAlpha = if (status == DeviceDisplayStatus.Offline) 0.5f else 1f
+
+    Box(
         modifier = Modifier
+            .padding(horizontal = 20.dp)
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(AirClipBgElevated)
-            .border(0.5.dp, AirClipBorderSubtle, RoundedCornerShape(12.dp))
-            .padding(horizontal = 14.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+            .height(68.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .border(1.dp, Color(0xFFEEEFF0), RoundedCornerShape(8.dp)),
     ) {
+        Icon(
+            painter = painterResource(platformIconRes(device)),
+            contentDescription = null,
+            tint = Color.Unspecified,
+            modifier = Modifier
+                .offset(x = 12.dp, y = 20.dp)
+                .size(28.dp)
+                .graphicsLayer { alpha = contentAlpha },
+        )
+
+        Column(
+            modifier = Modifier
+                .offset(x = 52.dp, y = 8.dp)
+                .width(264.dp)
+                .height(52.dp),
+        ) {
+            Text(
+                device.deviceName,
+                fontSize = 16.sp,
+                lineHeight = 24.sp,
+                fontWeight = FontWeight.Medium,
+                color = Color.Black.copy(alpha = contentAlpha),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = status.label,
+                fontSize = 14.sp,
+                lineHeight = 16.sp,
+                fontWeight = FontWeight.Normal,
+                color = Color(0xFF6F7785).copy(alpha = contentAlpha),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+
         Box(
             modifier = Modifier
-                .size(40.dp)
-                .background(AirClipActiveFill, RoundedCornerShape(10.dp)),
+                .align(Alignment.TopEnd)
+                .offset(x = (-12).dp, y = 24.dp)
+                .size(20.dp)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                ) { showMenu = true },
             contentAlignment = Alignment.Center,
         ) {
             Icon(
-                Icons.Outlined.PhoneAndroid,
-                null,
-                tint = AirClipTextSecondary,
+                painter = painterResource(R.drawable.ic_device_more_vertical),
+                contentDescription = "More",
+                tint = Color.Unspecified,
                 modifier = Modifier.size(20.dp),
             )
-        }
-        Column(modifier = Modifier.weight(1f)) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Text(deviceName, style = MaterialTheme.typography.bodyMedium, color = AirClipTextPrimary)
-                Box(
-                    modifier = Modifier
-                        .background(AirClipBlue.copy(alpha = 0.15f), RoundedCornerShape(4.dp))
-                        .padding(horizontal = 6.dp, vertical = 2.dp),
-                ) {
-                    Text("This device", style = MaterialTheme.typography.labelSmall, color = AirClipBlue)
-                }
-            }
-        }
-        // Always online (it's us)
-        StatusDot(online = true, label = null)  // no label for self
-    }
-}
-
-// ── Paired device card ────────────────────────────────────────────────────────
-
-@Composable
-private fun DeviceCard(device: PairedDevice, isOnline: Boolean, onRemove: () -> Unit) {
-    var showMenu    by remember { mutableStateOf(false) }
-    var showConfirm by remember { mutableStateOf(false) }
-
-    val platformIcon: ImageVector = when (device.platform.lowercase()) {
-        "android" -> Icons.Outlined.PhoneAndroid
-        "mac"     -> Icons.Outlined.Laptop
-        "windows" -> Icons.Outlined.DesktopWindows
-        "linux"   -> Icons.Outlined.Computer
-        else      -> Icons.Outlined.Devices
-    }
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(AirClipBgElevated)
-            .border(0.5.dp, AirClipBorderSubtle, RoundedCornerShape(12.dp))
-            .padding(horizontal = 14.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Box(
-            modifier = Modifier
-                .size(40.dp)
-                .background(AirClipActiveFill, RoundedCornerShape(10.dp)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(platformIcon, null, tint = AirClipTextSecondary, modifier = Modifier.size(20.dp))
-        }
-
-        Column(modifier = Modifier.weight(1f)) {
-            Text(device.deviceName, style = MaterialTheme.typography.bodyMedium, color = AirClipTextPrimary)
-            val subtitle = when {
-                isOnline && device.lastSeenMs > 0L -> "Seen ${formatRelativeTime(device.lastSeenMs)}"
-                !isOnline && device.lastSeenMs > 0L -> "Last seen ${formatRelativeTime(device.lastSeenMs)}"
-                !device.wifiNetwork.isNullOrEmpty() -> device.wifiNetwork
-                else -> null
-            }
-            if (subtitle != null) {
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    subtitle,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = AirClipTextTertiary,
-                )
-            }
-        }
-
-        StatusDot(online = isOnline, label = if (isOnline) "Online" else "Offline")
-
-        // Three-dot menu
-        Box {
-            IconButton(
-                onClick = { showMenu = true },
-                modifier = Modifier.size(32.dp),
-            ) {
-                Icon(
-                    Icons.Outlined.MoreVert,
-                    contentDescription = "More options",
-                    tint = AirClipTextTertiary,
-                    modifier = Modifier.size(18.dp),
-                )
-            }
-            DropdownMenu(
+            AirClipDropdownMenu(
                 expanded = showMenu,
                 onDismissRequest = { showMenu = false },
-            ) {
-                DropdownMenuItem(
-                    text = { Text("Remove device", color = AirClipDestructive) },
-                    onClick = { showMenu = false; showConfirm = true },
-                    leadingIcon = {
-                        Icon(Icons.Outlined.RemoveCircleOutline, null, tint = AirClipDestructive, modifier = Modifier.size(18.dp))
-                    },
-                )
-            }
+                items = listOf(
+                    AirClipDropdownItem(
+                        label = "Refresh",
+                        onClick = onRefresh,
+                    ),
+                    AirClipDropdownItem(
+                        label = "Remove device",
+                        color = LocalAirClipColors.current.destructive,
+                        onClick = { showConfirm = true },
+                    ),
+                ),
+            )
         }
+    }
+
+    if (!isLast) {
+        Spacer(Modifier.height(12.dp))
     }
 
     if (showConfirm) {
+        val c = LocalAirClipColors.current
         AlertDialog(
             onDismissRequest = { showConfirm = false },
-            title = { Text("Remove ${device.deviceName}?", color = AirClipTextPrimary) },
+            title = { Text("Remove ${device.deviceName}?", color = c.textPrimary) },
             text = {
                 Text(
-                    "This device will no longer be able to sync with your AirClip network.",
-                    color = AirClipTextSecondary,
+                    "This device will no longer sync with your AirClip network.",
+                    color = c.textSecondary,
                     style = MaterialTheme.typography.bodySmall,
                 )
             },
             confirmButton = {
                 TextButton(onClick = { showConfirm = false; onRemove() }) {
-                    Text("Remove", color = AirClipDestructive)
+                    Text("Remove", color = c.destructive)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showConfirm = false }) {
-                    Text("Cancel", color = AirClipTextSecondary)
+                    Text("Cancel", color = c.textSecondary)
                 }
             },
-            containerColor = AirClipBgFloating,
+            containerColor = c.bgFloating,
+        )
+    }
+}
+
+@Composable
+private fun AddNewDeviceButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Button(
+        onClick = onClick,
+        modifier = modifier
+            .widthIn(min = 164.dp)
+            .height(44.dp),
+        shape = RoundedCornerShape(22.dp),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = Color.Black,
+            contentColor = Color.White,
+        ),
+        contentPadding = PaddingValues(horizontal = 20.dp),
+    ) {
+        Icon(
+            painter = painterResource(R.drawable.ic_pair_qr),
+            contentDescription = null,
+            modifier = Modifier.size(20.dp),
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text = "Add New Device",
+            fontSize = 16.sp,
+            lineHeight = 20.sp,
+            fontWeight = FontWeight.Normal,
+            maxLines = 1,
         )
     }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-@Composable
-private fun StatusDot(online: Boolean, label: String?) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        Box(
-            modifier = Modifier
-                .size(7.dp)
-                .background(
-                    if (online) AirClipGreen else AirClipTextTertiary,
-                    RoundedCornerShape(4.dp),
-                )
-        )
-        label?.let {
-            Text(it, style = MaterialTheme.typography.labelSmall, color = if (online) AirClipGreen else AirClipTextTertiary)
-        }
-    }
-}
-
-@Composable
-private fun SectionLabel(text: String) {
-    Text(
-        text,
-        style = MaterialTheme.typography.labelMedium,
-        color = AirClipTextTertiary,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 4.dp)
-            .padding(top = 12.dp, bottom = 4.dp),
+private sealed class DeviceDisplayStatus(
+    val label: String,
+    val color: Color,
+) {
+    data object Online : DeviceDisplayStatus("Online", Color(0xFF18D437))
+    data object Offline : DeviceDisplayStatus("Offline", Color(0xFF9CA3AF))
+    data class LastSeen(private val timestampMs: Long, private val nowMs: Long) : DeviceDisplayStatus(
+        formatRelativeTime(timestampMs, nowMs),
+        Color(0xFF6F7785),
     )
 }
 
-@Composable
-private fun DevicesEmptyState() {
-    Column(
-        modifier = Modifier.fillMaxSize().padding(32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        Icon(Icons.Outlined.Devices, null, tint = AirClipTextTertiary, modifier = Modifier.size(40.dp))
-        Spacer(Modifier.height(12.dp))
-        Text("No paired devices yet", style = MaterialTheme.typography.bodyMedium, color = AirClipTextSecondary)
-        Spacer(Modifier.height(4.dp))
-        Text(
-            "Tap the QR icon above to pair another device.",
-            style = MaterialTheme.typography.bodySmall,
-            color = AirClipTextTertiary,
-            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-        )
+private fun deviceDisplayStatus(device: PairedDevice, isReachable: Boolean, nowMs: Long): DeviceDisplayStatus {
+    if (!isReachable) return DeviceDisplayStatus.Offline
+    val lastActivityMs = when {
+        device.lastActiveMs > 0L -> device.lastActiveMs
+        device.lastSeenMs > 0L -> device.lastSeenMs
+        else -> 0L
+    }
+    if (lastActivityMs <= 0L) return DeviceDisplayStatus.LastSeen(nowMs, nowMs)
+    return if (nowMs - lastActivityMs < 60_000L) {
+        DeviceDisplayStatus.Online
+    } else {
+        DeviceDisplayStatus.LastSeen(lastActivityMs, nowMs)
     }
 }
 
-private fun formatRelativeTime(timestampMs: Long): String {
-    val diff = System.currentTimeMillis() - timestampMs
+private fun platformIconRes(device: PairedDevice): Int = when (platformKind(device)) {
+    "laptop" -> R.drawable.ic_device_laptop_active
+    "phone" -> R.drawable.ic_device_mobile_active
+    else -> R.drawable.ic_device_mobile_active
+}
+
+private fun platformKind(device: PairedDevice): String {
+    val value = "${device.platform} ${device.deviceName}".lowercase()
     return when {
-        diff < 60_000L     -> "just now"
-        diff < 3_600_000L  -> "${diff / 60_000L}m ago"
-        diff < 86_400_000L -> "${diff / 3_600_000L}h ago"
-        else               -> "${diff / 86_400_000L}d ago"
+        listOf("mac", "macbook", "darwin", "laptop").any { value.contains(it) } -> "laptop"
+        listOf("windows", "desktop").any { value.contains(it) } -> "desktop"
+        listOf("android", "iphone", "phone", "oneplus", "pixel", "samsung").any { value.contains(it) } -> "phone"
+        else -> "phone"
+    }
+}
+
+private fun formatRelativeTime(timestampMs: Long, nowMs: Long): String {
+    val diff = nowMs - timestampMs
+    return when {
+        diff < 60_000L -> "Online"
+        diff < 3_600_000L -> {
+            val minutes = diff / 60_000L
+            "${minutes}m ago"
+        }
+        diff < 86_400_000L -> {
+            val hours = diff / 3_600_000L
+            "${hours}h ago"
+        }
+        else -> {
+            val days = diff / 86_400_000L
+            "${days}d ago"
+        }
     }
 }

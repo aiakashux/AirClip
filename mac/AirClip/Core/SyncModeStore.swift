@@ -42,23 +42,4 @@ final class SyncModeStore: ObservableObject {
         }
     }
 
-    @discardableResult
-    func sendCurrentClipboard() -> Bool {
-        guard mode.allowsManualSend,
-              AirClipIdentity.shared.isPaired,
-              let packet = ClipboardCapture.readCurrentPacket(from: NSPasteboard.general)
-        else {
-            return false
-        }
-
-        switch SensitiveClipboardProtectionStore.shared.requestManualSend(packet) {
-        case .allow:
-            SyncEngine.shared.sendClipboard(packet: packet)
-        case .requireConfirmation:
-            break
-        case .block:
-            return false
-        }
-        return true
-    }
 }

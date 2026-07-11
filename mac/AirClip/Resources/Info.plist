@@ -26,6 +26,10 @@
 	<string>Copyright © 2026 AirClip. All rights reserved.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>AirClip uses your local network to sync clipboard content directly between your devices — no data leaves your network.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>AirClip uses your Wi-Fi network name to help you pair devices on the same local network.</string>
+	<key>NSLocationUsageDescription</key>
+	<string>AirClip uses your Wi-Fi network name to help you pair devices on the same local network.</string>
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_airclip._tcp</string>

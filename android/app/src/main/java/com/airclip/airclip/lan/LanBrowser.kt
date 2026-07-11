@@ -185,10 +185,10 @@ object LanBrowser {
     // ── Outgoing WebSocket connection ─────────────────────────────────────────
 
     private fun connectToPeer(host: String, port: Int, peerHint: String) {
-        val myDeviceId = AirClipIdentity.deviceId ?: return
-        val myAirClipId   = AirClipIdentity.airClipId   ?: return     // not yet paired → don't connect
-        val myPubKey   = keyManager?.getPublicKeyBase64() ?: return
-        val client     = httpClient ?: return
+        val myDeviceId = AirClipIdentity.deviceId ?: return PeerManager.onPeerDisconnected(peerHint)
+        val myAirClipId = AirClipIdentity.airClipId ?: return PeerManager.onPeerDisconnected(peerHint)
+        val myPubKey = keyManager?.getPublicKeyBase64() ?: return PeerManager.onPeerDisconnected(peerHint)
+        val client = httpClient ?: return PeerManager.onPeerDisconnected(peerHint)
 
         Log.d(TAG, "Connecting to ${peerHint.take(8)} at $host:$port")
         val request = Request.Builder().url("ws://$host:$port/").build()
@@ -214,6 +214,8 @@ object LanBrowser {
                 "device_id"  to myDeviceId,
                 "airclip_id"    to myAirClipId,       // was account_id
                 "public_key" to myPubKey,       // included so server can encrypt for us
+                "device_name" to AirClipIdentity.deviceName,
+                "platform" to "android",
             )))
             Log.d(TAG, "Sent auth to ${peerHint.take(8)}")
         }
@@ -246,7 +248,10 @@ object LanBrowser {
 
                 PeerManager.registerPeer(Peer(
                     deviceId   = peerId,
+                    deviceName = msg["device_name"] ?: "",
                     publicKey  = peerKey,
+                    platform   = msg["platform"] ?: "",
+                    wifiNetwork = msg["ssid"],
                     isIncoming = false,
                     connectionId = connectionId ?: return closeWith(ws, "missing connection id"),
                     sendFn     = { ws.send(it) },
@@ -290,6 +295,10 @@ object LanBrowser {
                     }
                     "heartbeat_ack" -> {
                         PeerManager.markPeerSeen(authenticatedPeerId ?: peerHint)
+                    }
+                    "app_activity" -> {
+                        val ts = msg["ts"]?.toLongOrNull() ?: System.currentTimeMillis()
+                        PeerManager.markPeerActivity(authenticatedPeerId ?: peerHint, ts)
                     }
                     DeviceRemovalNotice.TYPE -> {
                         if (DeviceRemovalNotice.targetsCurrentDevice(msg, AirClipIdentity.deviceId)) {

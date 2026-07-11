@@ -49,6 +49,24 @@ class ClipHistoryDeduplicationTest {
     }
 
     @Test
+    fun `deduplicates same image content even when echoed later from another device`() {
+        val androidShare = record(
+            messageId = "android-local",
+            timestampMs = 10_000L,
+            fromDeviceId = "android-device",
+            kind = ClipKind.IMAGE,
+        )
+        val macEcho = record(
+            messageId = "mac-history",
+            timestampMs = 75_000L,
+            fromDeviceId = "mac-device",
+            kind = ClipKind.IMAGE,
+        )
+
+        assertEquals(listOf(androidShare), ClipHistoryStore.deduplicate(listOf(androidShare, macEcho)))
+    }
+
+    @Test
     fun `preserves full text when duplicate history arrives for preview-only record`() {
         val previewOnly = record(
             messageId = "preview-only",
@@ -69,12 +87,42 @@ class ClipHistoryDeduplicationTest {
         )
     }
 
+    @Test
+    fun `removes image bytes before history is persisted`() {
+        val fullImage = record(
+            messageId = "image",
+            timestampMs = 10_000L,
+            kind = ClipKind.IMAGE,
+        ).copy(imageDataBase64 = "a".repeat(1_000_000))
+
+        val stored = ClipHistoryStore.prepareForStorage(listOf(fullImage)).single()
+
+        assertEquals(null, stored.imageDataBase64)
+        assertEquals(ClipKind.IMAGE.name, stored.kind)
+        assertEquals("content-hash", stored.cipherHash)
+    }
+
+    @Test
+    fun `trims huge text before history is persisted`() {
+        val fullText = record(
+            messageId = "text",
+            timestampMs = 10_000L,
+            preview = "large text",
+            contentText = "x".repeat(ClipHistoryStore.MAX_PERSISTED_TEXT_CHARS + 100),
+        )
+
+        val stored = ClipHistoryStore.prepareForStorage(listOf(fullText)).single()
+
+        assertEquals(ClipHistoryStore.MAX_PERSISTED_TEXT_CHARS, stored.contentText?.length)
+    }
+
     private fun record(
         messageId: String,
         timestampMs: Long,
         fromDeviceId: String = "mac-device",
         preview: String = "same clip",
         contentText: String? = preview,
+        kind: ClipKind = ClipKind.TEXT,
     ) = ClipItemRecord(
         messageId = messageId,
         seq = 0L,
@@ -83,5 +131,6 @@ class ClipHistoryDeduplicationTest {
         cipherHash = "content-hash",
         preview = preview,
         contentText = contentText,
+        kind = kind.name,
     )
 }

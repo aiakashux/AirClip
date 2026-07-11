@@ -3,21 +3,39 @@ package com.airclip.airclip.ui.screens
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
-import androidx.compose.animation.AnimatedContent
+import android.content.Intent
+import android.graphics.Bitmap
+import android.net.Uri
+import android.util.LruCache
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
-import androidx.compose.foundation.BorderStroke
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Notes
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -25,647 +43,841 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.airclip.airclip.R
+import com.airclip.airclip.AirClipIdentity
 import com.airclip.airclip.ClipItemRecord
 import com.airclip.airclip.ClipKind
-import com.airclip.airclip.MainViewModel
-import com.airclip.airclip.AirClipIdentity
 import com.airclip.airclip.ImageClipboard
+import com.airclip.airclip.MainViewModel
+import com.airclip.airclip.SyncMode
 import com.airclip.airclip.ui.theme.*
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.*
 
-private data class TypeSpec(val icon: ImageVector, val color: Color, val label: String)
+// ── Screen ────────────────────────────────────────────────────────────────────
 
-private fun typeSpec(kind: ClipKind, preview: String) = when (kind) {
-    ClipKind.URL   -> TypeSpec(Icons.Outlined.Link,        AirClipBlue,    "Link")
-    ClipKind.CODE  -> TypeSpec(Icons.Outlined.Code,        AirClipGreen,   "Code")
-    ClipKind.COLOR -> TypeSpec(Icons.Outlined.Circle,      parseHexColor(preview) ?: AirClipYellow,  "Color")
-    ClipKind.EMAIL -> TypeSpec(Icons.Outlined.Email,      AirClipBlue,    "Email")
-    ClipKind.IMAGE -> TypeSpec(Icons.Outlined.Image,       AirClipTextTertiary, "Image")
-    ClipKind.TEXT  -> TypeSpec(Icons.Outlined.Notes,       AirClipTextSecondary, "Text")
-}
+private val BearyFontFamily = FontFamily(Font(R.font.beary))
+private val ImagePreviewCache = LruCache<String, Bitmap>(24)
 
-// ── Screen ───────────────────────────────────────────────────────────────────
+private data class ClipboardFeedGroups(
+    val all: List<ClipItemRecord>,
+    val today: List<ClipItemRecord>,
+    val yesterday: List<ClipItemRecord>,
+    val thisWeek: List<ClipItemRecord>,
+    val earlier: List<ClipItemRecord>,
+)
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ClipboardScreen(viewModel: MainViewModel, uiState: MainViewModel.UiState) {
+fun ClipboardScreen(
+    viewModel: MainViewModel,
+    uiState: ClipboardTabUiState,
+    listState: LazyListState,
+) {
+    val c = LocalAirClipColors.current
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     var searchQuery by remember { mutableStateOf("") }
-    var showSavedOnly by remember { mutableStateOf(false) }
     var selectedKind by remember { mutableStateOf<ClipKind?>(null) }
-    var selectedId by remember { mutableStateOf<String?>(null) }
+    var showFilters by remember { mutableStateOf(false) }
+    var actionRecord by remember { mutableStateOf<ClipItemRecord?>(null) }
+    val headerHeight = statusBarTop + if (showFilters) 226.dp else 176.dp
 
-    val items = uiState.clipHistory
-        .asSequence()
-        .filter { !showSavedOnly || it.isSaved }
-        .filter { selectedKind == null || recordKind(it) == selectedKind }
-        .filter { searchQuery.isBlank() || recordMatchesSearch(it, searchQuery) }
-        .toList()
-    val selectedRecord = items.firstOrNull { it.messageId == selectedId } ?: items.firstOrNull()
+    val groupedItems = remember(uiState.clipHistory, selectedKind, searchQuery) {
+        val now = System.currentTimeMillis()
+        val filtered = uiState.clipHistory
+            .asSequence()
+            .filter { selectedKind == null || recordKind(it) == selectedKind }
+            .filter { searchQuery.isBlank() || recordMatchesSearch(it, searchQuery) }
+            .toList()
 
-    val now = System.currentTimeMillis()
-    val today    = items.filter { isToday(it.timestampMs, now) }
-    val earlier  = items.filter { !isToday(it.timestampMs, now) }
+        val today = ArrayList<ClipItemRecord>()
+        val yesterday = ArrayList<ClipItemRecord>()
+        val thisWeek = ArrayList<ClipItemRecord>()
+        val earlier = ArrayList<ClipItemRecord>()
+
+        filtered.forEach { item ->
+            when {
+                isToday(item.timestampMs, now) -> today += item
+                isYesterday(item.timestampMs, now) -> yesterday += item
+                isThisWeek(item.timestampMs, now) -> thisWeek += item
+                else -> earlier += item
+            }
+        }
+
+        ClipboardFeedGroups(
+            all = filtered,
+            today = today,
+            yesterday = yesterday,
+            thisWeek = thisWeek,
+            earlier = earlier,
+        )
+    }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
-        containerColor = AirClipBgBase,
+        containerColor = c.bgBase,
+        contentWindowInsets = WindowInsets(0.dp),
     ) { padding ->
-        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
-            // Header
-            Row(
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding),
+        ) {
+            LazyColumn(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp)
-                    .padding(top = 20.dp, bottom = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
+                    .fillMaxSize()
+                    .padding(top = headerHeight),
+                state = listState,
+                contentPadding = PaddingValues(bottom = 24.dp),
             ) {
-                Text(
-                    "Clipboard",
-                    style = MaterialTheme.typography.titleLarge,
-                    color = AirClipTextPrimary,
-                    modifier = Modifier.weight(1f),
-                )
-                IconButton(
-                    onClick = { viewModel.onCaptureClipboard() },
-                    enabled = uiState.syncMode.allowsManualSend,
-                ) {
-                    Icon(
-                        Icons.Outlined.ContentPaste,
-                        contentDescription = "Capture clipboard",
-                        tint = if (uiState.syncMode.allowsManualSend) {
-                            AirClipTextSecondary
-                        } else {
-                            AirClipTextTertiary.copy(alpha = 0.45f)
-                        },
-                        modifier = Modifier.size(20.dp),
-                    )
-                }
-            }
-
-            AirClipSearchBar(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
-                onClear = { searchQuery = "" },
-                modifier = Modifier.padding(horizontal = 16.dp),
-            )
-
-            Spacer(Modifier.height(10.dp))
-
-            SegmentedFilterRow(
-                selectedSavedOnly = showSavedOnly,
-                onSelectedSavedOnly = { showSavedOnly = it },
-                modifier = Modifier.padding(horizontal = 16.dp),
-            )
-
-            Spacer(Modifier.height(8.dp))
-
-            TypeFilterRow(
-                selectedKind = selectedKind,
-                onSelectedKind = { selectedKind = it },
-                modifier = Modifier.padding(horizontal = 16.dp),
-            )
-
-            AnimatedVisibility(
-                visible = selectedRecord != null,
-                enter = fadeIn() + expandVertically(),
-                exit = fadeOut() + shrinkVertically(),
-            ) {
-                selectedRecord?.let { record ->
-                    Spacer(Modifier.height(12.dp))
-                    PreviewPanel(
-                        record = record,
-                        onCopy = {
-                            selectedId = record.messageId
+                if (groupedItems.all.isNotEmpty()) {
+                    // ── Today section ─────────────────────────────────────────────────
+                    feedSection(
+                        title = "Today",
+                        records = groupedItems.today,
+                        onCopy = { record ->
                             viewModel.onHistoryItemCopyStarted(record)
                             copyRecordToClipboard(context, record)
-                            scope.launch {
-                                snackbarHostState.showSnackbar("Copied", duration = SnackbarDuration.Short)
-                            }
+                            scope.launch { snackbarHostState.showSnackbar("Copied", duration = SnackbarDuration.Short) }
                         },
-                        onSave = { viewModel.onToggleSaved(record) },
-                        onDelete = {
-                            if (selectedId == record.messageId) selectedId = null
-                            viewModel.onDeleteClip(record)
+                        onLongPress = { actionRecord = it },
+                    )
+
+                    feedSection(
+                        title = "Yesterday",
+                        records = groupedItems.yesterday,
+                        onCopy = { record ->
+                            viewModel.onHistoryItemCopyStarted(record)
+                            copyRecordToClipboard(context, record)
+                            scope.launch { snackbarHostState.showSnackbar("Copied", duration = SnackbarDuration.Short) }
                         },
+                        onLongPress = { actionRecord = it },
+                    )
+
+                    feedSection(
+                        title = "This Week",
+                        records = groupedItems.thisWeek,
+                        onCopy = { record ->
+                            viewModel.onHistoryItemCopyStarted(record)
+                            copyRecordToClipboard(context, record)
+                            scope.launch { snackbarHostState.showSnackbar("Copied", duration = SnackbarDuration.Short) }
+                        },
+                        onLongPress = { actionRecord = it },
+                    )
+
+                    feedSection(
+                        title = "Earlier",
+                        records = groupedItems.earlier,
+                        onCopy = { record ->
+                            viewModel.onHistoryItemCopyStarted(record)
+                            copyRecordToClipboard(context, record)
+                            scope.launch { snackbarHostState.showSnackbar("Copied", duration = SnackbarDuration.Short) }
+                        },
+                        onLongPress = { actionRecord = it },
                     )
                 }
             }
 
-            Spacer(Modifier.height(12.dp))
-
-            // List
-            if (items.isEmpty()) {
-                ClipboardEmptyState(
-                    hasSearch = searchQuery.isNotBlank(),
-                    hasFilter = showSavedOnly || selectedKind != null,
+            if (groupedItems.all.isEmpty()) {
+                AirClipEmptyState(
+                    iconRes = R.drawable.ic_home_empty_state,
+                    text = if (searchQuery.isNotBlank() || selectedKind != null) {
+                        "No results"
+                    } else {
+                        "Airclip is ready. Copy on one device, to use it on another."
+                    },
                 )
-            } else {
-                LazyColumn(
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    if (today.isNotEmpty()) {
-                        item { SectionHeader("Today") }
-                        items(today, key = { it.messageId }) { record ->
-                            SwipeableClipCard(
-                                record = record,
-                                onTap = {
-                                    selectedId = record.messageId
-                                    viewModel.onHistoryItemCopyStarted(record)
-                                    copyRecordToClipboard(context, record)
-                                    scope.launch {
-                                        snackbarHostState.showSnackbar(
-                                            "Copied",
-                                            duration = SnackbarDuration.Short,
-                                        )
-                                    }
-                                },
-                                onSave = { viewModel.onToggleSaved(record) },
-                                onDelete = { viewModel.onDeleteClip(record) },
-                                isSelected = selectedRecord?.messageId == record.messageId,
-                            )
-                        }
-                    }
-                    if (earlier.isNotEmpty()) {
-                        item { SectionHeader("Earlier") }
-                        items(earlier, key = { it.messageId }) { record ->
-                            SwipeableClipCard(
-                                record = record,
-                                onTap = {
-                                    selectedId = record.messageId
-                                    viewModel.onHistoryItemCopyStarted(record)
-                                    copyRecordToClipboard(context, record)
-                                    scope.launch {
-                                        snackbarHostState.showSnackbar(
-                                            "Copied",
-                                            duration = SnackbarDuration.Short,
-                                        )
-                                    }
-                                },
-                                onSave = { viewModel.onToggleSaved(record) },
-                                onDelete = { viewModel.onDeleteClip(record) },
-                                isSelected = selectedRecord?.messageId == record.messageId,
-                            )
-                        }
-                    }
+            }
+
+            HomePageHeader(
+                syncMode = uiState.syncMode,
+                searchQuery = searchQuery,
+                onSearchQueryChange = { searchQuery = it },
+                showFilters = showFilters,
+                onFilterToggle = { showFilters = !showFilters },
+                selectedKind = selectedKind,
+                onSelectedKind = { selectedKind = it },
+                onCaptureClipboard = { viewModel.onCaptureClipboard() },
+                modifier = Modifier.align(Alignment.TopCenter),
+            )
+        }
+    }
+
+    actionRecord?.let { record ->
+        ClipActionSheet(
+            record = record,
+            onDismiss = { actionRecord = null },
+            onCopy = {
+                viewModel.onHistoryItemCopyStarted(record)
+                copyRecordToClipboard(context, record)
+                actionRecord = null
+                scope.launch { snackbarHostState.showSnackbar("Copied", duration = SnackbarDuration.Short) }
+            },
+            onSave = {
+                viewModel.onToggleSaved(record)
+                actionRecord = null
+            },
+            onDelete = {
+                viewModel.onDeleteClip(record)
+                actionRecord = null
+            },
+            onOpenLink = {
+                openRecordLink(context, record)
+                actionRecord = null
+            },
+        )
+    }
+}
+
+@Composable
+private fun HomePageHeader(
+    syncMode: SyncMode,
+    searchQuery: String,
+    onSearchQueryChange: (String) -> Unit,
+    showFilters: Boolean,
+    onFilterToggle: () -> Unit,
+    selectedKind: ClipKind?,
+    onSelectedKind: (ClipKind?) -> Unit,
+    onCaptureClipboard: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(Color.White)
+            .padding(top = statusBarTop + 24.dp, bottom = 24.dp),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                "Airclip",
+                fontSize = 36.sp,
+                lineHeight = 40.sp,
+                fontFamily = BearyFontFamily,
+                fontWeight = FontWeight.Normal,
+                color = Color(0xFF202327),
+                letterSpacing = (-0.6).sp,
+            )
+            Spacer(Modifier.weight(1f))
+            if (syncMode == SyncMode.MANUAL_ONLY) {
+                Spacer(Modifier.width(8.dp))
+                IconButton(onClick = onCaptureClipboard) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_home_clipboard_sync),
+                        contentDescription = "Sync clipboard",
+                        tint = Color.Unspecified,
+                        modifier = Modifier.size(24.dp),
+                    )
                 }
+            }
+        }
+        Spacer(Modifier.height(32.dp))
+        FeedSearchBar(
+            value = searchQuery,
+            onValueChange = onSearchQueryChange,
+            filtersVisible = showFilters,
+            onFilterToggle = onFilterToggle,
+            modifier = Modifier.padding(horizontal = 20.dp),
+        )
+        AnimatedVisibility(
+            visible = showFilters,
+            enter = fadeIn(tween(160, easing = FastOutSlowInEasing)) +
+                    slideInVertically(tween(190, easing = FastOutSlowInEasing)) { -it / 2 },
+            exit = fadeOut(tween(120, easing = FastOutSlowInEasing)) +
+                    slideOutVertically(tween(150, easing = FastOutSlowInEasing)) { -it / 2 },
+        ) {
+            Column {
+                Spacer(Modifier.height(16.dp))
+                FeedFilterRow(
+                    selectedKind = selectedKind,
+                    onSelectedKind = onSelectedKind,
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
         }
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
+private fun LazyListScope.feedSection(
+    title: String,
+    records: List<ClipItemRecord>,
+    onCopy: (ClipItemRecord) -> Unit,
+    onLongPress: (ClipItemRecord) -> Unit,
+) {
+    if (records.isEmpty()) return
+
+    stickyHeader { FeedSectionHeader(title) }
+    itemsIndexed(records, key = { _, it -> it.messageId }) { _, record ->
+        FeedClipItem(
+            record = record,
+            onTap = { onCopy(record) },
+            onLongPress = { onLongPress(record) },
+        )
+    }
+}
+
+// ── Section header ────────────────────────────────────────────────────────────
+
 @Composable
-private fun TypeFilterRow(
+private fun FeedSectionHeader(title: String) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color.White),
+    ) {
+        Text(
+            title,
+            fontSize = 16.sp,
+            lineHeight = 24.sp,
+            fontFamily = BearyFontFamily,
+            fontWeight = FontWeight.Normal,
+            color = Color(0xFF6F7785),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(top = 0.dp, bottom = 7.dp),
+        )
+        HorizontalDivider(thickness = 1.dp, color = Color(0xFFEEEFF0))
+    }
+}
+
+// ── Search bar — pill style ───────────────────────────────────────────────────
+
+@Composable
+private fun FeedSearchBar(
+    value: String,
+    onValueChange: (String) -> Unit,
+    filtersVisible: Boolean,
+    onFilterToggle: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(56.dp)
+            .clip(RoundedCornerShape(28.dp))
+            .background(Color(0x33E3E5E8))
+            .border(1.dp, Color(0xFFE9EAEC), RoundedCornerShape(28.dp))
+            .padding(4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier.size(48.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                painter = painterResource(R.drawable.ic_home_search),
+                contentDescription = null,
+                tint = Color.Unspecified,
+                modifier = Modifier.size(20.dp),
+            )
+        }
+
+        BasicTextField(
+            value = value,
+            onValueChange = onValueChange,
+            singleLine = true,
+            textStyle = MaterialTheme.typography.bodyLarge.copy(
+                color = Color(0xFF202327),
+                fontSize = 16.sp,
+                letterSpacing = 0.15.sp,
+            ),
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight(),
+            decorationBox = { innerTextField ->
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.CenterStart,
+                ) {
+                    if (value.isEmpty()) {
+                        Text(
+                            "Search words or type",
+                            color = Color(0xFF9D95A8),
+                            fontSize = 16.sp,
+                            letterSpacing = 0.15.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    innerTextField()
+                }
+            },
+        )
+
+        Box(
+            modifier = Modifier
+                .size(48.dp)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = onFilterToggle,
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                painter = painterResource(
+                    if (filtersVisible) R.drawable.ic_home_filter_active else R.drawable.ic_home_filter,
+                ),
+                contentDescription = if (filtersVisible) "Hide filters" else "Show filters",
+                tint = Color.Unspecified,
+                modifier = Modifier.size(24.dp),
+            )
+        }
+    }
+}
+
+// ── Filter chip row ───────────────────────────────────────────────────────────
+
+@Composable
+private fun FeedFilterRow(
     selectedKind: ClipKind?,
     onSelectedKind: (ClipKind?) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Row(
-        modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    LazyRow(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        contentPadding = PaddingValues(horizontal = 20.dp),
     ) {
-        TypeFilterChip("All", selectedKind == null, { onSelectedKind(null) }, Modifier.weight(1f))
-        TypeFilterChip("Text", selectedKind == ClipKind.TEXT, { onSelectedKind(ClipKind.TEXT) }, Modifier.weight(1f))
-        TypeFilterChip("Links", selectedKind == ClipKind.URL, { onSelectedKind(ClipKind.URL) }, Modifier.weight(1f))
-        TypeFilterChip("Images", selectedKind == ClipKind.IMAGE, { onSelectedKind(ClipKind.IMAGE) }, Modifier.weight(1f))
+        item { FeedChip("All", selectedKind == null) { onSelectedKind(null) } }
+        item { FeedChip("Text", selectedKind == ClipKind.TEXT) { onSelectedKind(if (selectedKind == ClipKind.TEXT) null else ClipKind.TEXT) } }
+        item { FeedChip("Link", selectedKind == ClipKind.URL) { onSelectedKind(if (selectedKind == ClipKind.URL) null else ClipKind.URL) } }
+        item { FeedChip("Image", selectedKind == ClipKind.IMAGE) { onSelectedKind(if (selectedKind == ClipKind.IMAGE) null else ClipKind.IMAGE) } }
+        item { FeedChip("Color", selectedKind == ClipKind.COLOR) { onSelectedKind(if (selectedKind == ClipKind.COLOR) null else ClipKind.COLOR) } }
+        item { FeedChip("Code", selectedKind == ClipKind.CODE) { onSelectedKind(if (selectedKind == ClipKind.CODE) null else ClipKind.CODE) } }
     }
 }
 
 @Composable
-private fun TypeFilterChip(
-    label: String,
-    selected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Button(
-        onClick = onClick,
-        modifier = modifier.height(30.dp),
-        colors = ButtonDefaults.buttonColors(
-            containerColor = if (selected) AirClipActiveFill else AirClipBgElevated,
-            contentColor = if (selected) AirClipTextPrimary else AirClipTextTertiary,
-        ),
-        shape = RoundedCornerShape(10.dp),
-        border = BorderStroke(0.5.dp, AirClipBorderSubtle),
-        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
-    ) {
-        Text(label, style = MaterialTheme.typography.labelSmall, maxLines = 1)
-    }
-}
-
-@Composable
-private fun AirClipSearchBar(
-    value: String,
-    onValueChange: (String) -> Unit,
-    onClear: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    OutlinedTextField(
-        value = value,
-        onValueChange = onValueChange,
-        modifier = modifier
-            .fillMaxWidth()
-            .height(44.dp),
-        placeholder = {
-            Text("Search", color = AirClipTextTertiary, style = MaterialTheme.typography.bodySmall)
-        },
-        leadingIcon = {
-            Icon(Icons.Outlined.Search, null, tint = AirClipTextTertiary, modifier = Modifier.size(18.dp))
-        },
-        trailingIcon = if (value.isNotEmpty()) {
-            {
-                IconButton(onClick = onClear) {
-                    Icon(Icons.Outlined.Close, null, tint = AirClipTextTertiary, modifier = Modifier.size(16.dp))
-                }
-            }
-        } else null,
-        singleLine = true,
-        colors = OutlinedTextFieldDefaults.colors(
-            focusedBorderColor = Color.White.copy(alpha = 0.18f),
-            unfocusedBorderColor = AirClipBorderSubtle,
-            focusedContainerColor = AirClipBgElevated,
-            unfocusedContainerColor = AirClipBgElevated,
-            focusedTextColor = AirClipTextPrimary,
-            unfocusedTextColor = AirClipTextPrimary,
-            cursorColor = AirClipAccent,
-        ),
-        shape = RoundedCornerShape(12.dp),
-        textStyle = MaterialTheme.typography.bodySmall.copy(color = AirClipTextPrimary),
+private fun FeedChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.95f else 1f,
+        animationSpec = spring(stiffness = 500f),
+        label = "ChipScale",
     )
-}
+    val bg by animateColorAsState(
+        if (selected) Color(0xFF2870DC).copy(alpha = 0.08f) else Color.Transparent,
+        tween(150),
+        "ChipBg",
+    )
+    val stroke by animateColorAsState(if (selected) Color(0xFF2870DC) else Color(0xFFDADDDF), tween(150), "ChipStroke")
+    val tc by animateColorAsState(if (selected) Color(0xFF2870DC) else Color(0xFF4C575C), tween(150), "ChipTc")
 
-@Composable
-private fun SegmentedFilterRow(
-    selectedSavedOnly: Boolean,
-    onSelectedSavedOnly: (Boolean) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(AirClipBgElevated)
-            .border(0.5.dp, AirClipBorderSubtle, RoundedCornerShape(12.dp))
-            .padding(4.dp),
+    Box(
+        modifier = Modifier
+            .graphicsLayer { scaleX = scale; scaleY = scale }
+            .clip(RoundedCornerShape(20.dp))
+            .background(color = bg)
+            .border(
+                1.dp,
+                stroke,
+                RoundedCornerShape(20.dp),
+            )
+            .clickable(interactionSource = interactionSource, indication = null, onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 6.dp),
     ) {
-        FilterSegment(
-            label = "All",
-            selected = !selectedSavedOnly,
-            onClick = { onSelectedSavedOnly(false) },
-            modifier = Modifier.weight(1f),
-        )
-        FilterSegment(
-            label = "Saved",
-            selected = selectedSavedOnly,
-            onClick = { onSelectedSavedOnly(true) },
-            modifier = Modifier.weight(1f),
+        Text(
+            label,
+            fontSize = 16.sp,
+            lineHeight = 16.sp,
+            fontWeight = FontWeight.Normal,
+            letterSpacing = 0.125.sp,
+            color = tc,
         )
     }
 }
 
-@Composable
-private fun FilterSegment(
-    label: String,
-    selected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Button(
-        onClick = onClick,
-        modifier = modifier.height(30.dp),
-        colors = ButtonDefaults.buttonColors(
-            containerColor = if (selected) AirClipActiveFill else Color.Transparent,
-            contentColor = if (selected) AirClipTextPrimary else AirClipTextTertiary,
-        ),
-        shape = RoundedCornerShape(9.dp),
-        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
-    ) {
-        Text(label, style = MaterialTheme.typography.labelSmall)
-    }
-}
+// ── Feed item dispatcher ──────────────────────────────────────────────────────
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun PreviewPanel(
+private fun FeedClipItem(
     record: ClipItemRecord,
-    onCopy: () -> Unit,
-    onSave: () -> Unit,
-    onDelete: () -> Unit,
+    onTap: () -> Unit,
+    onLongPress: () -> Unit,
 ) {
-    val kind = runCatching { ClipKind.valueOf(record.kind) }.getOrDefault(ClipKind.TEXT)
-    val text = record.displayText
-    val spec = typeSpec(kind, text)
-    val fadeBrush = Brush.verticalGradient(
-        colors = listOf(Color.Transparent, AirClipBgFloating.copy(alpha = 0.82f), AirClipBgFloating),
+    val kind = recordKind(record)
+    val timeStr = remember(record.timestampMs) { formatTime(record.timestampMs) }
+    val sourceName = sourceNameFor(record.fromDeviceId)
+
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val alpha by animateFloatAsState(
+        targetValue = if (isPressed) 0.6f else 1f,
+        animationSpec = tween(100),
+        label = "ItemAlpha",
     )
 
     Column(
         modifier = Modifier
-            .padding(horizontal = 16.dp)
-            .clip(RoundedCornerShape(16.dp))
-            .background(AirClipBgElevated)
-            .border(0.5.dp, AirClipBorderSubtle, RoundedCornerShape(16.dp))
-            .clipToBounds(),
+            .fillMaxWidth()
+            .graphicsLayer { this.alpha = alpha }
+            .combinedClickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onTap,
+                onLongClick = onLongPress,
+            )
+            .padding(horizontal = 20.dp),
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(30.dp)
-                    .background(spec.color.copy(alpha = 0.16f), RoundedCornerShape(8.dp)),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(spec.icon, spec.label, tint = spec.color, modifier = Modifier.size(15.dp))
-            }
-            Column(modifier = Modifier.weight(1f)) {
-                Text(text, style = MaterialTheme.typography.bodyMedium, color = AirClipTextPrimary, maxLines = 3, overflow = TextOverflow.Ellipsis)
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    if (record.isSaved) "Saved • ${formatTime(record.timestampMs)}" else formatTime(record.timestampMs),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = AirClipTextTertiary,
-                )
-            }
+        when (kind) {
+            ClipKind.TEXT  -> TextFeedItem(record, sourceName, timeStr)
+            ClipKind.URL   -> UrlFeedItem(record, sourceName, timeStr)
+            ClipKind.IMAGE -> ImageFeedItem(record, sourceName, timeStr)
+            ClipKind.COLOR -> ColorFeedItem(record, sourceName, timeStr)
+            ClipKind.CODE  -> CodeFeedItem(record, sourceName, timeStr)
+            ClipKind.EMAIL -> TextFeedItem(record, sourceName, timeStr)
         }
+    }
+}
 
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 88.dp)
-                .background(AirClipBgElevated)
-                .clipToBounds(),
-        ) {
-            val bitmap = remember(record.imageDataBase64) {
-                ImageClipboard.decode(record.imageDataBase64)
-            }
-            if (kind == ClipKind.IMAGE && bitmap != null) {
-                androidx.compose.foundation.Image(
-                    bitmap = bitmap.asImageBitmap(),
-                    contentDescription = text,
-                    contentScale = ContentScale.Fit,
+// ── Item type layouts ─────────────────────────────────────────────────────────
+
+@Composable
+private fun TextFeedItem(record: ClipItemRecord, sourceName: String, timeStr: String) {
+    Column {
+        Spacer(Modifier.height(24.dp))
+        Text(
+            record.displayText,
+            fontSize = 18.sp,
+            lineHeight = 27.sp,
+            letterSpacing = 0.15.sp,
+            color = Color.Black,
+            maxLines = 3,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Spacer(Modifier.height(12.dp))
+        ItemMeta(sourceName, timeStr)
+        HorizontalDivider(thickness = 1.dp, color = Color(0xFFEEEFF0), modifier = Modifier.padding(top = 18.dp))
+    }
+}
+
+@Composable
+private fun UrlFeedItem(record: ClipItemRecord, sourceName: String, timeStr: String) {
+    val bitmap = rememberPreviewBitmap(record)
+    val hasImagePreview = record.imageDataBase64 != null
+    val lines = remember(record.displayText) { record.displayText.lines().map { it.trim() }.filter { it.isNotBlank() } }
+    val url = remember(lines, record.displayText) { lines.firstOrNull { it.startsWith("http://") || it.startsWith("https://") } ?: record.displayText }
+    val title = remember(lines, url) { lines.firstOrNull { it != url } ?: url.removePrefix("https://").removePrefix("http://") }
+
+    Column {
+        Spacer(Modifier.height(24.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+            if (hasImagePreview) {
+                ImagePreviewBox(
+                    bitmap = bitmap,
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 180.dp, max = 320.dp)
-                        .padding(horizontal = 14.dp)
-                        .padding(bottom = 48.dp),
+                        .width(178.dp)
+                        .height(159.dp),
                 )
             } else {
-                Text(
-                    text = text,
-                    style = if (text.length > 260) {
-                        MaterialTheme.typography.bodyLarge.copy(fontSize = 20.sp)
-                    } else {
-                        MaterialTheme.typography.bodyLarge
-                    },
-                    color = AirClipTextPrimary,
+                Box(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 14.dp)
-                        .padding(bottom = 56.dp),
+                        .width(96.dp)
+                        .height(96.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(Color(0xFFF7F7F6)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(Icons.Outlined.Link, null, tint = Color(0xFFA0A6B1), modifier = Modifier.size(28.dp))
+                }
+            }
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .align(Alignment.CenterVertically),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(
+                    title,
+                    fontSize = 18.sp,
+                    lineHeight = 27.sp,
+                    fontWeight = FontWeight.Medium,
+                    letterSpacing = 0.15.sp,
+                    color = Color.Black,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    url,
+                    fontSize = 16.sp,
+                    lineHeight = 24.sp,
+                    color = Color(0xFF5647F2),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline,
                 )
             }
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .height(48.dp)
-                    .background(fadeBrush)
-            )
         }
+        Spacer(Modifier.height(12.dp))
+        ItemMeta(sourceName, timeStr)
+        HorizontalDivider(thickness = 1.dp, color = Color(0xFFEEEFF0), modifier = Modifier.padding(top = 18.dp))
+    }
+}
 
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-        ) {
-            PreviewActionButton(Icons.Outlined.ContentCopy, "Copy", onCopy)
-            PreviewActionButton(
-                if (record.isSaved) Icons.Outlined.Bookmark else Icons.Outlined.BookmarkBorder,
-                if (record.isSaved) "Saved" else "Save",
-                onSave,
-                tint = if (record.isSaved) AirClipGreen else AirClipTextSecondary,
+@Composable
+private fun ImageFeedItem(record: ClipItemRecord, sourceName: String, timeStr: String) {
+    val bitmap = rememberPreviewBitmap(record)
+    val hasImagePreview = record.imageDataBase64 != null
+
+    Column {
+        Spacer(Modifier.height(24.dp))
+        if (hasImagePreview) {
+            ImagePreviewBox(
+                bitmap = bitmap,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(160.dp),
             )
-            PreviewActionButton(Icons.Outlined.Delete, "Delete", onDelete, tint = AirClipDestructive)
+            Spacer(Modifier.height(8.dp))
+        }
+        Text(
+            record.displayText,
+            fontSize = 18.sp,
+            lineHeight = 27.sp,
+            fontWeight = FontWeight.Medium,
+            color = Color.Black,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Spacer(Modifier.height(12.dp))
+        ItemMeta(sourceName, timeStr)
+        HorizontalDivider(thickness = 1.dp, color = Color(0xFFEEEFF0), modifier = Modifier.padding(top = 18.dp))
+    }
+}
+
+@Composable
+private fun rememberPreviewBitmap(record: ClipItemRecord): Bitmap? {
+    val imageData = record.imageDataBase64 ?: return null
+    val cacheKey = remember(record.messageId, imageData) { record.messageId }
+    return produceState(
+        initialValue = ImagePreviewCache.get(cacheKey),
+        key1 = cacheKey,
+        key2 = imageData,
+    ) {
+        if (value != null) return@produceState
+        value = withContext(Dispatchers.Default) {
+            ImageClipboard.decode(imageData)?.also { bitmap ->
+                ImagePreviewCache.put(cacheKey, bitmap)
+            }
+        }
+    }.value
+}
+
+@Composable
+private fun ImagePreviewBox(
+    bitmap: Bitmap?,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(10.dp))
+            .background(Color(0xFFF7F7F6)),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (bitmap != null) {
+            androidx.compose.foundation.Image(
+                bitmap = bitmap.asImageBitmap(),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.matchParentSize(),
+            )
+        } else {
+            Icon(
+                Icons.Outlined.Image,
+                contentDescription = null,
+                tint = Color(0xFFA0A6B1),
+                modifier = Modifier.size(28.dp),
+            )
         }
     }
 }
 
 @Composable
-private fun PreviewActionButton(
-    icon: ImageVector,
-    label: String,
-    onClick: () -> Unit,
-    tint: Color = AirClipTextSecondary,
-) {
-    TextButton(
-        onClick = onClick,
-        colors = ButtonDefaults.textButtonColors(contentColor = tint),
-        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+private fun ColorFeedItem(record: ClipItemRecord, sourceName: String, timeStr: String) {
+    val parsedColor = parseHexColor(record.displayText) ?: Color(0xFF808080)
+
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        verticalAlignment = Alignment.Top,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 24.dp),
     ) {
-        Icon(icon, label, modifier = Modifier.size(18.dp))
-        Spacer(Modifier.width(6.dp))
-        Text(label, style = MaterialTheme.typography.labelLarge)
+        Box(
+            modifier = Modifier
+                .size(80.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(color = parsedColor),
+        )
+        Column(modifier = Modifier.weight(1f).heightIn(min = 80.dp), verticalArrangement = Arrangement.Center) {
+            Text(
+                record.displayText.uppercase(),
+                fontSize = 24.sp,
+                lineHeight = 36.sp,
+                fontWeight = FontWeight.Medium,
+                color = Color.Black,
+            )
+            Spacer(Modifier.height(12.dp))
+            ItemMeta(sourceName, timeStr)
+        }
+    }
+    HorizontalDivider(thickness = 1.dp, color = Color(0xFFEEEFF0))
+}
+
+@Composable
+private fun CodeFeedItem(record: ClipItemRecord, sourceName: String, timeStr: String) {
+    Column {
+        Spacer(Modifier.height(24.dp))
+        Text(
+            record.displayText,
+            fontSize = 18.sp,
+            lineHeight = 27.sp,
+            fontWeight = FontWeight.Medium,
+            color = Color(0xFF525F7A),
+            maxLines = 3,
+            overflow = TextOverflow.Ellipsis,
+            fontFamily = FontFamily.Monospace,
+        )
+        Spacer(Modifier.height(12.dp))
+        ItemMeta(sourceName, timeStr)
+        HorizontalDivider(thickness = 1.dp, color = Color(0xFFEEEFF0), modifier = Modifier.padding(top = 18.dp))
     }
 }
 
-// ── Swipeable wrapper ─────────────────────────────────────────────────────────
+// ── Meta row: source · time + bookmark ────────────────────────────────────────
+
+@Composable
+private fun ItemMeta(sourceName: String, timeStr: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text(
+            sourceName,
+            fontSize = 14.sp,
+            lineHeight = 16.sp,
+            color = Color(0xFF6F7785),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        Spacer(Modifier.width(16.dp))
+        Text(
+            timeStr,
+            fontSize = 14.sp,
+            lineHeight = 16.sp,
+            color = Color(0xFF6F7785),
+            maxLines = 1,
+        )
+    }
+}
+
+// ── Long-press actions ────────────────────────────────────────────────────────
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SwipeableClipCard(
+private fun ClipActionSheet(
     record: ClipItemRecord,
-    onTap: () -> Unit,
+    onDismiss: () -> Unit,
+    onCopy: () -> Unit,
     onSave: () -> Unit,
     onDelete: () -> Unit,
-    isSelected: Boolean,
+    onOpenLink: () -> Unit,
 ) {
-    val dismissState = rememberSwipeToDismissBoxState(
-        confirmValueChange = { value ->
-            if (value == SwipeToDismissBoxValue.EndToStart) {
-                onDelete()
-                true
-            } else false
-        }
-    )
+    val isUrl = recordKind(record) == ClipKind.URL
 
-    SwipeToDismissBox(
-        state = dismissState,
-        enableDismissFromStartToEnd = false,
-        backgroundContent = {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(AirClipDestructive.copy(alpha = 0.85f)),
-                contentAlignment = Alignment.CenterEnd,
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.Delete,
-                    contentDescription = "Delete",
-                    tint = Color.White,
-                    modifier = Modifier
-                        .padding(end = 20.dp)
-                        .size(20.dp),
-                )
-            }
-        },
-        content = { ClipCard(record, onTap, onSave, isSelected) },
-    )
-}
-
-// ── Clip card ─────────────────────────────────────────────────────────────────
-
-@Composable
-private fun ClipCard(record: ClipItemRecord, onTap: () -> Unit, onSave: () -> Unit, isSelected: Boolean) {
-    val kind = runCatching { ClipKind.valueOf(record.kind) }.getOrDefault(ClipKind.TEXT)
-    val text = record.displayText
-    val spec = typeSpec(kind, text)
-    val timeStr = remember(record.timestampMs) { formatTime(record.timestampMs) }
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(if (isSelected) AirClipActiveFill else AirClipBgElevated)
-            .border(0.5.dp, if (isSelected) AirClipAccent.copy(alpha = 0.34f) else AirClipBorderSubtle, RoundedCornerShape(14.dp))
-            .clickable(onClick = onTap)
-            .padding(horizontal = 14.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = Color.White,
+        contentColor = Color(0xFF202327),
     ) {
-        val bitmap = remember(record.imageDataBase64) {
-            ImageClipboard.decode(record.imageDataBase64)
-        }
-
-        // Type icon / image thumbnail
-        Box(
+        Column(
             modifier = Modifier
-                .size(32.dp)
-                .background(spec.color.copy(alpha = 0.12f), RoundedCornerShape(8.dp)),
-            contentAlignment = Alignment.Center,
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 28.dp),
         ) {
-            if (kind == ClipKind.IMAGE && bitmap != null) {
-                androidx.compose.foundation.Image(
-                    bitmap = bitmap.asImageBitmap(),
-                    contentDescription = text,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize(),
-                )
-            } else {
-                Icon(
-                    imageVector = spec.icon,
-                    contentDescription = spec.label,
-                    tint = spec.color,
-                    modifier = Modifier.size(16.dp),
-                )
-            }
-        }
-
-        IconButton(
-            onClick = onSave,
-            modifier = Modifier.size(30.dp),
-        ) {
-            Icon(
-                if (record.isSaved) Icons.Outlined.Bookmark else Icons.Outlined.BookmarkBorder,
-                contentDescription = if (record.isSaved) "Saved" else "Save",
-                tint = if (record.isSaved) AirClipGreen else AirClipTextTertiary,
-                modifier = Modifier.size(16.dp),
-            )
-        }
-
-        // Content
-        Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = text,
-                style = if (text.length > 260) {
-                    MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp)
-                } else {
-                    MaterialTheme.typography.bodySmall
-                },
-                color = AirClipTextPrimary,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
+                "Clipboard item",
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Medium,
+                color = Color(0xFF202327),
+                modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
             )
-            Spacer(Modifier.height(3.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(timeStr, style = MaterialTheme.typography.labelSmall, color = AirClipTextTertiary)
-                Text("·", style = MaterialTheme.typography.labelSmall, color = AirClipTextTertiary)
-                val sourceName = if (record.fromDeviceId == AirClipIdentity.deviceId) "This device"
-                                 else AirClipIdentity.pairedDevices[record.fromDeviceId]?.deviceName ?: "Remote device"
-                Text(
-                    sourceName,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = AirClipTextTertiary,
-                )
+            ActionSheetRow(Icons.Outlined.ContentCopy, "Copy", onCopy)
+            ActionSheetRow(
+                icon = if (record.isSaved) Icons.Outlined.Bookmark else Icons.Outlined.BookmarkBorder,
+                label = if (record.isSaved) "Remove from saved" else "Save",
+                onClick = onSave,
+            )
+            if (isUrl) {
+                ActionSheetRow(Icons.Outlined.OpenInNew, "Open in browser", onOpenLink)
             }
+            ActionSheetRow(Icons.Outlined.Delete, "Delete", onDelete, isDestructive = true)
         }
     }
 }
 
-// ── Section header ───────────────────────────────────────────────────────────
-
 @Composable
-private fun SectionHeader(title: String) {
-    Text(
-        title,
-        style = MaterialTheme.typography.labelMedium,
-        color = AirClipTextTertiary,
+private fun ActionSheetRow(
+    icon: ImageVector,
+    label: String,
+    onClick: () -> Unit,
+    isDestructive: Boolean = false,
+) {
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 4.dp)
-            .padding(top = 12.dp, bottom = 4.dp),
-    )
-}
-
-// ── Empty state ───────────────────────────────────────────────────────────────
-
-@Composable
-private fun ClipboardEmptyState(hasSearch: Boolean, hasFilter: Boolean) {
-    Column(
-        modifier = Modifier.fillMaxSize().padding(32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
+            .clip(RoundedCornerShape(16.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         Icon(
-            imageVector = Icons.Outlined.ContentPaste,
+            icon,
             contentDescription = null,
-            tint = AirClipTextTertiary,
-            modifier = Modifier.size(40.dp),
+            tint = if (isDestructive) Color(0xFFE5342A) else Color(0xFF6F7785),
+            modifier = Modifier.size(22.dp),
         )
-        Spacer(Modifier.height(12.dp))
         Text(
-            if (hasSearch || hasFilter) "No results" else "No clipboard history yet",
-            style = MaterialTheme.typography.bodyMedium,
-            color = AirClipTextSecondary,
+            label,
+            fontSize = 17.sp,
+            color = if (isDestructive) Color(0xFFE5342A) else Color(0xFF202327),
         )
-        if (!hasSearch && !hasFilter) {
-            Spacer(Modifier.height(4.dp))
-            Text(
-                "Copy something on another device to see it here.",
-                style = MaterialTheme.typography.bodySmall,
-                color = AirClipTextTertiary,
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-            )
-        }
     }
 }
 
@@ -678,56 +890,96 @@ private fun copyRecordToClipboard(context: Context, record: ClipItemRecord) {
 }
 
 private fun isToday(timestampMs: Long, now: Long): Boolean {
-    val cal1 = Calendar.getInstance().apply { timeInMillis = timestampMs }
-    val cal2 = Calendar.getInstance().apply { timeInMillis = now }
-    return cal1.get(Calendar.YEAR) == cal2.get(Calendar.YEAR) &&
-           cal1.get(Calendar.DAY_OF_YEAR) == cal2.get(Calendar.DAY_OF_YEAR)
+    val c1 = Calendar.getInstance().apply { timeInMillis = timestampMs }
+    val c2 = Calendar.getInstance().apply { timeInMillis = now }
+    return c1.get(Calendar.YEAR) == c2.get(Calendar.YEAR) &&
+           c1.get(Calendar.DAY_OF_YEAR) == c2.get(Calendar.DAY_OF_YEAR)
 }
 
-private val timeFmt = SimpleDateFormat("h:mm a", Locale.getDefault())
+private fun isYesterday(timestampMs: Long, now: Long): Boolean {
+    val item = Calendar.getInstance().apply { timeInMillis = timestampMs }
+    val yesterday = Calendar.getInstance().apply {
+        timeInMillis = now
+        add(Calendar.DAY_OF_YEAR, -1)
+    }
+    return item.get(Calendar.YEAR) == yesterday.get(Calendar.YEAR) &&
+           item.get(Calendar.DAY_OF_YEAR) == yesterday.get(Calendar.DAY_OF_YEAR)
+}
+
+private fun isThisWeek(timestampMs: Long, now: Long): Boolean {
+    val item = Calendar.getInstance().apply { timeInMillis = timestampMs }
+    val current = Calendar.getInstance().apply { timeInMillis = now }
+    return item.get(Calendar.YEAR) == current.get(Calendar.YEAR) &&
+           item.get(Calendar.WEEK_OF_YEAR) == current.get(Calendar.WEEK_OF_YEAR)
+}
+
+private fun openRecordLink(context: Context, record: ClipItemRecord) {
+    val url = extractUrl(record.displayText) ?: return
+    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+    runCatching { context.startActivity(intent) }
+}
+
+private fun extractUrl(text: String): String? =
+    text.lines()
+        .map { it.trim() }
+        .firstOrNull { it.startsWith("http://") || it.startsWith("https://") }
+
 private val dateFmt = SimpleDateFormat("MMM d", Locale.getDefault())
 
-private fun formatTime(timestampMs: Long): String {
+private fun formatTime(ms: Long): String {
     val now = System.currentTimeMillis()
-    return if (isToday(timestampMs, now)) timeFmt.format(Date(timestampMs))
-           else dateFmt.format(Date(timestampMs))
+    val diff = (now - ms).coerceAtLeast(0L)
+    val minute = 60_000L
+    val hour = 60L * minute
+    val day = 24L * hour
+
+    return when {
+        diff < minute -> "Just now"
+        diff < hour -> "${diff / minute}m ago"
+        diff < day -> "${diff / hour}h ago"
+        diff < 2L * day -> "Yesterday"
+        diff < 7L * day -> "${diff / day}d ago"
+        else -> dateFmt.format(Date(ms))
+    }
+}
+
+private fun parseHexColor(text: String): Color? {
+    val match = Regex("""#([0-9A-Fa-f]{3,8})\b""").find(text) ?: return null
+    val hex = match.groupValues[1].let { v ->
+        if (v.length == 3 || v.length == 4) v.map { "$it$it" }.joinToString("") else v
+    }
+    if (hex.length != 6 && hex.length != 8) return null
+    val v = hex.toLong(16)
+    return if (hex.length == 6) Color(
+        red   = ((v shr 16) and 0xFFL) / 255f,
+        green = ((v shr  8) and 0xFFL) / 255f,
+        blue  = (v and 0xFFL) / 255f,
+        alpha = 1f,
+    ) else Color(
+        red   = ((v shr 24) and 0xFFL) / 255f,
+        green = ((v shr 16) and 0xFFL) / 255f,
+        blue  = ((v shr  8) and 0xFFL) / 255f,
+        alpha = (v and 0xFFL) / 255f,
+    )
 }
 
 private fun recordMatchesSearch(record: ClipItemRecord, query: String): Boolean {
-    val needle = query.trim()
-    if (needle.isEmpty()) return true
-    val sourceName = if (record.fromDeviceId == AirClipIdentity.deviceId) {
+    val n = query.trim()
+    if (n.isEmpty()) return true
+    val src = sourceNameFor(record.fromDeviceId)
+    return record.displayText.contains(n, ignoreCase = true) ||
+           record.kind.contains(n, ignoreCase = true) ||
+           src.contains(n, ignoreCase = true)
+}
+
+private fun sourceNameFor(deviceId: String): String =
+    if (deviceId == AirClipIdentity.deviceId) {
         "This device"
     } else {
-        AirClipIdentity.pairedDevices[record.fromDeviceId]?.deviceName ?: "Remote device"
+        AirClipIdentity.deviceNameFor(deviceId) ?: "Remote"
     }
-    return record.displayText.contains(needle, ignoreCase = true) ||
-        record.kind.contains(needle, ignoreCase = true) ||
-        sourceName.contains(needle, ignoreCase = true)
-}
 
 private fun recordKind(record: ClipItemRecord): ClipKind =
     runCatching { ClipKind.valueOf(record.kind) }.getOrDefault(ClipKind.TEXT)
-
-private fun parseHexColor(text: String): Color? {
-    val hex = text.trim().removePrefix("#")
-    if (hex.length !in listOf(3, 4, 6, 8)) return null
-    if (!hex.all { it.isDigit() || it.lowercaseChar() in 'a'..'f' }) return null
-    return try {
-        val expanded = when (hex.length) {
-            3 -> hex.map { "$it$it" }.joinToString("") + "FF"
-            4 -> hex.map { "$it$it" }.joinToString("")
-            6 -> hex + "FF"
-            else -> hex
-        }
-        val value = expanded.toLong(16)
-        Color(
-            red = ((value shr 24) and 0xFF) / 255f,
-            green = ((value shr 16) and 0xFF) / 255f,
-            blue = ((value shr 8) and 0xFF) / 255f,
-            alpha = (value and 0xFF) / 255f,
-        )
-    } catch (_: Exception) {
-        null
-    }
-}

@@ -50,17 +50,6 @@ final class SensitiveClipboardProtectionStore: ObservableObject {
         return decision != .block
     }
 
-    func requestManualSend(_ packet: ClipboardPacket) -> SensitiveSendDecision {
-        let assessment = SensitiveClipboardClassifier.classify(packet.text)
-        guard let finding = assessment.primaryFinding else { return .allow }
-        let decision = SensitiveClipboardPolicy.decide(
-            assessment,
-            intent: .manual,
-            action: action(for: finding.category)
-        )
-        return decision
-    }
-
     private static func ruleKey(for category: SensitiveCategory) -> String {
         "sensitiveClipboardRule.\(category.rawValue)"
     }

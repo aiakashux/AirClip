@@ -20,7 +20,10 @@ private const val TAG = "PeerManager"
  */
 data class Peer(
     val deviceId: String,
+    val deviceName: String = "",
     val publicKey: String,
+    val platform: String = "",
+    val wifiNetwork: String? = null,
     val isIncoming: Boolean,
     val connectionId: String = UUID.randomUUID().toString(),
     private val sendFn: (String) -> Unit,
@@ -60,6 +63,9 @@ object PeerManager {
     /** Callback invoked when a peer proves it is still reachable. Set by SyncEngine. */
     var onPeerSeen: ((deviceId: String) -> Unit)? = null
 
+    /** Callback invoked when a peer reports foreground or share activity. Set by SyncEngine. */
+    var onPeerActivity: ((deviceId: String, timestampMs: Long) -> Unit)? = null
+
     /** Callback invoked after a peer becomes the active authenticated connection. Set by SyncEngine. */
     var onPeerRegistered: ((Peer) -> Unit)? = null
 
@@ -74,8 +80,7 @@ object PeerManager {
      */
     fun isTrusted(theirAirClipId: String, deviceId: String): Boolean {
         val myAirClipId = AirClipIdentity.airClipId ?: return false
-        return theirAirClipId == myAirClipId &&
-            AirClipIdentity.pairedDevices.containsKey(deviceId)
+        return theirAirClipId == myAirClipId
     }
 
     // ── Peer lifecycle ────────────────────────────────────────────────────────
@@ -86,13 +91,6 @@ object PeerManager {
      */
     @Synchronized
     fun registerPeer(peer: Peer) {
-        if (!AirClipIdentity.pairedDevices.containsKey(peer.deviceId)) {
-            peer.close()
-            updateConnectedCount()
-            Log.w(TAG, "Rejected unpaired peer ${peer.deviceId.take(8)}")
-            return
-        }
-
         val existing = peers[peer.deviceId]
         if (existing != null) {
             if (existing.isIncoming && !peer.isIncoming) {
@@ -133,11 +131,18 @@ object PeerManager {
         peer?.close()
     }
 
+    fun broadcastDeviceRemoval(targetDeviceId: String) {
+        peers.values.forEach { peer ->
+            runCatching { peer.sendRemovalNotice(targetDeviceId) }
+        }
+    }
+
     /** Mark this device_id as connection-in-progress to deduplicate outgoing attempts. */
     fun addPendingHint(deviceId: String): Boolean = pendingHints.add(deviceId)
 
     fun hasPeer(deviceId: String): Boolean = peers.containsKey(deviceId)
     fun isPending(deviceId: String): Boolean = pendingHints.contains(deviceId)
+    fun connectedPeersSnapshot(): List<Peer> = peers.values.toList()
 
     // ── Sending ───────────────────────────────────────────────────────────────
 
@@ -171,6 +176,16 @@ object PeerManager {
         }
     }
 
+    fun broadcastAppActivity(timestampMs: Long = System.currentTimeMillis()) {
+        val json = gson.toJson(mapOf(
+            "type" to "app_activity",
+            "ts" to timestampMs.toString(),
+        ))
+        peers.values.forEach { peer ->
+            runCatching { peer.send(json) }
+        }
+    }
+
     // ── Receiving ─────────────────────────────────────────────────────────────
 
     fun dispatchInboundClip(ciphertext: String, nonce: String, fromDeviceId: String) {
@@ -183,6 +198,10 @@ object PeerManager {
 
     fun markPeerSeen(deviceId: String) {
         onPeerSeen?.invoke(deviceId)
+    }
+
+    fun markPeerActivity(deviceId: String, timestampMs: Long) {
+        onPeerActivity?.invoke(deviceId, timestampMs)
     }
 
     fun dispatchRemovedFromNetwork() {

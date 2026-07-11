@@ -40,24 +40,34 @@ final class AirClipIdentity: ObservableObject {
     func createAirClip(name: String) {
         airClipId   = UUID().uuidString
         deviceId = UUID().uuidString
-        deviceName = name
+        deviceName = normalizedDeviceName(name)
         isPaired = true
         persist()
+        SyncModeStore.shared.applyRuntimePolicy()
     }
 
     /// Join an existing AirClip network (received via pair_ok from another device).
     func joinAirClip(airClipId: String, myName: String, allDevices: [PairedDevice]) {
         self.airClipId = airClipId
         if deviceId == nil { deviceId = UUID().uuidString }
-        deviceName = myName
+        deviceName = normalizedDeviceName(myName)
         isPaired   = true
-        for d in allDevices { pairedDevices[d.deviceId] = d }
+        pairedDevices.removeAll()
+        for d in allDevices where d.deviceId != deviceId {
+            pairedDevices[d.deviceId] = normalizedPairedDevice(d)
+        }
         persist()
+        SyncModeStore.shared.applyRuntimePolicy()
     }
 
     func addOrUpdateDevice(_ device: PairedDevice) {
-        pairedDevices[device.deviceId] = device
+        let normalizedDevice = normalizedPairedDevice(device)
+        let isNewDevice = pairedDevices[normalizedDevice.deviceId] == nil
+        pairedDevices[normalizedDevice.deviceId] = normalizedDevice
         persist()
+        if isNewDevice, normalizedDevice.deviceId != deviceId {
+            DeviceNotificationCoordinator.shared.notifyDeviceAdded(normalizedDevice)
+        }
     }
 
     func touchDevice(_ deviceId: String, wifiNetwork: String? = nil) {
@@ -85,8 +95,9 @@ final class AirClipIdentity: ObservableObject {
     }
 
     func setDeviceName(_ name: String) {
-        deviceName = name
-        UserDefaults.standard.set(name, forKey: "deviceName")
+        let normalizedName = normalizedDeviceName(name)
+        deviceName = normalizedName
+        UserDefaults.standard.set(normalizedName, forKey: "deviceName")
     }
 
     func clearAll() {
@@ -99,7 +110,18 @@ final class AirClipIdentity: ObservableObject {
             UserDefaults.standard.removeObject(forKey: $0)
         }
         SyncModeStore.shared.applyRuntimePolicy()
+        LocalHistoryStore.shared.clearAll()
+        UnreadStore.shared.markRead()
         CryptoManager.shared.clearKeys()
+    }
+
+    func leaveNetwork() {
+        if let deviceId {
+            PeerManager.shared.broadcastDeviceRemoval(targetDeviceId: deviceId)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            self.clearAll()
+        }
     }
 
     // MARK: - Persistence
@@ -121,7 +143,23 @@ final class AirClipIdentity: ObservableObject {
 
         if let data    = UserDefaults.standard.data(forKey: "pairedDevices"),
            let devices = try? JSONDecoder().decode([PairedDevice].self, from: data) {
-            pairedDevices = Dictionary(uniqueKeysWithValues: devices.map { ($0.deviceId, $0) })
+            pairedDevices = Dictionary(uniqueKeysWithValues: devices.map { ($0.deviceId, normalizedPairedDevice($0)) })
         }
+    }
+
+    private func normalizedDeviceName(_ name: String) -> String {
+        DeviceDisplayText.limitedName(name.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    private func normalizedPairedDevice(_ device: PairedDevice) -> PairedDevice {
+        PairedDevice(
+            deviceId: device.deviceId,
+            deviceName: normalizedDeviceName(device.deviceName),
+            publicKey: device.publicKey,
+            deviceModel: device.deviceModel,
+            platform: device.platform,
+            lastSeenMs: device.lastSeenMs,
+            wifiNetwork: device.wifiNetwork
+        )
     }
 }

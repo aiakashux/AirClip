@@ -7,7 +7,9 @@ import Combine
 @MainActor
 final class StatusBarController: NSObject {
     static let shared = StatusBarController()
-    private static let mainWindowSize = NSSize(width: 860, height: 558)
+    private static let mainWindowSize = NSSize(width: 860, height: 608)
+    private static let mainToolbarIdentifier = NSToolbar.Identifier("com.airclip.mainWindowToolbar")
+    private static let sidebarToolbarItemIdentifier = NSToolbarItem.Identifier("com.airclip.sidebarToggle")
 
     private var statusItem: NSStatusItem?
     private var panel: NSPanel?
@@ -16,6 +18,8 @@ final class StatusBarController: NSObject {
     private var desktopOpenWorkItem: DispatchWorkItem?
     private var activeSpaceObserver: NSObjectProtocol?
     private var unreadObserver: AnyCancellable?
+    private var identityPairingObserver: AnyCancellable?
+    private var authCompletionObserver: NSObjectProtocol?
 
     var isPanelVisible: Bool { panel?.isVisible ?? false }
 
@@ -41,6 +45,13 @@ final class StatusBarController: NSObject {
             button.image = image
             button.image?.accessibilityDescription = hasUnread ? "AirClip – New items" : "AirClip"
         }
+
+        identityPairingObserver = AirClipIdentity.shared.$isPaired
+            .removeDuplicates()
+            .sink { [weak self] _ in
+                guard let window = self?.mainWindow else { return }
+                self?.syncMainWindowToolbar(for: window)
+            }
 
         // Root SwiftUI view with SwiftData container
         let rootView = RootView()
@@ -93,6 +104,17 @@ final class StatusBarController: NSObject {
             Task { @MainActor in self?.openMainWindow(onDesktopSpace: true) }
         }
 
+        authCompletionObserver = NotificationCenter.default.addObserver(
+            forName: .authDidComplete,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                guard let window = self?.mainWindow else { return }
+                self?.syncMainWindowToolbar(for: window)
+            }
+        }
+
         // Show onboarding if not yet paired; otherwise start sync.
         if !AirClipIdentity.shared.isPaired {
             openMainWindow()
@@ -125,6 +147,7 @@ final class StatusBarController: NSObject {
     private func presentMainWindow() {
         // Reusing the same window preserves its assignment to the regular desktop Space.
         if let existing = mainWindow {
+            syncMainWindowToolbar(for: existing)
             existing.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
             return
@@ -141,6 +164,7 @@ final class StatusBarController: NSObject {
         win.title = ""
         win.titleVisibility = .hidden
         win.titlebarAppearsTransparent = true
+        win.toolbarStyle = .unifiedCompact
         win.backgroundColor = MainWindowChromePalette.nsShell
         win.isOpaque = false
         win.isMovableByWindowBackground = true
@@ -148,6 +172,7 @@ final class StatusBarController: NSObject {
         win.collectionBehavior = [.managed, .fullScreenNone]
         win.contentMinSize = windowSize
         win.contentMaxSize = windowSize
+        syncMainWindowToolbar(for: win)
         let hostingView = NSHostingView(
             rootView: WindowRootView(size: windowSize)
                 .modelContainer(LocalHistoryStore.shared.container)
@@ -157,6 +182,53 @@ final class StatusBarController: NSObject {
         win.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         mainWindow = win
+    }
+
+    private func configureMainWindowToolbar(for window: NSWindow) {
+        let toolbar = NSToolbar(identifier: Self.mainToolbarIdentifier)
+        toolbar.delegate = self
+        toolbar.displayMode = .iconOnly
+        toolbar.sizeMode = .regular
+        toolbar.allowsUserCustomization = false
+        toolbar.autosavesConfiguration = false
+        window.toolbar = toolbar
+        if !toolbar.items.contains(where: { $0.itemIdentifier == Self.sidebarToolbarItemIdentifier }) {
+            toolbar.insertItem(withItemIdentifier: Self.sidebarToolbarItemIdentifier, at: 0)
+        }
+        updateMainWindowToolbarVisibility(for: window)
+    }
+
+    private func syncMainWindowToolbar(for window: NSWindow) {
+        guard AirClipIdentity.shared.isPaired else {
+            window.toolbar = nil
+            return
+        }
+        if mainWindowToolbarNeedsConfiguration(for: window) {
+            configureMainWindowToolbar(for: window)
+        }
+        updateMainWindowToolbarVisibility(for: window)
+    }
+
+    private func updateMainWindowToolbarVisibility(for window: NSWindow) {
+        guard let toolbar = window.toolbar else { return }
+        toolbar.isVisible = AirClipIdentity.shared.isPaired
+    }
+
+    private func mainWindowToolbarNeedsConfiguration(for window: NSWindow) -> Bool {
+        guard let toolbar = window.toolbar else { return true }
+        guard toolbar.identifier == Self.mainToolbarIdentifier else { return true }
+        return !toolbar.items.contains { $0.itemIdentifier == Self.sidebarToolbarItemIdentifier }
+    }
+
+    private func sidebarToolbarImage() -> NSImage {
+        let image = NSImage(systemSymbolName: "sidebar.left", accessibilityDescription: "Toggle Sidebar")
+            ?? NSImage(systemSymbolName: "sidebar.leading", accessibilityDescription: "Toggle Sidebar")
+            ?? NSImage(named: NSImage.Name("NSListViewTemplate"))
+            ?? NSImage(size: NSSize(width: 20, height: 20))
+        image.size = NSSize(width: 20, height: 20)
+        image.isTemplate = true
+        image.accessibilityDescription = "Toggle Sidebar"
+        return image
     }
 
     @objc private func togglePanel() {
@@ -169,6 +241,10 @@ final class StatusBarController: NSObject {
             return
         }
         if isPanelVisible { closePopover() } else { openPopover() }
+    }
+
+    @objc private func toggleMainWindowSidebar() {
+        NotificationCenter.default.post(name: .toggleMainWindowSidebar, object: nil)
     }
 
     private func showContextMenu() {
@@ -200,6 +276,14 @@ final class StatusBarController: NSObject {
     @objc private func contextOpenApp() {
         if isPanelVisible { closePopover() }
         openMainWindow(onDesktopSpace: true)
+    }
+
+    func openAirClipFromNotification() {
+        if isPanelVisible { closePopover() }
+        openMainWindow(onDesktopSpace: true)
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: .openDevicesTab, object: nil)
+        }
     }
 
     @objc private func contextOpenSettings() {
@@ -273,6 +357,37 @@ final class StatusBarController: NSObject {
             panel?.orderOut(nil)
             panel?.alphaValue = 1   // restore for next open
         })
+    }
+}
+
+extension StatusBarController: NSToolbarDelegate {
+    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        [Self.sidebarToolbarItemIdentifier]
+    }
+
+    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        [Self.sidebarToolbarItemIdentifier]
+    }
+
+    func toolbarSelectableItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        []
+    }
+
+    func toolbar(
+        _ toolbar: NSToolbar,
+        itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier,
+        willBeInsertedIntoToolbar flag: Bool
+    ) -> NSToolbarItem? {
+        guard itemIdentifier == Self.sidebarToolbarItemIdentifier else { return nil }
+
+        let item = NSToolbarItem(itemIdentifier: itemIdentifier)
+        item.label = "Toggle Sidebar"
+        item.paletteLabel = "Toggle Sidebar"
+        item.toolTip = "Show or hide sidebar"
+        item.target = self
+        item.action = #selector(toggleMainWindowSidebar)
+        item.image = sidebarToolbarImage()
+        return item
     }
 }
 

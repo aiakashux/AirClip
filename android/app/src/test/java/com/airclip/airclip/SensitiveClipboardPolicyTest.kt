@@ -128,8 +128,8 @@ class SensitiveClipboardPolicyTest {
                 SensitiveRuleAction.ALLOW,
             ),
         )
-        assertEquals(SensitiveRuleAction.ASK, SensitiveRuleAction.fromStoredValue(null))
-        assertEquals(SensitiveRuleAction.ASK, SensitiveRuleAction.fromStoredValue("invalid"))
+        assertEquals(SensitiveRuleAction.ALLOW, SensitiveRuleAction.fromStoredValue(null))
+        assertEquals(SensitiveRuleAction.ALLOW, SensitiveRuleAction.fromStoredValue("invalid"))
     }
 
     private fun assertCategory(

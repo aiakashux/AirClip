@@ -233,7 +233,7 @@ final class PairingClient {
                 deviceId: targetId, deviceName: targetName,
                 publicKey: targetPubKey, platform: "android"
             )
-            let allDevices = devices.filter { $0.deviceId != targetId } + [newPeer]
+            let allDevices = devices.filter { $0.deviceId != targetId && $0.deviceId != myId } + [newPeer]
             onSuccess(airClipId, allDevices)
         }
     }

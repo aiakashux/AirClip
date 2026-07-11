@@ -81,18 +81,21 @@ object PairingClient {
                             val airClipId = msg["airclip_id"] as? String
                                 ?: return onError("missing airclip_id in pair_ok")
 
-                            @Suppress("UNCHECKED_CAST")
-                            val rawDevices = msg["all_devices"] as? List<Map<String, String>>
-                                ?: emptyList()
+                            val rawDevices = msg["all_devices"] as? List<*> ?: emptyList<Any>()
 
-                            val devices = rawDevices.map { d ->
+                            val devices = rawDevices.mapNotNull { rawDevice ->
+                                val d = rawDevice as? Map<*, *> ?: return@mapNotNull null
                                 PairedDevice(
-                                    deviceId   = d["device_id"]   ?: "",
-                                    deviceName = d["device_name"] ?: "",
-                                    publicKey  = d["public_key"]  ?: "",
-                                    platform   = d["platform"]    ?: "",
+                                    deviceId   = d["device_id"]?.toString().orEmpty(),
+                                    deviceName = d["device_name"]?.toString().orEmpty(),
+                                    publicKey  = d["public_key"]?.toString().orEmpty(),
+                                    platform   = d["platform"]?.toString().orEmpty(),
                                 )
-                            }.filter { it.deviceId.isNotEmpty() && it.publicKey.isNotEmpty() }
+                            }.filter {
+                                it.deviceId.isNotEmpty() &&
+                                    it.publicKey.isNotEmpty() &&
+                                    it.deviceId != myDeviceId
+                            }
 
                             Log.d(TAG, "pair_ok — airclip_id=${airClipId.take(8)} devices=${devices.size}")
                             webSocket.close(1000, "bye")
@@ -168,7 +171,7 @@ object PairingClient {
     }
 
     /**
-     * Probe a specific host with an 8-digit code (for manual code entry flow).
+     * Probe a specific host with a 6-digit code (for manual code entry flow).
      * Responds via [onFound] if the code matches, [onError] otherwise.
      */
     fun probeHostForCode(

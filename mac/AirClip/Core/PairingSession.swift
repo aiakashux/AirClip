@@ -21,7 +21,7 @@ struct PairingPayload: Codable {
 
 /// Manages the ephemeral pairing session for this device.
 ///
-/// - Generates an 8-digit OTP refreshed every 60 s silently.
+/// - Generates a 6-digit OTP refreshed every 60 s silently.
 /// - Renders a QR code (via Core Image) embedding airclip_id + device identity + OTP.
 /// - `verifyCode(_:)` used by PeerConnection to validate incoming pair_request / pair_probe.
 @MainActor
@@ -68,13 +68,13 @@ final class PairingSession: ObservableObject {
     // MARK: - Verification
 
     func verifyCode(_ code: String) -> Bool {
-        payload?.code == code.trimmingCharacters(in: .whitespaces)
+        payload?.code == Self.normalizedCode(code)
     }
 
     // MARK: - Private
 
     private func refresh(deviceId: String, publicKey: String) {
-        let code = String(format: "%08d", Int.random(in: 0...99_999_999))
+        let code = String(format: "%06d", Int.random(in: 0...999_999))
         let p = PairingPayload(
             airclip_id:     AirClipIdentity.shared.airClipId,
             device_id:   deviceId,
@@ -91,6 +91,10 @@ final class PairingSession: ObservableObject {
             let img = PairingSession.generateQR(from: p)
             await MainActor.run { [weak self] in self?.qrImage = img }
         }
+    }
+
+    nonisolated static func normalizedCode(_ code: String) -> String {
+        code.filter(\.isNumber)
     }
 
     // MARK: - Network helpers

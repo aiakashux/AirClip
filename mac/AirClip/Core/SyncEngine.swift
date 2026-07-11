@@ -41,10 +41,19 @@ final class SyncEngine: ObservableObject {
         isConnected = false
     }
 
+    func reconnect() {
+        guard AirClipIdentity.shared.isPaired,
+              SyncModeStore.shared.mode.keepsLanServiceRunning
+        else { return }
+
+        disconnect()
+        connect()
+    }
+
     // MARK: - Outbound
 
     func sendClipboard(packet: ClipboardPacket, sensitiveOverride: Bool = false) {
-        guard SyncModeStore.shared.mode.allowsManualSend else { return }
+        guard SyncModeStore.shared.mode.allowsOutboundSync else { return }
         if !sensitiveOverride {
             let assessment = SensitiveClipboardClassifier.classify(packet.text)
             if let finding = assessment.primaryFinding {

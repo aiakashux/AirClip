@@ -51,6 +51,7 @@ object SyncEngine {
     private var connectJob: Job? = null
     private var peerCountJob: Job? = null
     private var heartbeatJob: Job? = null
+    private var localActivityMs: Long = 0L
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
 
@@ -70,8 +71,31 @@ object SyncEngine {
                 scope.launch { AirClipIdentity.touchDevice(ctx, deviceId) }
             }
         }
+        PeerManager.onPeerActivity = { deviceId, timestampMs ->
+            appContext?.let { ctx ->
+                scope.launch { AirClipIdentity.markDeviceActive(ctx, deviceId, timestampMs) }
+            }
+        }
         PeerManager.onPeerRegistered = { peer ->
+            appContext?.let { ctx ->
+                scope.launch {
+                    val existing = AirClipIdentity.pairedDevices[peer.deviceId]
+                    AirClipIdentity.addOrUpdateDevice(
+                        ctx,
+                        PairedDevice(
+                            deviceId = peer.deviceId,
+                            deviceName = peer.deviceName.ifBlank { existing?.deviceName ?: peer.deviceId.take(8) },
+                            publicKey = peer.publicKey,
+                            platform = peer.platform.ifBlank { existing?.platform ?: "" },
+                            lastSeenMs = System.currentTimeMillis(),
+                            lastActiveMs = existing?.lastActiveMs ?: 0L,
+                            wifiNetwork = peer.wifiNetwork ?: existing?.wifiNetwork,
+                        )
+                    )
+                }
+            }
             pushHistoryToPeer(peer)
+            pushLocalActivityToPeer(peer)
         }
     }
 
@@ -152,6 +176,20 @@ object SyncEngine {
         } ?: false
     }
 
+    fun refreshHistorySync() {
+        val ctx = appContext ?: return
+        loadHistory(ctx)
+        PeerManager.connectedPeersSnapshot().forEach { peer ->
+            pushHistoryToPeer(peer)
+        }
+    }
+
+    fun markLocalActivity() {
+        if (!AirClipIdentity.isPaired) return
+        localActivityMs = System.currentTimeMillis()
+        PeerManager.broadcastAppActivity(localActivityMs)
+    }
+
     // ── Sending ───────────────────────────────────────────────────────────────
 
     /**
@@ -163,6 +201,7 @@ object SyncEngine {
             Log.d(TAG, "Clip send blocked by sync mode")
             return
         }
+        markLocalActivity()
         if (!sensitiveOverride) {
             val assessment = SensitiveClipboardClassifier.classify(text)
             val action = assessment.primaryFinding
@@ -216,6 +255,54 @@ object SyncEngine {
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "sendClip error: ${e.message}")
+            }
+        }
+    }
+
+    fun sendImageClip(label: String, imageDataBase64: String) {
+        if (!Prefs.syncMode.allowsManualSend) {
+            Log.d(TAG, "Image clip send blocked by sync mode")
+            return
+        }
+        markLocalActivity()
+        scope.launch {
+            if (!Prefs.syncMode.allowsManualSend) return@launch
+            try {
+                val displayText = label.ifBlank { "Shared image" }
+                val hash = imageDataBase64.toByteArray(Charsets.UTF_8).sha256Hex()
+                if (recentHashes.isKnown(hash)) return@launch
+                recentHashes.record(hash)
+
+                val record = ClipItemRecord(
+                    messageId = "local-${UUID.randomUUID()}",
+                    seq = 0L,
+                    fromDeviceId = AirClipIdentity.deviceId ?: "self",
+                    timestampMs = System.currentTimeMillis(),
+                    cipherHash = hash.take(16),
+                    preview = displayText.take(40),
+                    contentText = displayText,
+                    kind = ClipKind.IMAGE.name,
+                    imageDataBase64 = imageDataBase64,
+                )
+                appContext?.let { ctx ->
+                    val updated = ClipHistoryStore.merge(ctx, listOf(record))
+                    _clipHistory.value = updated
+                }
+
+                val peers = PeerManager.connectedCount.value
+                if (peers > 0) {
+                    val plain = ClipboardWirePayload.encode(record).toByteArray(Charsets.UTF_8)
+                    PeerManager.broadcast(plain)
+                    appContext?.let { ctx ->
+                        WidgetState.save(ctx, WidgetState.SYNCED)
+                        WidgetState.notifyWidgets(ctx)
+                    }
+                    Log.d(TAG, "Image clip sent hash=${hash.take(12)} peers=$peers")
+                } else {
+                    Log.d(TAG, "Image clip saved locally (no peers) hash=${hash.take(12)}")
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "sendImageClip error: ${e.message}")
             }
         }
     }
@@ -346,6 +433,20 @@ object SyncEngine {
         }
     }
 
+    private fun pushLocalActivityToPeer(peer: com.airclip.airclip.lan.Peer) {
+        val timestampMs = localActivityMs.takeIf { it > 0L } ?: return
+        runCatching {
+            peer.send(
+                PeerManager.gson.toJson(
+                    mapOf(
+                        "type" to "app_activity",
+                        "ts" to timestampMs.toString(),
+                    )
+                )
+            )
+        }
+    }
+
     // ── Suppress echo on tap-to-copy ─────────────────────────────────────────
 
     /**
@@ -372,6 +473,12 @@ object SyncEngine {
             _clipHistory.value = emptyList()
         }
     }
+
+    suspend fun clearLocalSession(context: Context) {
+        ClipHistoryStore.clear(context)
+        recentHashes.clear()
+        _clipHistory.value = emptyList()
+    }
 }
 
 // ── SHA-256 utility ───────────────────────────────────────────────────────────
@@ -391,5 +498,9 @@ private class RecentHashSet(private val maxSize: Int = 50) {
         if (hashes.contains(hash)) return
         hashes.addLast(hash)
         if (hashes.size > maxSize) hashes.removeFirst()
+    }
+
+    @Synchronized fun clear() {
+        hashes.clear()
     }
 }

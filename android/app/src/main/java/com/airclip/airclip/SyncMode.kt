@@ -23,7 +23,7 @@ enum class SyncMode(
 
     companion object {
         fun fromStoredValue(value: String?): SyncMode =
-            entries.firstOrNull { it.name == value } ?: MANUAL_ONLY
+            entries.firstOrNull { it.name == value } ?: AUTO
     }
 }
 

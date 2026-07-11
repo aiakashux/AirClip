@@ -29,7 +29,6 @@ final class PeerManager: ObservableObject {
     func isTrusted(airClipId: String, deviceId: String) -> Bool {
         guard let myAirClipId = AirClipIdentity.shared.airClipId else { return false }
         return airClipId == myAirClipId
-            && AirClipIdentity.shared.pairedDevices[deviceId] != nil
     }
 
     // MARK: - Peer lifecycle
@@ -58,20 +57,21 @@ final class PeerManager: ObservableObject {
         pending.removeValue(forKey: peer.id)
         pendingHints.remove(deviceId)
 
-        guard AirClipIdentity.shared.pairedDevices[deviceId] != nil else {
-            peer.close()
-            updateCount()
-            return
-        }
+        let device = AirClipIdentity.shared.pairedDevices[deviceId]
 
+        var didRegisterNewPeer = false
         if let existing = peers[deviceId] {
             // Keep incoming (server-side) connection; close duplicate.
             if peer.isIncoming { existing.close(); peers[deviceId] = peer }
             else               { peer.close() }
         } else {
             peers[deviceId] = peer
+            didRegisterNewPeer = true
         }
         updateCount()
+        if didRegisterNewPeer, let device {
+            DeviceNotificationCoordinator.shared.notifyDeviceConnectedOnce(device)
+        }
     }
 
     func disconnectDevice(_ deviceId: String, notifyRemote: Bool = false) {
@@ -84,6 +84,12 @@ final class PeerManager: ObservableObject {
             }
         }
         updateCount()
+    }
+
+    func broadcastDeviceRemoval(targetDeviceId: String) {
+        for peer in peers.values {
+            peer.sendDeviceRemoved(targetDeviceId: targetDeviceId)
+        }
     }
 
     func removePeer(id: UUID) {

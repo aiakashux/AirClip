@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#000000">
+
+    <com.journeyapps.barcodescanner.DecoratedBarcodeView
+        android:id="@+id/zxing_barcode_scanner"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        app:zxing_preview_scaling_strategy="centerCrop"
+        app:zxing_use_texture_view="false" />
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#14000000" />
+
+    <ImageView
+        android:id="@+id/airclip_scanner_target"
+        android:layout_width="292dp"
+        android:layout_height="292dp"
+        android:layout_gravity="center"
+        android:contentDescription="@null"
+        android:src="@drawable/ic_airclip_scanner_target" />
+
+    <ImageButton
+        android:id="@+id/airclip_scanner_back_button"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_gravity="top|start"
+        android:layout_marginStart="16dp"
+        android:layout_marginTop="24dp"
+        android:background="@drawable/airclip_scanner_button_bg"
+        android:contentDescription="Close scanner"
+        android:elevation="6dp"
+        android:padding="13dp"
+        android:src="@drawable/ic_airclip_arrow_left"
+        android:tint="#FF202327" />
+</FrameLayout>

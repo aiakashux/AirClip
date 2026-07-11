@@ -107,21 +107,7 @@ struct PopoverView: View {
     // MARK: - Empty State
 
     private var emptyState: some View {
-        VStack(spacing: 10) {
-            AirClipIcon(.clipboard, size: 18)
-                .foregroundColor(.textSecondary)
-                .frame(width: 32, height: 32)
-                .background(
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .fill(Color.hoverFill)
-                )
-            Text("No recent clips")
-                .font(.system(size: 13, weight: .medium))
-                .foregroundColor(.textPrimary)
-            Text("Copied text will appear here.")
-                .font(.airClipCaption)
-                .foregroundColor(.textSecondary)
-        }
+        AirClipFigmaEmptyState()
         .frame(maxWidth: .infinity)
         .frame(height: PopoverMetrics.emptyHeight)
         .background(
@@ -388,25 +374,25 @@ private struct ClipCard: View {
     }
 
     private var cardGradientTop: Color {
-        if isDarkMode { return isHovered ? Color(hex: "#30343D") : Color(hex: "#22242A") }
-        return isHovered ? Color(hex: "#F8FAFF") : Color.white
+        if isDarkMode { return isHovered ? Color(hex: "#29273A") : Color(hex: "#22242A") }
+        return isHovered ? Color(hex: "#F5F3FF") : Color.white
     }
 
     private var cardGradientBottom: Color {
-        if isDarkMode { return isHovered ? Color(hex: "#252A34") : Color(hex: "#1B1D22") }
-        return isHovered ? Color(hex: "#EEF3FA") : Color(hex: "#F9FAFA")
+        if isDarkMode { return isHovered ? Color(hex: "#242235") : Color(hex: "#1B1D22") }
+        return isHovered ? Color(hex: "#EFECFF") : Color(hex: "#F9FAFA")
     }
 
     private var cardBorderColor: Color {
         if isDarkMode {
-            return isHovered ? Color.white.opacity(0.24) : Color.white.opacity(0.10)
+            return isHovered ? Color(hex: "#5647F2").opacity(0.32) : Color.white.opacity(0.10)
         }
-        return isHovered ? Color(hex: "#DDE6F2").opacity(0.95) : Color(hex: "#FAFAFA").opacity(0.70)
+        return isHovered ? Color(hex: "#5647F2").opacity(0.26) : Color(hex: "#FAFAFA").opacity(0.70)
     }
 
     private var cardShadowColor: Color {
         if isDarkMode { return Color.black.opacity(isHovered ? 0.36 : 0.28) }
-        return Color(hex: "#7C8EA8").opacity(isHovered ? 0.24 : 0.18)
+        return Color(hex: "#6D64B8").opacity(isHovered ? 0.18 : 0.12)
     }
 
     private var primaryTextColor: Color {
@@ -721,5 +707,8 @@ extension Notification.Name {
     static let panelWillOpen   = Notification.Name("com.airclip.panelWillOpen")
     static let panelWillClose  = Notification.Name("com.airclip.panelWillClose")
     static let openSettingsTab = Notification.Name("com.airclip.openSettingsTab")
+    static let openHomeTab     = Notification.Name("com.airclip.openHomeTab")
+    static let openDevicesTab  = Notification.Name("com.airclip.openDevicesTab")
+    static let toggleMainWindowSidebar = Notification.Name("com.airclip.toggleMainWindowSidebar")
     // authDidComplete is defined in OnboardingView.swift
 }

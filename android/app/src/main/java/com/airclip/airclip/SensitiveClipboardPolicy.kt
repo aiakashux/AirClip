@@ -45,7 +45,7 @@ enum class SensitiveRuleAction(val label: String) {
 
     companion object {
         fun fromStoredValue(value: String?): SensitiveRuleAction =
-            entries.firstOrNull { it.name == value } ?: ASK
+            entries.firstOrNull { it.name == value } ?: ALLOW
     }
 }
 

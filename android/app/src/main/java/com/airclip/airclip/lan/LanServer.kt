@@ -32,12 +32,12 @@ private const val PORT = 7878
  *   Server → Client: {"type":"auth_ok","device_id":"...","public_key":"..."}
  *
  * Pair wire format:
- *   Client → Server: {"type":"pair_request","code":"12345678","device_id":"...","device_name":"...",
+ *   Client → Server: {"type":"pair_request","code":"123456","device_id":"...","device_name":"...",
  *                      "public_key":"...","airclip_id":"..."}
  *   Server → Client: {"type":"pair_ok","airclip_id":"...","all_devices":[...]}
  *   or               {"type":"pair_reject","reason":"..."}
  *
- *   Client → Server: {"type":"pair_probe","code":"12345678"}
+ *   Client → Server: {"type":"pair_probe","code":"123456"}
  *   Server → Client: {"type":"pair_info","device_id":"...","device_name":"...","public_key":"..."}
  *   or               {"type":"pair_reject","reason":"invalid_code"}
  */
@@ -135,9 +135,15 @@ object LanServer {
             val peerPubKey = msg["public_key"] ?: return reject(conn, "missing public_key")
 
             if (!PeerManager.isTrusted(peerAirClipId, peerId)) {
-                Log.w(TAG, "Auth rejected: untrusted peer ${peerId.take(8)}")
-                conn.close()
-                return
+                if (!AirClipIdentity.isPaired && PairingSession.current != null) {
+                    scope.launch {
+                        dispatchPairAccepted(peerAirClipId, peerId, msg["device_name"] ?: peerId, peerPubKey)
+                    }
+                } else {
+                    Log.w(TAG, "Auth rejected: untrusted peer ${peerId.take(8)}")
+                    conn.close()
+                    return
+                }
             }
 
             val myId  = AirClipIdentity.deviceId  ?: return conn.close()
@@ -147,13 +153,18 @@ object LanServer {
                 "type"       to "auth_ok",
                 "device_id"  to myId,
                 "public_key" to myKey,
+                "device_name" to AirClipIdentity.deviceName,
+                "platform" to "android",
             )))
             val connectionId = java.util.UUID.randomUUID().toString()
             connToPeer[conn] = ConnectionPeer(peerId, connectionId)
 
             PeerManager.registerPeer(Peer(
                 deviceId   = peerId,
+                deviceName = msg["device_name"] ?: "",
                 publicKey  = peerPubKey,
+                platform   = msg["platform"] ?: "",
+                wifiNetwork = msg["ssid"],
                 isIncoming = true,
                 connectionId = connectionId,
                 sendFn     = { conn.send(it) },
@@ -187,7 +198,9 @@ object LanServer {
             Log.d(TAG, "pair_request accepted from ${peerId.take(8)}")
 
             // Gather our current trusted device list to hand to the new member
-            val allDevices = AirClipIdentity.pairedDevices.values.map { d ->
+            val allDevices = AirClipIdentity.pairedDevices.values
+                .filter { it.deviceId != peerId }
+                .map { d ->
                 mapOf(
                     "device_id"   to d.deviceId,
                     "device_name" to d.deviceName,
@@ -277,6 +290,10 @@ object LanServer {
                     }
                     "heartbeat_ack" -> {
                         PeerManager.markPeerSeen(fromId)
+                    }
+                    "app_activity" -> {
+                        val ts = msg["ts"]?.toLongOrNull() ?: System.currentTimeMillis()
+                        PeerManager.markPeerActivity(fromId, ts)
                     }
                     DeviceRemovalNotice.TYPE -> {
                         if (DeviceRemovalNotice.targetsCurrentDevice(msg, AirClipIdentity.deviceId)) {

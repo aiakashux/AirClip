@@ -143,6 +143,17 @@ final class LocalHistoryStore {
 
     func insert(_ packet: ClipboardPacket, fromDeviceId: String, isLocal: Bool) {
         let ctx = container.mainContext
+        let descriptor = FetchDescriptor<ClipboardItem>(
+            sortBy: [SortDescriptor(\.receivedAt, order: .reverse)]
+        )
+        let existingItems = (try? ctx.fetch(descriptor)) ?? []
+        if packet.kind == .image {
+            let fingerprint = packet.fingerprint
+            if existingItems.contains(where: { $0.clipboardPacket.fingerprint == fingerprint }) {
+                return
+            }
+        }
+
         let item = ClipboardItem(
             text: packet.text,
             kindRaw: packet.kind.rawValue,
@@ -177,8 +188,13 @@ final class LocalHistoryStore {
 
         let fingerprint = packet.fingerprint
         let alreadyMerged = existingItems.contains { item in
-            item.fromDeviceId == fromDeviceId &&
-                abs(item.receivedAt.timeIntervalSince(receivedAt)) <= 2 &&
+            (
+                packet.kind == .image ||
+                (
+                    item.fromDeviceId == fromDeviceId &&
+                        abs(item.receivedAt.timeIntervalSince(receivedAt)) <= 2
+                )
+            ) &&
                 item.clipboardPacket.fingerprint == fingerprint
         }
         guard !alreadyMerged else { return }
