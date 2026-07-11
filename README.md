@@ -1,97 +1,75 @@
 # AirClip
 
-AirClip is a LAN-first clipboard sync app for Mac and Android.
+**Clipboard sync between your Mac and Android — private, local, encrypted.**
 
-The current MVP pairs a Mac and Android phone, syncs clipboard content privately over the local network, and gives the user clear control over what is sent, stored, paused, or removed.
+AirClip copies whatever you copy on one device and pastes it on the other. No cloud. No account. Works on your local Wi-Fi network using end-to-end encryption.
 
-## Current MVP
+---
 
-Active direction:
+## What It Does
 
-1. Mac + Android sync over LAN.
-2. Bonjour / Android NSD discovery with `_airclip._tcp`.
-3. Local WebSocket transport on TCP `7878`.
-4. Per-device encryption.
-5. Local clipboard history on each device.
-6. Global sync modes: Auto, Manual, Paused.
-7. Sensitive clipboard policy: Block, Ask, Allow.
-8. Device removal/re-pairing and presence diagnostics.
+- Copy on Mac → paste on Android (and vice versa)
+- Syncs text, links, and clipboard content automatically or on demand
+- Keeps a local history of your recent clips on each device
+- Blocks sensitive content (passwords, OTPs) from syncing — your rules
+- Pairs devices once via QR code, then works silently in the background
 
-The backend relay and Redis catch-up model are legacy. They are not the active clipboard transport for the current MVP.
+## How It Works
 
-## What Works
+AirClip discovers devices on the same Wi-Fi network using Bonjour (Mac) and NSD (Android). Clipboard packets are encrypted with NaCl sealed boxes before leaving the device. Nothing touches a server.
 
-Implemented or partially implemented:
-
-1. Mac and Android pairing.
-2. Bidirectional LAN clipboard sync.
-3. Manual send and paused mode.
-4. Sensitive clipboard protection.
-5. Local history with saved clips.
-6. Search, type filters, source labels, and relative time.
-7. History backfill after peer authentication.
-8. Heartbeat-based last-seen updates.
-9. Runtime diagnostics for listener/discovery failures.
-
-See [docs/ROADMAP_STATUS.md](docs/ROADMAP_STATUS.md) for the active implementation tracker and [docs/MANUAL_VALIDATION_QUEUE.md](docs/MANUAL_VALIDATION_QUEUE.md) for the manual test queue.
-
-## Not In Current MVP
-
-1. Default cloud relay.
-2. Permanent cloud clipboard history.
-3. Redis sequence-number catch-up.
-4. Server-side pending device approval.
-5. Windows support.
-6. iOS support.
-
-## Architecture
-
-```text
-Mac app
-  ├─ Clipboard monitor
-  ├─ Local history
-  ├─ Bonjour advertise/browse
-  └─ LAN WebSocket peer
-          │ encrypted clipboard packets
-          ▼
-Android app
-  ├─ Foreground sync service
-  ├─ Local history
-  ├─ Android NSD advertise/discover
-  └─ LAN WebSocket peer
+```
+Mac app                          Android app
+  ├─ Clipboard monitor             ├─ Foreground sync service
+  ├─ Bonjour advertise/browse      ├─ Android NSD advertise/discover
+  ├─ LAN WebSocket peer ◄────────► ├─ LAN WebSocket peer
+  ├─ Local history                 ├─ Local history
+  └─ Menu bar UI                   └─ Jetpack Compose UI
 ```
 
-The backend source remains in the repo, but treat it as legacy/future optional infrastructure unless a new product decision reactivates it.
+Transport: WebSocket over TCP `7878` · Discovery: `_airclip._tcp` · Encryption: NaCl sealed box
+
+---
+
+## Platforms
+
+| Platform | Status |
+|----------|--------|
+| macOS (menu bar app) | ✅ Active |
+| Android | ✅ Active |
+| iOS | 🔜 Planned |
+| Windows | 🔜 Planned |
+
+---
 
 ## Project Structure
 
-```text
-AirClip/
-  android/                 Android app
-  mac/                     macOS app
-  backend/                 Legacy backend source
-  docs/
-    PRODUCT_REQUIREMENTS.md
-    ROADMAP_STATUS.md
-    MANUAL_VALIDATION_QUEUE.md
-    VALIDATION_CHECKLIST.md
-    architecture.md
-    mvp-scope.md
-    protocol.md
 ```
+AirClip/
+  android/      Android app (Kotlin + Jetpack Compose)
+  mac/          macOS app (Swift + SwiftUI)
+  backend/      Legacy relay (not used in current MVP)
+  docs/         Architecture, protocol, product requirements
+  scripts/      Dev utilities
+```
+
+---
 
 ## Build
 
 ### Android
 
+Open `android/` in Android Studio, or run tests via:
+
 ```bash
 cd android
-JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' ./gradlew testDebugUnitTest
+JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' \
+  ./gradlew testDebugUnitTest
 ```
 
-Open `android/` in Android Studio to build and install the app.
-
 ### macOS
+
+Open `mac/AirClip.xcodeproj` in Xcode, or build from terminal:
 
 ```bash
 xcodebuild \
@@ -99,21 +77,31 @@ xcodebuild \
   -scheme AirClip \
   -configuration Debug \
   -destination 'platform=macOS' \
-  -disableAutomaticPackageResolution \
-  -onlyUsePackageVersionsFromResolvedFile \
   CODE_SIGNING_ALLOWED=NO \
   build
 ```
 
-Open `mac/AirClip.xcodeproj` in Xcode for local development.
+---
 
-## Documentation
+## Sync Modes
 
-Start here:
+| Mode | Behavior |
+|------|----------|
+| Auto | Every clipboard change syncs instantly |
+| Manual | You tap/click to send |
+| Paused | Nothing syncs until resumed |
 
-1. [Product requirements](docs/PRODUCT_REQUIREMENTS.md)
-2. [Roadmap status](docs/ROADMAP_STATUS.md)
-3. [Manual validation queue](docs/MANUAL_VALIDATION_QUEUE.md)
-4. [Architecture](docs/architecture.md)
-5. [Protocol](docs/protocol.md)
-6. [MVP scope](docs/mvp-scope.md)
+## Sensitive Clipboard Policy
+
+Detects passwords, OTPs, and credit card numbers. Per-device policy: **Block**, **Ask**, or **Allow**.
+
+---
+
+## Docs
+
+- [Architecture](docs/architecture.md)
+- [Protocol](docs/protocol.md)
+- [Product Requirements](docs/PRODUCT_REQUIREMENTS.md)
+- [Roadmap Status](docs/ROADMAP_STATUS.md)
+- [Security](SECURITY.md)
+- [Contributing](CONTRIBUTING.md)
