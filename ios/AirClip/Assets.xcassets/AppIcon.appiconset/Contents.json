@@ -1,6 +1,7 @@
 {
   "images" : [
     {
+      "filename" : "AirClipAppIcon-1024.png",
       "idiom" : "ios-marketing",
       "platform" : "ios",
       "size" : "1024x1024"

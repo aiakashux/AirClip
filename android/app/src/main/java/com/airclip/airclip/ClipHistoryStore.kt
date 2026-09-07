@@ -9,6 +9,8 @@ import androidx.datastore.preferences.preferencesDataStore
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.flow.firstOrNull
+import kotlin.math.abs
+import kotlin.math.roundToInt
 
 // One DataStore per application — singleton enforced by the delegate.
 private val Context.clipHistoryDataStore: DataStore<Preferences>
@@ -23,7 +25,7 @@ enum class ClipKind {
 fun detectClipKind(text: String): ClipKind {
     val t = text.trim()
     if (t.startsWith("http://") || t.startsWith("https://")) return ClipKind.URL
-    if (t.startsWith("#") && t.length in 4..9 && t.drop(1).all { it.isLetterOrDigit() }) return ClipKind.COLOR
+    if (parseClipboardColor(t) != null) return ClipKind.COLOR
     if (t.count { it == '@' } == 1) {
         val parts = t.split("@")
         if (parts.size == 2 && parts[1].contains('.') && !t.contains(' ') && t.length <= 254) {
@@ -33,10 +35,72 @@ fun detectClipKind(text: String): ClipKind {
     val imageExts = listOf("png", "jpg", "jpeg", "gif", "webp", "heic", "heif", "bmp", "tif", "tiff")
     val ext = t.substringAfterLast('.', missingDelimiterValue = "").lowercase()
     if (ext in imageExts || t.startsWith("data:image/")) return ClipKind.IMAGE
-    val keywords = listOf("fun ", "let ", "var ", "return ", "class ", "struct ", "def ", "const ", "function ", "import ", "->", "{")
-    if (keywords.any { t.contains(it) }) return ClipKind.CODE
     return ClipKind.TEXT
 }
+
+internal fun parseClipboardColor(text: String): Long? {
+    val value = text.trim()
+    parseHexColor(value)?.let { return it }
+
+    val rgb = Regex("""(?i)^rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})(?:\s*,\s*(0|1|0?\.\d+))?\s*\)$""")
+        .matchEntire(value)
+    if (rgb != null) {
+        val channels = rgb.groupValues.drop(1).take(3).map(String::toInt)
+        if (channels.any { it !in 0..255 }) return null
+        val alpha = rgb.groupValues[4].takeIf(String::isNotEmpty)?.toFloatOrNull() ?: 1f
+        if (alpha !in 0f..1f) return null
+        return argb((alpha * 255).roundToInt(), channels[0], channels[1], channels[2])
+    }
+
+    val hsl = Regex("""(?i)^hsla?\(\s*(-?\d+(?:\.\d+)?)\s*,\s*(\d+(?:\.\d+)?)%\s*,\s*(\d+(?:\.\d+)?)%(?:\s*,\s*(0|1|0?\.\d+))?\s*\)$""")
+        .matchEntire(value) ?: return null
+    val saturation = hsl.groupValues[2].toFloatOrNull()?.div(100f) ?: return null
+    val lightness = hsl.groupValues[3].toFloatOrNull()?.div(100f) ?: return null
+    val alpha = hsl.groupValues[4].takeIf(String::isNotEmpty)?.toFloatOrNull() ?: 1f
+    if (saturation !in 0f..1f || lightness !in 0f..1f || alpha !in 0f..1f) return null
+
+    val hue = ((hsl.groupValues[1].toFloat() % 360f) + 360f) % 360f
+    val chroma = (1f - abs(2f * lightness - 1f)) * saturation
+    val x = chroma * (1f - abs((hue / 60f) % 2f - 1f))
+    val (r1, g1, b1) = when {
+        hue < 60f -> Triple(chroma, x, 0f)
+        hue < 120f -> Triple(x, chroma, 0f)
+        hue < 180f -> Triple(0f, chroma, x)
+        hue < 240f -> Triple(0f, x, chroma)
+        hue < 300f -> Triple(x, 0f, chroma)
+        else -> Triple(chroma, 0f, x)
+    }
+    val m = lightness - chroma / 2f
+    return argb(
+        (alpha * 255).roundToInt(),
+        ((r1 + m) * 255).roundToInt(),
+        ((g1 + m) * 255).roundToInt(),
+        ((b1 + m) * 255).roundToInt(),
+    )
+}
+
+private fun parseHexColor(text: String): Long? {
+    val prefixed = text.startsWith("#") || text.startsWith("0x", ignoreCase = true)
+    val hex = when {
+        text.startsWith("#") -> text.drop(1)
+        text.startsWith("0x", ignoreCase = true) -> text.drop(2)
+        else -> text
+    }
+    if (hex.length !in setOf(3, 4, 6, 8) || hex.any { it.digitToIntOrNull(16) == null }) return null
+    if (!prefixed && (hex.length !in setOf(6, 8) || hex.none { it.lowercaseChar() in 'a'..'f' })) return null
+
+    val expanded = if (hex.length <= 4) hex.flatMap { listOf(it, it) }.joinToString("") else hex
+    val raw = expanded.toLong(16)
+    return if (expanded.length == 6) 0xFF000000L or raw else if (text.startsWith("0x", ignoreCase = true)) {
+        raw
+    } else {
+        val alpha = raw and 0xFF
+        (alpha shl 24) or (raw ushr 8)
+    }
+}
+
+private fun argb(alpha: Int, red: Int, green: Int, blue: Int): Long =
+    (alpha.toLong() shl 24) or (red.toLong() shl 16) or (green.toLong() shl 8) or blue.toLong()
 
 /**
  * One persisted clipboard item (received from a peer, or sent locally).
@@ -54,6 +118,7 @@ data class ClipItemRecord(
     val contentText: String? = null, // full plaintext for local clipboard/history actions; NEVER logged
     val kind: String = ClipKind.TEXT.name,
     val imageDataBase64: String? = null,
+    val imageFileName: String? = null,
     val isSaved: Boolean = false,
 ) {
     val displayText: String
@@ -70,10 +135,10 @@ object ClipHistoryStore {
     private val gson     = Gson()
     private val listType = object : TypeToken<List<ClipItemRecord>>() {}.type
 
-    const val MAX_ITEMS = 20
+    const val MAX_ITEMS = 500
     internal const val RECONCILIATION_WINDOW_MS = 2_000L
     internal const val MAX_PERSISTED_TEXT_CHARS = 16_384
-    internal const val MAX_HISTORY_JSON_CHARS = 1_500_000
+    internal const val MAX_HISTORY_JSON_CHARS = 8_000_000
 
     internal fun deduplicate(items: List<ClipItemRecord>): List<ClipItemRecord> {
         val deduplicated = mutableListOf<ClipItemRecord>()
@@ -97,10 +162,13 @@ object ClipHistoryStore {
                 val existing = deduplicated[existingIndex]
                 val shouldPreserveSaved = record.isSaved && !existing.isSaved
                 val shouldPreserveFullText = existing.contentText == null && record.contentText != null
-                if (shouldPreserveSaved || shouldPreserveFullText) {
+                val shouldPreserveImage = existing.imageFileName == null && record.imageFileName != null
+                if (shouldPreserveSaved || shouldPreserveFullText || shouldPreserveImage) {
                     deduplicated[existingIndex] = existing.copy(
                         isSaved = existing.isSaved || record.isSaved,
                         contentText = existing.contentText ?: record.contentText,
+                        imageDataBase64 = existing.imageDataBase64 ?: record.imageDataBase64,
+                        imageFileName = existing.imageFileName ?: record.imageFileName,
                     )
                 }
             }
@@ -162,9 +230,11 @@ object ClipHistoryStore {
         } catch (_: Exception) {
             emptyList()
         }
-        return runCatching {
+        val loaded = runCatching {
             prepareForStorage(prune(deduplicate(raw.mapNotNull(::sanitize))))
         }.getOrDefault(emptyList())
+        ImageClipboard.prunePersisted(context, loaded)
+        return loaded
     }
 
     /**
@@ -181,9 +251,10 @@ object ClipHistoryStore {
     suspend fun merge(context: Context, newItems: List<ClipItemRecord>): List<ClipItemRecord> {
         val existing = load(context)
         val savedById = existing.associateBy { it.messageId }.mapValues { it.value.isSaved }
+        val persistedNewItems = newItems.map { ImageClipboard.persist(context, it) }
         val merged = prepareForStorage(
             prune(
-                deduplicate(existing + newItems)
+                deduplicate(existing + persistedNewItems)
                     .map { record ->
                         record.copy(isSaved = savedById[record.messageId] == true || record.isSaved)
                     }
@@ -192,6 +263,7 @@ object ClipHistoryStore {
         context.clipHistoryDataStore.edit { prefs ->
             prefs[KEY_HISTORY] = gson.toJson(merged)
         }
+        ImageClipboard.prunePersisted(context, merged)
         return merged
     }
 
@@ -202,7 +274,9 @@ object ClipHistoryStore {
         context.clipHistoryDataStore.edit { prefs ->
             prefs[KEY_HISTORY] = gson.toJson(prune(updated))
         }
-        return prune(updated)
+        val pruned = prune(updated)
+        ImageClipboard.prunePersisted(context, pruned)
+        return pruned
     }
 
     /**
@@ -218,6 +292,7 @@ object ClipHistoryStore {
             if (updated.isEmpty()) prefs.remove(KEY_HISTORY)
             else prefs[KEY_HISTORY] = gson.toJson(updated)
         }
+        ImageClipboard.prunePersisted(context, updated)
         return updated
     }
 
@@ -231,12 +306,14 @@ object ClipHistoryStore {
             if (updated.isEmpty()) prefs.remove(KEY_HISTORY)
             else prefs[KEY_HISTORY] = gson.toJson(updated)
         }
+        ImageClipboard.prunePersisted(context, updated)
         return updated
     }
 
     /** Clear persisted history from disk (called on logout or device session reset). */
     suspend fun clear(context: Context) {
         context.clipHistoryDataStore.edit { it.remove(KEY_HISTORY) }
+        ImageClipboard.clearPersisted(context)
     }
 
     private fun sanitize(record: ClipItemRecord): ClipItemRecord? = runCatching {
@@ -246,6 +323,7 @@ object ClipHistoryStore {
         val preview = record.preview
         val kind = runCatching { ClipKind.valueOf(record.kind) }
             .getOrElse { detectClipKind(record.displayText) }
+            .let { if (it == ClipKind.CODE) ClipKind.TEXT else it }
         record.copy(
             messageId = messageId,
             fromDeviceId = fromDeviceId,

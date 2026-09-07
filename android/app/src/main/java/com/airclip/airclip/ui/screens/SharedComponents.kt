@@ -5,6 +5,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
@@ -26,6 +27,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
@@ -42,8 +44,9 @@ fun AirClipEmptyState(
     @DrawableRes iconRes: Int,
     text: String,
     modifier: Modifier = Modifier,
-    textColor: Color = Color(0xFFA0A5B1),
+    textColor: Color? = null,
 ) {
+    val c = LocalAirClipColors.current
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -64,7 +67,7 @@ fun AirClipEmptyState(
             fontSize = 16.sp,
             lineHeight = 24.sp,
             fontWeight = FontWeight.Normal,
-            color = textColor,
+            color = textColor ?: c.textTertiary,
             textAlign = TextAlign.Center,
             modifier = Modifier.width(283.dp),
         )
@@ -178,6 +181,7 @@ fun AirClipDropdownMenu(
 ) {
     if (!expanded) return
 
+    val c = LocalAirClipColors.current
     val menuShape = RoundedCornerShape(16.dp)
     val yOffset = with(LocalDensity.current) { 8.dp.roundToPx() }
     val shadowGutter = 18.dp
@@ -203,7 +207,7 @@ fun AirClipDropdownMenu(
                         clip = false,
                     )
                     .clip(menuShape)
-                    .background(Color.White),
+                    .background(c.bgFloating),
             ) {
                 Column(
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
@@ -229,7 +233,8 @@ private fun AirClipDropdownRow(
     selected: Boolean,
     onDismissRequest: () -> Unit,
 ) {
-    val textColor = item.color ?: Color.Black
+    val c = LocalAirClipColors.current
+    val textColor = item.color ?: c.textPrimary
     Row(
         modifier = Modifier
             .width(204.dp)
@@ -237,7 +242,8 @@ private fun AirClipDropdownRow(
             .clip(RoundedCornerShape(10.dp))
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
-                indication = null,
+                indication = LocalIndication.current,
+                role = Role.Button,
             ) {
                 item.onClick()
                 onDismissRequest()
@@ -259,7 +265,7 @@ private fun AirClipDropdownRow(
             Icon(
                 Icons.Outlined.Check,
                 contentDescription = null,
-                tint = Color.Black,
+                tint = c.textPrimary,
                 modifier = Modifier.size(24.dp),
             )
         } else {

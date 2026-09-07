@@ -35,7 +35,7 @@ class ClipboardWirePayloadTest {
         val decoded = ClipboardWirePayload.decode(plaintext)
 
         assertEquals(plaintext, decoded.text)
-        assertEquals(ClipKind.CODE, decoded.kind)
+        assertEquals(ClipKind.TEXT, decoded.kind)
     }
 
     @Test

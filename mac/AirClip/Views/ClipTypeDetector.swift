@@ -29,7 +29,8 @@ struct ClipboardPacket: Codable, Hashable {
     }
 
     var kind: ClipboardKind {
-        ClipboardKind(rawValue: kindRaw) ?? .text
+        let decoded = ClipboardKind(rawValue: kindRaw) ?? .text
+        return decoded == .code ? .text : decoded
     }
 
     var imageData: Data? {
@@ -192,7 +193,6 @@ enum ClipType: String, Codable, CaseIterable {
         if t.hasPrefix("http://") || t.hasPrefix("https://") { return .url }
         if isColorHex(t) { return .color }
         if isEmail(t) { return .email }
-        if looksLikeCode(t) { return .code }
         return .text
     }
 
@@ -217,9 +217,4 @@ enum ClipType: String, Codable, CaseIterable {
         return domain.contains(".") && !t.contains(" ") && t.count <= 254
     }
 
-    private static func looksLikeCode(_ t: String) -> Bool {
-        let keywords = ["func ", "let ", "var ", "return ", "class ", "struct ",
-                        "def ", "const ", "function ", "import ", "->", "{"]
-        return keywords.contains { t.contains($0) }
-    }
 }

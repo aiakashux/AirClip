@@ -30,10 +30,10 @@ class SyncModeTest {
     }
 
     @Test
-    fun `missing or invalid stored value defaults to manual only`() {
-        assertEquals(SyncMode.MANUAL_ONLY, SyncMode.fromStoredValue(null))
-        assertEquals(SyncMode.MANUAL_ONLY, SyncMode.fromStoredValue(""))
-        assertEquals(SyncMode.MANUAL_ONLY, SyncMode.fromStoredValue("legacy"))
+    fun `missing or invalid stored value defaults to auto`() {
+        assertEquals(SyncMode.AUTO, SyncMode.fromStoredValue(null))
+        assertEquals(SyncMode.AUTO, SyncMode.fromStoredValue(""))
+        assertEquals(SyncMode.AUTO, SyncMode.fromStoredValue("legacy"))
     }
 
     @Test

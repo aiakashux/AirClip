@@ -14,7 +14,6 @@
 		AA0200000000000000000002 /* AppConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000002 /* AppConfig.swift */; };
 		AA0200000000000000000003 /* StatusBarController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000003 /* StatusBarController.swift */; };
 		AA0200000000000000000004 /* PopoverView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000004 /* PopoverView.swift */; };
-		AA0200000000000000000005 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000005 /* SettingsView.swift */; };
 		AA0200000000000000000006 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000006 /* OnboardingView.swift */; };
 		AA0200000000000000000007 /* ClipboardMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000007 /* ClipboardMonitor.swift */; };
 		AA0200000000000000000008 /* CryptoManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000008 /* CryptoManager.swift */; };
@@ -54,7 +53,6 @@
 		AA0100000000000000000002 /* AppConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfig.swift; sourceTree = "<group>"; };
 		AA0100000000000000000003 /* StatusBarController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusBarController.swift; sourceTree = "<group>"; };
 		AA0100000000000000000004 /* PopoverView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PopoverView.swift; sourceTree = "<group>"; };
-		AA0100000000000000000005 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		AA0100000000000000000006 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
 		AA0100000000000000000007 /* ClipboardMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipboardMonitor.swift; sourceTree = "<group>"; };
 		AA0100000000000000000008 /* CryptoManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CryptoManager.swift; sourceTree = "<group>"; };
@@ -142,7 +140,6 @@
 			isa = PBXGroup;
 			children = (
 				AA0100000000000000000004 /* PopoverView.swift */,
-				AA0100000000000000000005 /* SettingsView.swift */,
 				AA0100000000000000000006 /* OnboardingView.swift */,
 				AA0100000000000000000011 /* SharedComponents.swift */,
 				AA010000000000000000001D /* AirClipIcon.swift */,
@@ -277,7 +274,6 @@
 				AA0200000000000000000002 /* AppConfig.swift in Sources */,
 				AA0200000000000000000003 /* StatusBarController.swift in Sources */,
 				AA0200000000000000000004 /* PopoverView.swift in Sources */,
-				AA0200000000000000000005 /* SettingsView.swift in Sources */,
 				AA0200000000000000000006 /* OnboardingView.swift in Sources */,
 				AA0200000000000000000007 /* ClipboardMonitor.swift in Sources */,
 				AA0200000000000000000008 /* CryptoManager.swift in Sources */,

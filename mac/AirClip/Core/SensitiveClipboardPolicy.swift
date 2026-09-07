@@ -82,7 +82,7 @@ enum SensitiveClipboardPolicy {
         case .ask:
             switch intent {
             case .automatic: return .block
-            case .manual: return .allow
+            case .manual: return .requireConfirmation
             }
         }
     }

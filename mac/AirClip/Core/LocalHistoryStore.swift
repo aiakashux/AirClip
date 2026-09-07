@@ -1,6 +1,30 @@
 import Foundation
 import SwiftData
 
+enum HistoryRetentionPolicy {
+    static let labels = ["1 day", "3 days", "7 days", "15 days", "30 days", "No time limit (500)"]
+    static let days = [1, 3, 7, 15, 30, 0]
+    static let maxItems = 500
+
+    static func selectedIndex(defaults: UserDefaults = .standard) -> Int {
+        guard let stored = defaults.object(forKey: "historyDepth") as? Int else {
+            setSelectedIndex(4, defaults: defaults)
+            return 4
+        }
+        guard defaults.integer(forKey: "historyDepthVersion") >= 2 else {
+            let migrated = [2, 4, 4, 5][min(max(stored, 0), 3)]
+            setSelectedIndex(migrated, defaults: defaults)
+            return migrated
+        }
+        return min(max(stored, 0), days.count - 1)
+    }
+
+    static func setSelectedIndex(_ index: Int, defaults: UserDefaults = .standard) {
+        defaults.set(min(max(index, 0), days.count - 1), forKey: "historyDepth")
+        defaults.set(2, forKey: "historyDepthVersion")
+    }
+}
+
 enum ClipboardSchemaV1: VersionedSchema {
     static var versionIdentifier: Schema.Version { .init(1, 0, 0) }
 
@@ -70,7 +94,8 @@ enum ClipboardSchemaV2: VersionedSchema {
         }
 
         var clipType: ClipType {
-            ClipType(rawValue: kindRaw) ?? ClipType.detect(text)
+            let decoded = ClipType(rawValue: kindRaw) ?? ClipType.detect(text)
+            return decoded == .code ? .text : decoded
         }
 
         var clipboardPacket: ClipboardPacket {
@@ -88,9 +113,32 @@ enum ClipboardMigrationPlan: SchemaMigrationPlan {
 
 typealias ClipboardItem = ClipboardSchemaV2.ClipboardItem
 
+struct ClipboardItemSnapshot {
+    let id: UUID
+    let text: String
+    let kindRaw: String
+    let imageData: Data?
+    let receivedAt: Date
+    let fromDeviceId: String
+    let isLocal: Bool
+    let isSaved: Bool
+
+    init(_ item: ClipboardItem) {
+        id = item.id
+        text = item.text
+        kindRaw = item.kindRaw
+        imageData = item.imageData
+        receivedAt = item.receivedAt
+        fromDeviceId = item.fromDeviceId
+        isLocal = item.isLocal
+        isSaved = item.isSaved
+    }
+}
+
 @MainActor
 final class LocalHistoryStore {
     static let shared = LocalHistoryStore()
+    static let maxItems = HistoryRetentionPolicy.maxItems
 
     let container: ModelContainer
 
@@ -143,13 +191,13 @@ final class LocalHistoryStore {
 
     func insert(_ packet: ClipboardPacket, fromDeviceId: String, isLocal: Bool) {
         let ctx = container.mainContext
-        let descriptor = FetchDescriptor<ClipboardItem>(
-            sortBy: [SortDescriptor(\.receivedAt, order: .reverse)]
-        )
-        let existingItems = (try? ctx.fetch(descriptor)) ?? []
         if packet.kind == .image {
-            let fingerprint = packet.fingerprint
-            if existingItems.contains(where: { $0.clipboardPacket.fingerprint == fingerprint }) {
+            let imageData = packet.imageData
+            let imageKind = ClipboardKind.image.rawValue
+            let descriptor = FetchDescriptor<ClipboardItem>(
+                predicate: #Predicate { $0.kindRaw == imageKind && $0.imageData == imageData }
+            )
+            if ((try? ctx.fetchCount(descriptor)) ?? 0) > 0 {
                 return
             }
         }
@@ -176,26 +224,34 @@ final class LocalHistoryStore {
         messageId: String
     ) {
         let ctx = container.mainContext
-        let descriptor = FetchDescriptor<ClipboardItem>(
-            sortBy: [SortDescriptor(\.receivedAt, order: .reverse)]
-        )
-        let existingItems = (try? ctx.fetch(descriptor)) ?? []
-
-        if let uuid = UUID(uuidString: messageId),
-           existingItems.contains(where: { $0.id == uuid }) {
-            return
+        if let uuid = UUID(uuidString: messageId) {
+            let descriptor = FetchDescriptor<ClipboardItem>(
+                predicate: #Predicate { $0.id == uuid }
+            )
+            if ((try? ctx.fetchCount(descriptor)) ?? 0) > 0 { return }
         }
 
-        let fingerprint = packet.fingerprint
-        let alreadyMerged = existingItems.contains { item in
-            (
-                packet.kind == .image ||
-                (
-                    item.fromDeviceId == fromDeviceId &&
-                        abs(item.receivedAt.timeIntervalSince(receivedAt)) <= 2
-                )
-            ) &&
-                item.clipboardPacket.fingerprint == fingerprint
+        let alreadyMerged: Bool
+        if packet.kind == .image {
+            let imageData = packet.imageData
+            let imageKind = ClipboardKind.image.rawValue
+            let descriptor = FetchDescriptor<ClipboardItem>(
+                predicate: #Predicate { $0.kindRaw == imageKind && $0.imageData == imageData }
+            )
+            alreadyMerged = ((try? ctx.fetchCount(descriptor)) ?? 0) > 0
+        } else {
+            let text = packet.text
+            let kind = packet.kind.rawValue
+            let earliest = receivedAt.addingTimeInterval(-2)
+            let latest = receivedAt.addingTimeInterval(2)
+            let descriptor = FetchDescriptor<ClipboardItem>(
+                predicate: #Predicate {
+                    $0.fromDeviceId == fromDeviceId &&
+                    $0.receivedAt >= earliest && $0.receivedAt <= latest &&
+                    $0.kindRaw == kind && $0.text == text
+                }
+            )
+            alreadyMerged = ((try? ctx.fetchCount(descriptor)) ?? 0) > 0
         }
         guard !alreadyMerged else { return }
 
@@ -222,6 +278,24 @@ final class LocalHistoryStore {
         try? ctx.save()
     }
 
+    func restore(_ snapshot: ClipboardItemSnapshot) {
+        let ctx = container.mainContext
+        let id = snapshot.id
+        let descriptor = FetchDescriptor<ClipboardItem>(predicate: #Predicate { $0.id == id })
+        guard ((try? ctx.fetchCount(descriptor)) ?? 0) == 0 else { return }
+        ctx.insert(ClipboardItem(
+            id: snapshot.id,
+            text: snapshot.text,
+            kindRaw: snapshot.kindRaw,
+            imageData: snapshot.imageData,
+            receivedAt: snapshot.receivedAt,
+            fromDeviceId: snapshot.fromDeviceId,
+            isLocal: snapshot.isLocal,
+            isSaved: snapshot.isSaved
+        ))
+        try? ctx.save()
+    }
+
     /// Prune unsaved items older than `days` days. Saved items are retained until the user removes them.
     func pruneToRetention(days: Int) {
         let ctx = container.mainContext
@@ -235,13 +309,13 @@ final class LocalHistoryStore {
         try? ctx.save()
     }
 
-    // Keep at most 100 items by deleting oldest unsaved clips first. Saved clips are protected.
+    // Keep at most 500 items by deleting oldest unsaved clips first. Saved clips are protected.
     private func evictOldItems(ctx: ModelContext) {
         let descriptor = FetchDescriptor<ClipboardItem>(
             sortBy: [SortDescriptor(\.receivedAt, order: .forward)]
         )
-        guard let all = try? ctx.fetch(descriptor), all.count > 100 else { return }
-        var remainingOverflow = all.count - 100
+        guard let all = try? ctx.fetch(descriptor), all.count > Self.maxItems else { return }
+        var remainingOverflow = all.count - Self.maxItems
         for item in all where !item.isSaved && remainingOverflow > 0 {
             ctx.delete(item)
             remainingOverflow -= 1

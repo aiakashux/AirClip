@@ -28,7 +28,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Build the menu bar
         StatusBarController.shared.setup()
 
+        let retentionDays = HistoryRetentionPolicy.days[HistoryRetentionPolicy.selectedIndex()]
+        if retentionDays > 0 {
+            LocalHistoryStore.shared.pruneToRetention(days: retentionDays)
+        }
+
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self,
+            selector: #selector(recoverAfterWake),
+            name: NSWorkspace.didWakeNotification,
+            object: nil
+        )
+
         // StatusBarController validates any stored session before starting sync.
+    }
+
+    @MainActor @objc private func recoverAfterWake() {
+        SyncModeStore.shared.recoverRuntime()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

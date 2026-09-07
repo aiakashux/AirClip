@@ -32,10 +32,13 @@ data class PairingPayload(
  */
 object PairingSession {
 
+    const val CODE_LIFETIME_MS = 60_000L
+
     private val gson     = Gson()
     private val _current = AtomicReference<PairingPayload?>(null)
     private val scope    = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var job: Job? = null
+    private var onPayloadChanged: ((PairingPayload) -> Unit)? = null
 
     val current: PairingPayload? get() = _current.get()
     val currentCode: String?     get() = _current.get()?.code
@@ -45,12 +48,14 @@ object PairingSession {
         deviceId: String,
         deviceName: String,
         publicKey: String,
+        onPayloadChanged: (PairingPayload) -> Unit = {},
     ) {
         stop()
+        this.onPayloadChanged = onPayloadChanged
         refresh(airClipId, deviceId, deviceName, publicKey)
         job = scope.launch {
             while (isActive) {
-                delay(60_000L)
+                delay(CODE_LIFETIME_MS)
                 refresh(airClipId, deviceId, deviceName, publicKey)
             }
         }
@@ -60,6 +65,12 @@ object PairingSession {
         job?.cancel()
         job = null
         _current.set(null)
+        onPayloadChanged = null
+    }
+
+    fun refreshNow() {
+        val current = _current.get() ?: return
+        refresh(current.airclip_id, current.device_id, current.device_name, current.public_key)
     }
 
     /** Returns true if [code] matches the current OTP. */
@@ -89,6 +100,8 @@ object PairingSession {
 
     private fun refresh(airClipId: String?, deviceId: String, deviceName: String, publicKey: String) {
         val code = (0..999_999).random().toString().padStart(PairingCode.LENGTH, '0')
-        _current.set(PairingPayload(airClipId, deviceId, deviceName, publicKey, code))
+        val payload = PairingPayload(airClipId, deviceId, deviceName, publicKey, code)
+        _current.set(payload)
+        onPayloadChanged?.invoke(payload)
     }
 }

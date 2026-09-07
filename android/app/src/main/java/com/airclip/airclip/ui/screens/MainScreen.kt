@@ -2,29 +2,21 @@ package com.airclip.airclip.ui.screens
 
 import androidx.annotation.DrawableRes
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.ExperimentalMaterialApi
-import androidx.compose.material.pullrefresh.PullRefreshIndicator
-import androidx.compose.material.pullrefresh.pullRefresh
-import androidx.compose.material.pullrefresh.rememberPullRefreshState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -34,6 +26,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -43,12 +38,12 @@ import com.airclip.airclip.ClipItemRecord
 import com.airclip.airclip.PairedDevice
 import com.airclip.airclip.R
 import com.airclip.airclip.MainViewModel
+import com.airclip.airclip.SensitiveCategory
 import com.airclip.airclip.SensitiveRuleAction
 import com.airclip.airclip.SyncMode
 import com.airclip.airclip.lan.LanRuntimeDiagnostic
 import com.airclip.airclip.ui.theme.*
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 
 private enum class Tab { HOME, DEVICES, SETTINGS }
 
@@ -64,11 +59,6 @@ private val navItems = listOf(
     NavItem(Tab.DEVICES, R.drawable.ic_nav_devices_sync_stroke, R.drawable.ic_nav_devices_sync_solid, "Devices"),
     NavItem(Tab.SETTINGS, R.drawable.ic_nav_settings_01_stroke, R.drawable.ic_nav_settings_01_solid, "Settings"),
 )
-
-private val NavBarBorder = Color(0xFFEEF0F0)
-private val NavActiveColor = Color(0xFF2870DC)
-private val NavInactiveColor = Color(0xFF655B76)
-private val NavActiveContainer = Color(0xFFF7F6FA)
 
 @Immutable
 data class ClipboardTabUiState(
@@ -91,9 +81,9 @@ data class SettingsTabUiState(
     val historyDepth: Int,
     val syncMode: SyncMode,
     val sensitiveMasterAction: SensitiveRuleAction,
+    val sensitiveRules: Map<SensitiveCategory, SensitiveRuleAction>,
 )
 
-@OptIn(ExperimentalMaterialApi::class)
 @Composable
 fun MainScreen(viewModel: MainViewModel, uiState: MainViewModel.UiState) {
     val c = LocalAirClipColors.current
@@ -101,10 +91,7 @@ fun MainScreen(viewModel: MainViewModel, uiState: MainViewModel.UiState) {
         mutableStateOf(if (uiState.openDevicesOnFirstLaunch) Tab.DEVICES else Tab.HOME)
     }
     val snackbarHostState = remember { SnackbarHostState() }
-    val refreshScope = rememberCoroutineScope()
-    var isRefreshing by remember { mutableStateOf(false) }
     var showDeviceAddedToast by remember { mutableStateOf(false) }
-    val easeOut = CubicBezierEasing(0.23f, 1f, 0.32f, 1f)
     val homeListState = rememberLazyListState()
     val devicesListState = rememberLazyListState()
     val clipboardTabState = remember(uiState.clipHistory, uiState.syncMode) {
@@ -133,39 +120,16 @@ fun MainScreen(viewModel: MainViewModel, uiState: MainViewModel.UiState) {
         uiState.historyDepth,
         uiState.syncMode,
         uiState.sensitiveMasterAction,
+        uiState.sensitiveRules,
     ) {
         SettingsTabUiState(
             appearanceSetting = uiState.appearanceSetting,
             historyDepth = uiState.historyDepth,
             syncMode = uiState.syncMode,
             sensitiveMasterAction = uiState.sensitiveMasterAction,
+            sensitiveRules = uiState.sensitiveRules,
         )
     }
-    val refreshTabAvailable = currentTab == Tab.HOME || currentTab == Tab.DEVICES
-    val refreshEnabled by remember {
-        derivedStateOf {
-            when (currentTab) {
-                Tab.HOME -> homeListState.firstVisibleItemIndex == 0 &&
-                        homeListState.firstVisibleItemScrollOffset == 0
-                Tab.DEVICES -> devicesListState.firstVisibleItemIndex == 0 &&
-                        devicesListState.firstVisibleItemScrollOffset == 0
-                Tab.SETTINGS -> false
-            }
-        }
-    }
-    val refreshState = rememberPullRefreshState(
-        refreshing = isRefreshing,
-        onRefresh = {
-            refreshScope.launch {
-                if (isRefreshing) return@launch
-                isRefreshing = true
-                viewModel.onRefreshDevices()
-                delay(450)
-                isRefreshing = false
-            }
-        },
-    )
-
     LaunchedEffect(uiState.openDevicesOnFirstLaunch) {
         if (uiState.openDevicesOnFirstLaunch) {
             currentTab = Tab.DEVICES
@@ -204,39 +168,12 @@ fun MainScreen(viewModel: MainViewModel, uiState: MainViewModel.UiState) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
-                .then(if (refreshTabAvailable) Modifier.pullRefresh(refreshState, enabled = refreshEnabled) else Modifier),
+                .padding(padding),
         ) {
-            AnimatedContent(
-                targetState = currentTab,
-                modifier = Modifier.fillMaxSize(),
-                transitionSpec = {
-                    val forward = targetState.ordinal > initialState.ordinal
-                    (slideInHorizontally(tween(220, easing = easeOut)) { if (forward) it / 10 else -it / 10 } +
-                            fadeIn(tween(180, easing = easeOut))).togetherWith(
-                        slideOutHorizontally(tween(140, easing = easeOut)) { if (forward) -it / 14 else it / 14 } +
-                                fadeOut(tween(120))
-                    )
-                },
-                label = "TabTransition",
-            ) { tab ->
-                when (tab) {
-                    Tab.HOME     -> ClipboardScreen(viewModel, clipboardTabState, listState = homeListState)
-                    Tab.DEVICES  -> DevicesScreen(viewModel, devicesTabState, listState = devicesListState)
-                    Tab.SETTINGS -> SettingsScreen(viewModel, settingsTabState)
-                }
-            }
-
-            if (refreshTabAvailable) {
-                PullRefreshIndicator(
-                    refreshing = isRefreshing,
-                    state = refreshState,
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .padding(top = 8.dp),
-                    backgroundColor = c.bgFloating,
-                    contentColor = c.accent,
-                )
+            when (currentTab) {
+                Tab.HOME     -> ClipboardScreen(viewModel, clipboardTabState, listState = homeListState)
+                Tab.DEVICES  -> DevicesScreen(viewModel, devicesTabState, listState = devicesListState)
+                Tab.SETTINGS -> SettingsScreen(viewModel, settingsTabState)
             }
 
             DeviceAddedToast(
@@ -318,18 +255,19 @@ private fun AirClipBottomNavigation(
     currentTab: Tab,
     onTabSelected: (Tab) -> Unit,
 ) {
+    val c = LocalAirClipColors.current
     val navigationBarBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .height(64.dp + navigationBarBottom)
-            .background(Color.White),
+            .background(c.bgBase),
     ) {
         HorizontalDivider(
             modifier = Modifier.align(Alignment.TopCenter),
             thickness = 1.dp,
-            color = NavBarBorder,
+            color = c.borderSubtle,
         )
         Row(
             modifier = Modifier
@@ -356,13 +294,16 @@ private fun AirClipBottomNavigationItem(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val itemColor = if (isSelected) NavActiveColor else NavInactiveColor
+    val c = LocalAirClipColors.current
+    val itemColor = if (isSelected) c.blue else c.textSecondary
     Column(
         modifier = modifier
             .fillMaxHeight()
+            .semantics { selected = isSelected }
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
-                indication = null,
+                indication = LocalIndication.current,
+                role = Role.Tab,
                 onClick = onClick,
             )
             .padding(top = 6.dp),
@@ -372,7 +313,7 @@ private fun AirClipBottomNavigationItem(
             modifier = Modifier
                 .size(width = 56.dp, height = 32.dp)
                 .clip(RoundedCornerShape(16.dp))
-                .background(if (isSelected) NavActiveContainer else Color.Transparent),
+                .background(if (isSelected) c.activeFill else Color.Transparent),
             contentAlignment = Alignment.Center,
         ) {
             Icon(

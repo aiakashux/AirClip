@@ -51,7 +51,7 @@ struct SensitiveClipboardPolicyCheck {
             SensitiveClipboardPolicy.decide(assessment, intent: .automatic) == .block
         )
         precondition(
-            SensitiveClipboardPolicy.decide(assessment, intent: .manual) == .allow
+            SensitiveClipboardPolicy.decide(assessment, intent: .manual) == .requireConfirmation
         )
         precondition(
             SensitiveClipboardPolicy.decide(
@@ -78,7 +78,7 @@ struct SensitiveClipboardPolicyCheck {
                 assessment,
                 intent: .manual,
                 action: .ask
-            ) == .allow
+            ) == .requireConfirmation
         )
         precondition(SensitiveRuleAction.fromStoredValue(nil) == .allow)
         precondition(SensitiveRuleAction.fromStoredValue("invalid") == .allow)

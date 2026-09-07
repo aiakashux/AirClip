@@ -15,6 +15,8 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.input.pointer.util.VelocityTrackerAddPointsFix
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
@@ -26,12 +28,19 @@ import com.airclip.airclip.ui.screens.OnboardingScreen
 import com.airclip.airclip.ui.theme.AirClipTheme
 import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalComposeUiApi::class)
+internal fun configureComposeVelocityTracking() {
+    // Compose 1.6.8's legacy finger-up samples can reverse fast flings.
+    VelocityTrackerAddPointsFix = true
+}
+
 class MainActivity : ComponentActivity() {
 
     private val viewModel: MainViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        configureComposeVelocityTracking()
 
         // Collect clipboard changes while Activity is in RESUMED state (has window focus).
         lifecycleScope.launch {

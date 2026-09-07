@@ -412,7 +412,8 @@ object SyncEngine {
             try {
                 val items = ClipHistoryStore.load(ctx).take(20)
                 for (record in items) {
-                    val plain = ClipboardWirePayload.encode(record).toByteArray(Charsets.UTF_8)
+                    val transferableRecord = ImageClipboard.withInlineData(ctx, record)
+                    val plain = ClipboardWirePayload.encode(transferableRecord).toByteArray(Charsets.UTF_8)
                     val enc = SealedBox.encryptForRecipient(plain, peer.publicKey)
                     val json = PeerManager.gson.toJson(
                         mapOf(

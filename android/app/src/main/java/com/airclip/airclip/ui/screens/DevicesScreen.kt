@@ -4,6 +4,7 @@ import android.Manifest
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -28,6 +29,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -57,24 +59,20 @@ fun DevicesScreen(
 ) {
     val c = LocalAirClipColors.current
     val context = LocalContext.current
-    val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-    val headerHeight = statusBarTop + 224.dp
     var wifiNetwork by remember { mutableStateOf(WifiNetworkName.current(context)) }
     var statusClockMs by remember { mutableStateOf(System.currentTimeMillis()) }
+    var showLocationExplanation by remember { mutableStateOf(false) }
     fun refreshWifiNetworkName() {
         wifiNetwork = WifiNetworkName.current(context)
     }
     val locationPermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission(),
+        ActivityResultContracts.RequestMultiplePermissions(),
     ) {
         refreshWifiNetworkName()
     }
 
     LaunchedEffect(Unit) {
         refreshWifiNetworkName()
-        if (!WifiNetworkName.hasLocationPermission(context)) {
-            locationPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
-        }
     }
 
     LaunchedEffect(uiState.pairedDevices.isNotEmpty()) {
@@ -108,10 +106,18 @@ fun DevicesScreen(
             modifier = Modifier.fillMaxSize(),
             state = listState,
             contentPadding = PaddingValues(
-                top = headerHeight,
                 bottom = if (uiState.pairedDevices.isEmpty()) 112.dp else 32.dp,
             ),
         ) {
+            item(key = "devices-header") {
+                DevicesPageHeader(
+                    network = wifiNetwork,
+                    connectedCount = uiState.connectedPeerCount,
+                    onPairClick = { launchPairingScanner() },
+                    onPermissionRequest = { showLocationExplanation = true },
+                )
+            }
+
             // ── Diagnostic banner ─────────────────────────────────────────────────
             val diagnostic = if (uiState.pairedDevices.isEmpty()) null else deviceDiagnostic(uiState)
             if (diagnostic != null) {
@@ -152,11 +158,38 @@ fun DevicesScreen(
             )
         }
 
-        DevicesPageHeader(
-            network = wifiNetwork,
-            connectedCount = uiState.connectedPeerCount,
-            onPairClick = { launchPairingScanner() },
-            modifier = Modifier.align(Alignment.TopCenter),
+    }
+
+    if (showLocationExplanation) {
+        AlertDialog(
+            onDismissRequest = { showLocationExplanation = false },
+            icon = { Icon(Icons.Outlined.LocationOn, contentDescription = null, tint = c.blue) },
+            title = { Text("Show Wi-Fi name?", color = c.textPrimary) },
+            text = {
+                Text(
+                    "Android requires Location permission to read the connected Wi-Fi name. AirClip uses it only to help identify your local network.",
+                    color = c.textSecondary,
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showLocationExplanation = false
+                        locationPermissionLauncher.launch(
+                            arrayOf(
+                                Manifest.permission.ACCESS_COARSE_LOCATION,
+                                Manifest.permission.ACCESS_FINE_LOCATION,
+                            ),
+                        )
+                    },
+                ) { Text("Continue", color = c.blue) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showLocationExplanation = false }) {
+                    Text("Not now", color = c.textSecondary)
+                }
+            },
+            containerColor = c.bgFloating,
         )
     }
 }
@@ -166,13 +199,15 @@ private fun DevicesPageHeader(
     network: WifiNetworkName.Result,
     connectedCount: Int,
     onPairClick: () -> Unit,
+    onPermissionRequest: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val c = LocalAirClipColors.current
     val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .background(Color.White)
+            .background(c.bgBase)
             .padding(top = statusBarTop + 24.dp, bottom = 24.dp),
     ) {
         Row(
@@ -188,7 +223,7 @@ private fun DevicesPageHeader(
                 lineHeight = 40.sp,
                 fontFamily = BearyFontFamily,
                 fontWeight = FontWeight.Normal,
-                color = Color(0xFF202327),
+                color = c.textPrimary,
                 letterSpacing = (-0.6).sp,
             )
             Spacer(Modifier.weight(1f))
@@ -196,17 +231,18 @@ private fun DevicesPageHeader(
                 modifier = Modifier
                     .size(48.dp)
                     .clip(CircleShape)
-                    .background(Color.White.copy(alpha = 0.8f))
+                    .background(c.bgBase.copy(alpha = 0.8f))
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
+                        indication = LocalIndication.current,
+                        role = Role.Button,
                     ) { onPairClick() },
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
                     painter = painterResource(R.drawable.ic_pair_qr),
                     contentDescription = "Pair new device",
-                    tint = Color(0xFF141B34),
+                    tint = c.textPrimary,
                     modifier = Modifier.size(28.dp),
                 )
             }
@@ -215,6 +251,7 @@ private fun DevicesPageHeader(
         NetworkStatusCard(
             network = network,
             connectedCount = connectedCount,
+            onPermissionRequest = onPermissionRequest,
             modifier = Modifier.padding(horizontal = 20.dp),
         )
     }
@@ -226,13 +263,16 @@ private fun DevicesPageHeader(
 private fun NetworkStatusCard(
     network: WifiNetworkName.Result,
     connectedCount: Int,
+    onPermissionRequest: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val c = LocalAirClipColors.current
+    val needsPermission = network.unavailableReason == WifiNetworkName.UnavailableReason.PermissionRequired
     val networkName = network.name ?: "Wi-Fi name unavailable"
     val subtitle = network.unavailableReason?.let { reason ->
         when (reason) {
             WifiNetworkName.UnavailableReason.PermissionRequired ->
-                "Allow Location access to show your Wi-Fi network name."
+                "Tap to show your Wi-Fi network name."
             WifiNetworkName.UnavailableReason.LocationDisabled ->
                 "Turn on Location to show your Wi-Fi network name."
             WifiNetworkName.UnavailableReason.Unknown ->
@@ -249,11 +289,18 @@ private fun NetworkStatusCard(
             .fillMaxWidth()
             .height(80.dp)
             .clip(RoundedCornerShape(24.dp))
-            .background(Color(0xFFF9FAF9))
-            .border(1.dp, Color.Black.copy(alpha = 0.05f), RoundedCornerShape(24.dp))
+            .background(c.bgElevated)
+            .border(1.dp, c.borderSubtle, RoundedCornerShape(24.dp))
+            .then(
+                if (needsPermission) {
+                    Modifier.clickable(role = Role.Button, onClick = onPermissionRequest)
+                } else {
+                    Modifier
+                },
+            )
             .clipToBounds(),
     ) {
-        val ringColor = Color(0xFFECEEF3)
+        val ringColor = c.borderSubtle
         Canvas(modifier = Modifier.matchParentSize()) {
             val strokeWidth = 1.dp.toPx()
             val rings = listOf(
@@ -279,14 +326,14 @@ private fun NetworkStatusCard(
                 .offset(x = 24.dp, y = 16.dp)
                 .size(48.dp)
                 .clip(CircleShape)
-                .background(Color.White)
-                .border(1.dp, Color(0xFFECEEF3), CircleShape),
+                .background(c.bgFloating)
+                .border(1.dp, c.borderSubtle, CircleShape),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
                 imageVector = Icons.Outlined.Wifi,
                 contentDescription = null,
-                tint = Color(0xFF3BBE73),
+                tint = c.green,
                 modifier = Modifier.size(24.dp),
             )
         }
@@ -300,7 +347,7 @@ private fun NetworkStatusCard(
                 networkName,
                 fontSize = 18.sp,
                 lineHeight = 25.sp,
-                color = Color(0xFF141B34),
+                color = c.textPrimary,
                 fontWeight = FontWeight.Medium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -309,7 +356,7 @@ private fun NetworkStatusCard(
                 subtitle,
                 fontSize = 14.sp,
                 lineHeight = 20.sp,
-                color = Color(0xFF8A8F99),
+                color = c.textSecondary,
                 fontWeight = FontWeight.Normal,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -419,6 +466,7 @@ private fun DeviceFeedRow(
     onRefresh: () -> Unit,
     onRemove: () -> Unit,
 ) {
+    val c = LocalAirClipColors.current
     var showMenu by remember { mutableStateOf(false) }
     var showConfirm by remember { mutableStateOf(false) }
 
@@ -431,7 +479,7 @@ private fun DeviceFeedRow(
             .fillMaxWidth()
             .height(68.dp)
             .clip(RoundedCornerShape(8.dp))
-            .border(1.dp, Color(0xFFEEEFF0), RoundedCornerShape(8.dp)),
+            .border(1.dp, c.borderSubtle, RoundedCornerShape(8.dp)),
     ) {
         Icon(
             painter = painterResource(platformIconRes(device)),
@@ -454,7 +502,7 @@ private fun DeviceFeedRow(
                 fontSize = 16.sp,
                 lineHeight = 24.sp,
                 fontWeight = FontWeight.Medium,
-                color = Color.Black.copy(alpha = contentAlpha),
+                color = c.textPrimary.copy(alpha = contentAlpha),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -464,7 +512,7 @@ private fun DeviceFeedRow(
                 fontSize = 14.sp,
                 lineHeight = 16.sp,
                 fontWeight = FontWeight.Normal,
-                color = Color(0xFF6F7785).copy(alpha = contentAlpha),
+                color = c.textSecondary.copy(alpha = contentAlpha),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -477,7 +525,8 @@ private fun DeviceFeedRow(
                 .size(20.dp)
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
+                    indication = LocalIndication.current,
+                    role = Role.Button,
                 ) { showMenu = true },
             contentAlignment = Alignment.Center,
         ) {
@@ -510,7 +559,6 @@ private fun DeviceFeedRow(
     }
 
     if (showConfirm) {
-        val c = LocalAirClipColors.current
         AlertDialog(
             onDismissRequest = { showConfirm = false },
             title = { Text("Remove ${device.deviceName}?", color = c.textPrimary) },
@@ -541,6 +589,7 @@ private fun AddNewDeviceButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val c = LocalAirClipColors.current
     Button(
         onClick = onClick,
         modifier = modifier
@@ -548,8 +597,8 @@ private fun AddNewDeviceButton(
             .height(44.dp),
         shape = RoundedCornerShape(22.dp),
         colors = ButtonDefaults.buttonColors(
-            containerColor = Color.Black,
-            contentColor = Color.White,
+            containerColor = c.textPrimary,
+            contentColor = c.bgBase,
         ),
         contentPadding = PaddingValues(horizontal = 20.dp),
     ) {

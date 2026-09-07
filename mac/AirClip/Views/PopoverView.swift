@@ -17,12 +17,13 @@ private enum PopoverMetrics {
     static let emptyHeight: CGFloat = 132
     static let toastTopPadding: CGFloat = 8
     static let dismissDelay: Double = 0.24
-    static let copyExitDelay: Double = 0.10
-    static let copyCloseDelay: Double = 3.00
+    static let copyExitDelay: Double = 0.65
+    static let copyCloseDelay: Double = 0.70
 }
 
 struct PopoverView: View {
     @Query(sort: \ClipboardItem.receivedAt, order: .reverse) private var allItems: [ClipboardItem]
+    @ObservedObject private var syncModeStore = SyncModeStore.shared
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -123,7 +124,22 @@ struct PopoverView: View {
     // MARK: - Footer
 
     private var footerBar: some View {
-        HStack(spacing: 0) {
+        HStack(spacing: 8) {
+            if syncModeStore.mode == .manualOnly {
+                Button {
+                    ManualClipboardSender.sendCurrentClipboard()
+                } label: {
+                    Label("Send Clipboard", systemImage: "paperplane.fill")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: PopoverMetrics.footerHeight)
+                        .background(Color.accent)
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(FooterPressStyle())
+            }
+
             Button {
                 dismissWithAnimation {
                     NotificationCenter.default.post(name: .openMainWindow, object: nil)
@@ -152,32 +168,14 @@ struct PopoverView: View {
         )
     }
 
-    /// Figma: rgba(35,35,36,0.98) — dark near-opaque pill
     private var footerButtonBg: some View {
         Capsule()
-            .fill(
-                LinearGradient(
-                    colors: [
-                        seeAllHovered ? Color.bgElevated.opacity(0.98) : Color.bgFloating.opacity(0.92),
-                        seeAllHovered ? Color.bgFloating.opacity(0.98) : Color.bgBase.opacity(0.92)
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-            )
+            .fill(seeAllHovered ? Color.activeFill : Color.bgFloating)
             .overlay(Capsule().strokeBorder(seeAllHovered ? Color.borderFocus : Color.borderDefault, lineWidth: 0.5))
-            .shadow(color: .black.opacity(seeAllHovered ? 0.18 : 0.08), radius: seeAllHovered ? 10 : 6, x: 0, y: 3)
     }
 
-    private var emptyCardFill: LinearGradient {
-        LinearGradient(
-            colors: [
-                Color.bgElevated.opacity(0.98),
-                Color.bgFloating.opacity(0.98)
-            ],
-            startPoint: .top,
-            endPoint: .bottom
-        )
+    private var emptyCardFill: Color {
+        Color.bgElevated
     }
 
     // MARK: - Toast
@@ -201,7 +199,6 @@ struct PopoverView: View {
             Capsule()
                 .fill(Color.bgFloating)
                 .overlay(Capsule().strokeBorder(Color.borderDefault, lineWidth: 0.5))
-                .shadow(color: .black.opacity(0.40), radius: 12, x: 0, y: 4)
         )
         .transition(.asymmetric(
             insertion: .offset(y: -10)
@@ -235,7 +232,7 @@ struct PopoverView: View {
         ClipboardMonitor.shared.suppressPacket(item.clipboardPacket)
         ClipboardCapture.write(item.clipboardPacket, to: NSPasteboard.general)
 
-        withAnimation(reduceMotion ? .easeOut(duration: 0.01) : .interpolatingSpring(stiffness: 520, damping: 34)) {
+        withAnimation(reduceMotion ? .easeOut(duration: 0.01) : .airClipDefault) {
             showToast = true
         }
 
@@ -262,7 +259,7 @@ struct PopoverView: View {
     private var contentAnimation: Animation {
         reduceMotion
             ? .easeOut(duration: 0.01)
-            : .spring(response: 0.28, dampingFraction: 0.84, blendDuration: 0.02)
+            : .airClipEntrance
     }
 
 }
@@ -281,7 +278,7 @@ private struct PopoverListMotionModifier: ViewModifier {
         if reduceMotion {
             return .easeOut(duration: 0.01)
         }
-        return .spring(response: 0.30, dampingFraction: 0.82, blendDuration: 0.02)
+        return Animation.airClipEntrance
             .delay(delay)
     }
 
@@ -322,12 +319,9 @@ private struct ClipCard: View {
     let onTap: () -> Void
 
     @ObservedObject private var revealStore = SensitiveContentRevealStore.shared
-    @Environment(\.colorScheme) private var colorScheme
-
     @State private var isHovered = false
 
     private var type: ClipType { item.clipType }
-    private var isDarkMode: Bool { colorScheme == .dark }
     private var shouldRedact: Bool {
         item.clipType != .image
             && SensitiveClipboardClassifier.classify(item.text).isSensitive
@@ -341,7 +335,7 @@ private struct ClipCard: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background {
                     RoundedRectangle(cornerRadius: PopoverMetrics.cardRadius)
-                        .fill(cardGradient)
+                        .fill(isHovered ? Color.hoverFill : Color.bgElevated)
                 }
                 .clipShape(RoundedRectangle(cornerRadius: PopoverMetrics.cardRadius))
                 .overlay(
@@ -352,71 +346,43 @@ private struct ClipCard: View {
                         )
                         .animation(.easeOut(duration: 0.12), value: isHovered)
                 )
-                .shadow(color: cardShadowColor, radius: isHovered ? 16 : 14, x: 0, y: isHovered ? 7 : 6)
                 .animation(.easeOut(duration: 0.16), value: isHovered)
         }
         .buttonStyle(CardPressStyle())
+        .accessibilityLabel("Copy \(type.rawValue) from \(deviceName)")
+        .accessibilityHint("Copies this item and closes AirClip")
         .onHover { hovering in
             isHovered = hovering
             if hovering { NSCursor.pointingHand.set() } else { NSCursor.arrow.set() }
         }
     }
 
-    private var cardGradient: LinearGradient {
-        LinearGradient(
-            colors: [
-                cardGradientTop,
-                cardGradientBottom
-            ],
-            startPoint: .top,
-            endPoint: .bottom
-        )
-    }
-
-    private var cardGradientTop: Color {
-        if isDarkMode { return isHovered ? Color(hex: "#29273A") : Color(hex: "#22242A") }
-        return isHovered ? Color(hex: "#F5F3FF") : Color.white
-    }
-
-    private var cardGradientBottom: Color {
-        if isDarkMode { return isHovered ? Color(hex: "#242235") : Color(hex: "#1B1D22") }
-        return isHovered ? Color(hex: "#EFECFF") : Color(hex: "#F9FAFA")
-    }
-
     private var cardBorderColor: Color {
-        if isDarkMode {
-            return isHovered ? Color(hex: "#5647F2").opacity(0.32) : Color.white.opacity(0.10)
-        }
-        return isHovered ? Color(hex: "#5647F2").opacity(0.26) : Color(hex: "#FAFAFA").opacity(0.70)
-    }
-
-    private var cardShadowColor: Color {
-        if isDarkMode { return Color.black.opacity(isHovered ? 0.36 : 0.28) }
-        return Color(hex: "#6D64B8").opacity(isHovered ? 0.18 : 0.12)
+        isHovered ? Color.accent.opacity(0.30) : Color.borderSubtle
     }
 
     private var primaryTextColor: Color {
-        isDarkMode ? Color(hex: "#F2F4F8") : Color(hex: "#232E43")
+        .textPrimary
     }
 
     private var metaTextColor: Color {
-        isDarkMode ? Color(hex: "#A7ADBA") : Color(hex: "#232E43").opacity(0.50)
+        .textSecondary
     }
 
     private var linkTextColor: Color {
-        isDarkMode ? Color(hex: "#A59DFF") : Color(hex: "#695DF3")
+        .textLink
     }
 
     private var codeTextColor: Color {
-        isDarkMode ? Color(hex: "#CAD2E3") : Color(hex: "#525F7A")
+        .textSubtle
     }
 
     private var iconContainerBorderColor: Color {
-        isDarkMode ? Color.white.opacity(0.10) : Color.clear
+        .borderSubtle
     }
 
     private var imageBorderColor: Color {
-        isDarkMode ? Color.white.opacity(0.14) : Color(hex: "#808080").opacity(0.50)
+        .borderDefault
     }
 
     @ViewBuilder
@@ -424,7 +390,7 @@ private struct ClipCard: View {
         switch type {
         case .url:
             HStack(alignment: .top, spacing: 12) {
-                typeBadge(background: Color(hex: "#695DF3").opacity(isDarkMode ? 0.22 : 0.16)) {
+                typeBadge(background: Color.accent.opacity(0.16)) {
                     AirClipIcon(.arrowUpRight, size: 14)
                         .foregroundColor(linkTextColor)
                 }

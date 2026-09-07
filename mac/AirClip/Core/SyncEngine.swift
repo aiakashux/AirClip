@@ -137,6 +137,55 @@ final class SyncEngine: ObservableObject {
     }
 }
 
+@MainActor
+enum ManualClipboardSender {
+    static func sendCurrentClipboard() {
+        guard SyncModeStore.shared.mode.allowsOutboundSync,
+              let packet = ClipboardCapture.readCurrentPacket(from: NSPasteboard.general)
+        else {
+            NSSound.beep()
+            return
+        }
+
+        let assessment = SensitiveClipboardClassifier.classify(packet.text)
+        if let finding = assessment.primaryFinding {
+            let action = SensitiveClipboardProtectionStore.shared.action(for: finding.category)
+            switch SensitiveClipboardPolicy.decide(assessment, intent: .manual, action: action) {
+            case .block:
+                showAlert(
+                    title: "Sensitive clipboard blocked",
+                    message: "Your \(finding.category.label.lowercased()) rule keeps this item on this Mac."
+                )
+                return
+            case .requireConfirmation:
+                guard confirmSend(category: finding.category) else { return }
+            case .allow:
+                break
+            }
+        }
+
+        SyncEngine.shared.sendClipboard(packet: packet, sensitiveOverride: true)
+    }
+
+    private static func confirmSend(category: SensitiveCategory) -> Bool {
+        let alert = NSAlert()
+        alert.messageText = "Send sensitive clipboard item?"
+        alert.informativeText = "\(category.label) detected. Only continue if you intend to share it with your paired devices."
+        alert.addButton(withTitle: "Send Anyway")
+        alert.addButton(withTitle: "Cancel")
+        alert.alertStyle = .warning
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+
+    private static func showAlert(title: String, message: String) {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = message
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+    }
+}
+
 // MARK: - PeerCount notification
 
 extension Notification.Name {

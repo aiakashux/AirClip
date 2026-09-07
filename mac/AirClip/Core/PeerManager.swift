@@ -19,7 +19,7 @@ final class PeerManager: ObservableObject {
     // Connections not yet authenticated.
     private var pending: [UUID: PeerConnection] = [:]
     // Prevents duplicate outgoing connections while auth is in flight.
-    private var pendingHints: Set<String> = []
+    private var pendingHints: [UUID: String] = [:]
     private var heartbeatTimer: Timer?
 
     private init() {}
@@ -39,8 +39,7 @@ final class PeerManager: ObservableObject {
 
     func connectIfNeeded(to endpoint: NWEndpoint, peerHint: String) {
         guard peers[peerHint] == nil else { return }
-        guard !pendingHints.contains(peerHint) else { return }
-        pendingHints.insert(peerHint)
+        guard !pendingHints.values.contains(peerHint) else { return }
 
         let params    = NWParameters.tcp
         let wsOptions = NWProtocolWebSocket.Options()
@@ -50,12 +49,13 @@ final class PeerManager: ObservableObject {
         let conn = NWConnection(to: endpoint, using: params)
         let peer = PeerConnection(connection: conn, isIncoming: false)
         pending[peer.id] = peer
+        pendingHints[peer.id] = peerHint
     }
 
     func registerPeer(_ peer: PeerConnection) {
         guard let deviceId = peer.deviceId else { return }
         pending.removeValue(forKey: peer.id)
-        pendingHints.remove(deviceId)
+        pendingHints.removeValue(forKey: peer.id)
 
         let device = AirClipIdentity.shared.pairedDevices[deviceId]
 
@@ -75,7 +75,7 @@ final class PeerManager: ObservableObject {
     }
 
     func disconnectDevice(_ deviceId: String, notifyRemote: Bool = false) {
-        pendingHints.remove(deviceId)
+        pendingHints = pendingHints.filter { $0.value != deviceId }
         if let peer = peers.removeValue(forKey: deviceId) {
             if notifyRemote {
                 peer.sendDeviceRemoved(targetDeviceId: deviceId)
@@ -93,19 +93,27 @@ final class PeerManager: ObservableObject {
     }
 
     func removePeer(id: UUID) {
-        if let peer = pending[id] {
-            if let hint = peer.deviceId { pendingHints.remove(hint) }
-            pending.removeValue(forKey: id)
-        }
+        pending.removeValue(forKey: id)
+        let retryHint = pendingHints.removeValue(forKey: id)
         if let key = peers.first(where: { $0.value.id == id })?.key {
             peers.removeValue(forKey: key)
         }
         updateCount()
+
+        if let retryHint {
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(1))
+                guard SyncModeStore.shared.mode.keepsLanServiceRunning,
+                      let endpoint = ResolvedEndpointCache.shared.all[retryHint]
+                else { return }
+                self?.connectIfNeeded(to: endpoint, peerHint: retryHint)
+            }
+        }
     }
 
     func disconnectAll() {
-        pending.values.forEach { $0.close() }
-        peers.values.forEach   { $0.close() }
+        Array(pending.values).forEach { $0.close() }
+        Array(peers.values).forEach   { $0.close() }
         pending.removeAll()
         peers.removeAll()
         pendingHints.removeAll()

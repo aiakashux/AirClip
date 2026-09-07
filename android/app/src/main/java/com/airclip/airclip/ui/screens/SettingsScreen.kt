@@ -2,14 +2,17 @@ package com.airclip.airclip.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -21,6 +24,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -29,28 +33,29 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.airclip.airclip.AppAppearanceSetting
+import com.airclip.airclip.BuildConfig
+import com.airclip.airclip.ClipHistoryStore
 import com.airclip.airclip.MainViewModel
 import com.airclip.airclip.R
+import com.airclip.airclip.SensitiveCategory
 import com.airclip.airclip.SensitiveRuleAction
 import com.airclip.airclip.SyncMode
 import com.airclip.airclip.ui.theme.LocalAirClipColors
 
 private val BearyFontFamily = FontFamily(Font(R.font.beary))
-private val SettingsText = Color.Black
-private val SettingsMuted = Color(0xFF655B76)
-private val SettingsDanger = Color(0xFFD50B0B)
-private val SettingsDangerBody = Color(0xFFDC3838)
-private val SettingsDivider = Color(0xFFE9EAEC)
-
 @Composable
 fun SettingsScreen(viewModel: MainViewModel, uiState: SettingsTabUiState) {
     val c = LocalAirClipColors.current
     var showResetDialog by remember { mutableStateOf(false) }
+    var showClearHistoryDialog by remember { mutableStateOf(false) }
     val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val headerHeight = statusBarTop + 88.dp
 
     val appearanceOptions = listOf("System (Default)", "Light", "Dark")
-    val historyOptions = listOf("1 Day", "3 Days", "7 Days", "15 Days", "30 Days", "Forever")
+    val historyOptions = listOf(
+        "1 Day", "3 Days", "7 Days", "15 Days", "30 Days",
+        "No Time Limit (${ClipHistoryStore.MAX_ITEMS})",
+    )
     val syncOptions = listOf("Auto", "Manual", "Paused")
     val sensitiveOptions = listOf("Allowed (Default)", "Ask", "Block")
 
@@ -121,6 +126,26 @@ fun SettingsScreen(viewModel: MainViewModel, uiState: SettingsTabUiState) {
                         }
                     },
                 )
+                if (uiState.sensitiveMasterAction != SensitiveRuleAction.ALLOW) {
+                    SensitiveCategory.entries.forEach { category ->
+                        SettingsSelectableRow(
+                            iconRes = R.drawable.ic_settings_security_lock,
+                            title = category.label,
+                            value = displaySensitiveAction(
+                                uiState.sensitiveRules[category] ?: SensitiveRuleAction.ASK
+                            ),
+                            options = sensitiveOptions,
+                            onSelect = { label ->
+                                val action = when (label) {
+                                    "Allowed (Default)" -> SensitiveRuleAction.ALLOW
+                                    "Block" -> SensitiveRuleAction.ALWAYS_BLOCK
+                                    else -> SensitiveRuleAction.ASK
+                                }
+                                viewModel.onSensitiveRuleChanged(category, action)
+                            },
+                        )
+                    }
+                }
                 SettingsStaticRow(
                     iconRes = R.drawable.ic_settings_encrypt,
                     title = "End-to-End Encrypted",
@@ -134,18 +159,24 @@ fun SettingsScreen(viewModel: MainViewModel, uiState: SettingsTabUiState) {
                 SettingsStaticRow(
                     iconRes = R.drawable.ic_settings_information_circle,
                     title = "Version",
-                    value = "1.2.0",
+                    value = BuildConfig.VERSION_NAME,
                 )
                 SettingsStaticRow(
                     iconRes = R.drawable.ic_settings_wrench_01,
                     title = "Build",
-                    value = "2025.1",
+                    value = BuildConfig.VERSION_CODE.toString(),
                 )
             }
 
             SettingsGroupDivider()
 
             SettingsGroup {
+                SettingsDangerRow(
+                    iconRes = R.drawable.ic_settings_database_sync,
+                    title = "Clear History",
+                    value = "Permanently remove every local clip, including saved clips.",
+                    onClick = { showClearHistoryDialog = true },
+                )
                 SettingsDangerRow(
                     iconRes = R.drawable.ic_settings_logout_03,
                     title = "Leave Network",
@@ -184,15 +215,44 @@ fun SettingsScreen(viewModel: MainViewModel, uiState: SettingsTabUiState) {
             containerColor = c.bgFloating,
         )
     }
+
+    if (showClearHistoryDialog) {
+        AlertDialog(
+            onDismissRequest = { showClearHistoryDialog = false },
+            title = { Text("Clear local history?", color = c.textPrimary, fontWeight = FontWeight.SemiBold) },
+            text = {
+                Text(
+                    "This permanently removes every clipboard item stored on this device, including saved clips.",
+                    color = c.textSecondary,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showClearHistoryDialog = false
+                    viewModel.onClearHistory()
+                }) {
+                    Text("Clear History", color = c.destructive, fontWeight = FontWeight.SemiBold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearHistoryDialog = false }) {
+                    Text("Cancel", color = c.textSecondary)
+                }
+            },
+            containerColor = c.bgFloating,
+        )
+    }
 }
 
 @Composable
 private fun SettingsHeader(modifier: Modifier = Modifier) {
+    val c = LocalAirClipColors.current
     val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .background(Color.White)
+            .background(c.bgBase)
             .padding(top = statusBarTop + 24.dp, bottom = 24.dp),
     ) {
         Text(
@@ -201,7 +261,7 @@ private fun SettingsHeader(modifier: Modifier = Modifier) {
             lineHeight = 40.sp,
             fontFamily = BearyFontFamily,
             fontWeight = FontWeight.Normal,
-            color = Color(0xFF202327),
+            color = c.textPrimary,
             letterSpacing = (-0.6).sp,
             modifier = Modifier.padding(horizontal = 20.dp),
         )
@@ -224,14 +284,16 @@ private fun SettingsGroup(
 
 @Composable
 private fun SettingsGroupDivider() {
+    val c = LocalAirClipColors.current
     HorizontalDivider(
         modifier = Modifier.padding(horizontal = 20.dp),
         thickness = 1.dp,
-        color = SettingsDivider,
+        color = c.borderSubtle,
     )
     Spacer(Modifier.height(0.dp))
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SettingsSelectableRow(
     iconRes: Int,
@@ -240,31 +302,55 @@ private fun SettingsSelectableRow(
     options: List<String>,
     onSelect: (String) -> Unit,
 ) {
+    val c = LocalAirClipColors.current
     var expanded by remember { mutableStateOf(false) }
-    Box {
-        SettingsListRow(
-            iconRes = iconRes,
-            title = title,
-            value = value,
-            showArrow = true,
-            onClick = { expanded = true },
-        )
-        Box(
-            modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .padding(end = 20.dp),
+    SettingsListRow(
+        iconRes = iconRes,
+        title = title,
+        value = value,
+        showArrow = true,
+        onClick = { expanded = true },
+    )
+    if (expanded) {
+        ModalBottomSheet(
+            onDismissRequest = { expanded = false },
+            containerColor = c.bgFloating,
         ) {
-            AirClipDropdownMenu(
-                expanded = expanded,
-                onDismissRequest = { expanded = false },
-                selectedLabel = value,
-                items = options.map { option ->
-                    AirClipDropdownItem(
-                        label = option,
-                        onClick = { onSelect(option) },
-                    )
-                },
-            )
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(bottom = 16.dp),
+            ) {
+                Text(
+                    title,
+                    color = c.textPrimary,
+                    fontSize = 20.sp,
+                    lineHeight = 28.sp,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
+                )
+                options.forEach { option ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(role = Role.RadioButton) {
+                                onSelect(option)
+                                expanded = false
+                            }
+                            .padding(horizontal = 20.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(
+                            selected = option == value,
+                            onClick = null,
+                            colors = RadioButtonDefaults.colors(selectedColor = c.accent),
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Text(option, color = c.textPrimary, fontSize = 16.sp)
+                    }
+                }
+            }
         }
     }
 }
@@ -291,13 +377,15 @@ private fun SettingsDangerRow(
     value: String,
     onClick: () -> Unit,
 ) {
+    val c = LocalAirClipColors.current
     SettingsListRow(
         iconRes = iconRes,
         title = title,
         value = value,
         showArrow = false,
-        tint = SettingsDanger,
-        valueColor = SettingsDangerBody,
+        tint = c.destructive,
+        valueColor = c.destructive,
+        isDestructive = true,
         rowHeight = 105.dp,
         valueMaxLines = 3,
         onClick = onClick,
@@ -311,18 +399,17 @@ private fun SettingsListRow(
     value: String,
     showArrow: Boolean,
     onClick: (() -> Unit)?,
-    tint: Color = SettingsMuted,
-    valueColor: Color = tint,
+    tint: Color? = null,
+    valueColor: Color? = null,
+    isDestructive: Boolean = false,
     rowHeight: Dp = 73.dp,
     valueMaxLines: Int = 1,
 ) {
-    val interactionSource = remember { MutableInteractionSource() }
+    val c = LocalAirClipColors.current
+    val resolvedTint = tint ?: c.textSecondary
+    val resolvedValueColor = valueColor ?: resolvedTint
     val clickableModifier = if (onClick != null) {
-        Modifier.clickable(
-            interactionSource = interactionSource,
-            indication = null,
-            onClick = onClick,
-        )
+        Modifier.clickable(role = Role.Button, onClick = onClick)
     } else {
         Modifier
     }
@@ -360,7 +447,7 @@ private fun SettingsListRow(
                     fontSize = 16.sp,
                     lineHeight = 24.sp,
                     fontWeight = FontWeight.Medium,
-                    color = if (tint == SettingsDanger) SettingsDanger else SettingsText,
+                    color = if (isDestructive) c.destructive else c.textPrimary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -368,9 +455,9 @@ private fun SettingsListRow(
                 Text(
                     value,
                     fontSize = 14.sp,
-                    lineHeight = if (tint == SettingsDanger) 20.sp else 14.sp,
+                    lineHeight = if (isDestructive) 20.sp else 14.sp,
                     fontWeight = FontWeight.Normal,
-                    color = valueColor,
+                    color = resolvedValueColor,
                     maxLines = valueMaxLines,
                     overflow = TextOverflow.Ellipsis,
                 )

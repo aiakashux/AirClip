@@ -21,6 +21,7 @@ final class PeerConnection {
     let isIncoming: Bool
 
     private let connection: NWConnection
+    private var isClosed = false
 
     init(connection: NWConnection, isIncoming: Bool) {
         self.connection = connection
@@ -39,7 +40,7 @@ final class PeerConnection {
         case .ready:
             if !isIncoming { sendAuth() }
         case .failed, .cancelled:
-            PeerManager.shared.removePeer(id: id)
+            close()
         default:
             break
         }
@@ -48,16 +49,20 @@ final class PeerConnection {
     // MARK: - Receive loop
 
     private func receiveNext() {
-        connection.receiveMessage { [weak self] data, _, _, error in
+        guard !isClosed else { return }
+        connection.receiveMessage { [weak self] data, context, _, error in
             guard let self else { return }
-            if let error {
-                Task { @MainActor in PeerManager.shared.removePeer(id: self.id) }
+            let opcode = (context?.protocolMetadata(
+                definition: NWProtocolWebSocket.definition
+            ) as? NWProtocolWebSocket.Metadata)?.opcode
+            if error != nil || opcode == .close {
+                Task { @MainActor in self.close() }
                 return
             }
             if let data, !data.isEmpty {
                 Task { @MainActor in self.handleMessage(data) }
             }
-            if error == nil { self.receiveNext() }
+            Task { @MainActor in self.receiveNext() }
         }
     }
 
@@ -421,13 +426,18 @@ final class PeerConnection {
             content: data,
             contentContext: context,
             isComplete: true,
-            completion: .contentProcessed { [weak self] _ in
-                if closeAfterSending {
+            completion: .contentProcessed { [weak self] error in
+                if error != nil || closeAfterSending {
                     Task { @MainActor [weak self] in self?.close() }
                 }
             }
         )
     }
 
-    func close() { connection.cancel() }
+    func close() {
+        guard !isClosed else { return }
+        isClosed = true
+        connection.cancel()
+        PeerManager.shared.removePeer(id: id)
+    }
 }

@@ -30,17 +30,17 @@ make_png() {
   sips -s format png -z "$size" "$size" "$SOURCE" --out "$out" >/dev/null
 }
 
-write_apple_catalog() {
+write_ios_catalog() {
   catalog="$1"
-  platform="$2"
   mkdir -p "$catalog"
+  rm -f "$catalog"/*.png
   cat > "$catalog/Contents.json" <<JSON
 {
   "images" : [
     {
       "filename" : "AirClipAppIcon-1024.png",
-      "idiom" : "$platform",
-      "platform" : "$platform",
+      "idiom" : "ios-marketing",
+      "platform" : "ios",
       "size" : "1024x1024"
     }
   ],
@@ -53,8 +53,91 @@ JSON
   make_png 1024 "$catalog/AirClipAppIcon-1024.png"
 }
 
-write_apple_catalog "$ROOT_DIR/mac/AirClip/Assets.xcassets/AppIcon.appiconset" "mac"
-write_apple_catalog "$ROOT_DIR/ios/AirClip/Assets.xcassets/AppIcon.appiconset" "ios"
+write_mac_catalog() {
+  catalog="$1"
+  mkdir -p "$catalog"
+  rm -f "$catalog"/*.png
+  cat > "$catalog/Contents.json" <<JSON
+{
+  "images" : [
+    {
+      "filename" : "AirClipAppIcon-16.png",
+      "idiom" : "mac",
+      "scale" : "1x",
+      "size" : "16x16"
+    },
+    {
+      "filename" : "AirClipAppIcon-32.png",
+      "idiom" : "mac",
+      "scale" : "2x",
+      "size" : "16x16"
+    },
+    {
+      "filename" : "AirClipAppIcon-32.png",
+      "idiom" : "mac",
+      "scale" : "1x",
+      "size" : "32x32"
+    },
+    {
+      "filename" : "AirClipAppIcon-64.png",
+      "idiom" : "mac",
+      "scale" : "2x",
+      "size" : "32x32"
+    },
+    {
+      "filename" : "AirClipAppIcon-128.png",
+      "idiom" : "mac",
+      "scale" : "1x",
+      "size" : "128x128"
+    },
+    {
+      "filename" : "AirClipAppIcon-256.png",
+      "idiom" : "mac",
+      "scale" : "2x",
+      "size" : "128x128"
+    },
+    {
+      "filename" : "AirClipAppIcon-256.png",
+      "idiom" : "mac",
+      "scale" : "1x",
+      "size" : "256x256"
+    },
+    {
+      "filename" : "AirClipAppIcon-512.png",
+      "idiom" : "mac",
+      "scale" : "2x",
+      "size" : "256x256"
+    },
+    {
+      "filename" : "AirClipAppIcon-512.png",
+      "idiom" : "mac",
+      "scale" : "1x",
+      "size" : "512x512"
+    },
+    {
+      "filename" : "AirClipAppIcon-1024.png",
+      "idiom" : "mac",
+      "scale" : "2x",
+      "size" : "512x512"
+    }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
+}
+JSON
+  make_png 16 "$catalog/AirClipAppIcon-16.png"
+  make_png 32 "$catalog/AirClipAppIcon-32.png"
+  make_png 64 "$catalog/AirClipAppIcon-64.png"
+  make_png 128 "$catalog/AirClipAppIcon-128.png"
+  make_png 256 "$catalog/AirClipAppIcon-256.png"
+  make_png 512 "$catalog/AirClipAppIcon-512.png"
+  make_png 1024 "$catalog/AirClipAppIcon-1024.png"
+}
+
+write_mac_catalog "$ROOT_DIR/mac/AirClip/Assets.xcassets/AppIcon.appiconset"
+write_ios_catalog "$ROOT_DIR/ios/AirClip/Assets.xcassets/AppIcon.appiconset"
 
 MAC_ICONSET="$ROOT_DIR/mac/AirClip/Resources/AirClip.iconset"
 mkdir -p "$MAC_ICONSET"

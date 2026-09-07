@@ -36,44 +36,44 @@ data class AirClipColorScheme(
 // ── Light palette ────────────────────────────────────────────────────────────
 
 fun lightAirClipColors() = AirClipColorScheme(
-    bgBase        = Color(0xFFFFFFFF),
-    bgElevated    = Color(0xFFF5F5F7),
-    bgFloating    = Color(0xFFFFFFFF),
-    textPrimary   = Color(0xFF0A0A12),
-    textSecondary = Color(0xFF6C7280),
-    textTertiary  = Color(0xFF9CA3AF),
-    borderSubtle  = Color(0xFFEBEBEF),
-    borderDefault = Color(0xFFD4D4D8),
+    bgBase        = Color(0xFFF4F5F7),
+    bgElevated    = Color(0xFFFFFFFF),
+    bgFloating    = Color(0xFFF8F9FB),
+    textPrimary   = Color(0xFF15161A),
+    textSecondary = Color(0xFF5B6270),
+    textTertiary  = Color(0xFF7A8392),
+    borderSubtle  = Color(0x141C1D20),
+    borderDefault = Color(0x241C1D20),
     accent        = Color(0xFF5647F2),
     accentDeep    = Color(0xFF4436D9),
     selectionFill = Color(0x145647F2),   // accent 8%
-    activeFill    = Color(0x0A000000),   // black 4%
-    green         = Color(0xFF16A34A),
-    blue          = Color(0xFF2563EB),
-    yellow        = Color(0xFFD97706),
-    destructive   = Color(0xFFDC2626),
+    activeFill    = Color(0x1A1C1D20),
+    green         = Color(0xFF167B4B),
+    blue          = Color(0xFF006FA8),
+    yellow        = Color(0xFF8A5B00),
+    destructive   = Color(0xFFB42318),
     isDark        = false,
 )
 
 // ── Dark palette ─────────────────────────────────────────────────────────────
 
 fun darkAirClipColors() = AirClipColorScheme(
-    bgBase        = Color(0xFF121418),
-    bgElevated    = Color(0xFF1E2024),
-    bgFloating    = Color(0xFF23262B),
+    bgBase        = Color(0xFF101113),
+    bgElevated    = Color(0xFF1C1D20),
+    bgFloating    = Color(0xFF25262A),
     textPrimary   = Color(0xFFF2F3F5),
-    textSecondary = Color(0xFFC4C8D0),
-    textTertiary  = Color(0xFF8F949D),
-    borderSubtle  = Color(0xFF343741),
-    borderDefault = Color(0xFF444A56),
+    textSecondary = Color(0xFF8F949D),
+    textTertiary  = Color(0xFF626875),
+    borderSubtle  = Color(0x14FFFFFF),
+    borderDefault = Color(0x24FFFFFF),
     accent        = Color(0xFF5647F2),
     accentDeep    = Color(0xFF4436D9),
     selectionFill = Color(0x225647F2),
-    activeFill    = Color(0x18FFFFFF),
-    green         = Color(0xFF59D499),
-    blue          = Color(0xFF5FA7FF),
-    yellow        = Color(0xFFFFC531),
-    destructive   = Color(0xFFE5342A),
+    activeFill    = Color(0x1AFFFFFF),
+    green         = Color(0xFF6CE0A8),
+    blue          = Color(0xFF70CBFF),
+    yellow        = Color(0xFFFFD45C),
+    destructive   = Color(0xFFFF5B55),
     isDark        = true,
 )
 
@@ -89,22 +89,22 @@ val MaterialTheme.airClip: AirClipColorScheme
     @Composable get() = LocalAirClipColors.current
 
 // ── Legacy top-level aliases (dark defaults — kept so any untouched code compiles)
-val AirClipBgBase        = Color(0xFF121418)
-val AirClipBgElevated    = Color(0xFF1E2024)
-val AirClipBgFloating    = Color(0xFF23262B)
+val AirClipBgBase        = Color(0xFF101113)
+val AirClipBgElevated    = Color(0xFF1C1D20)
+val AirClipBgFloating    = Color(0xFF25262A)
 val AirClipTextPrimary   = Color(0xFFF2F3F5)
-val AirClipTextSecondary = Color(0xFFC4C8D0)
-val AirClipTextTertiary  = Color(0xFF8F949D)
-val AirClipBorderSubtle  = Color(0xFF343741)
-val AirClipBorderDefault = Color(0xFF444A56)
+val AirClipTextSecondary = Color(0xFF8F949D)
+val AirClipTextTertiary  = Color(0xFF626875)
+val AirClipBorderSubtle  = Color(0x14FFFFFF)
+val AirClipBorderDefault = Color(0x24FFFFFF)
 val AirClipAccent        = Color(0xFF5647F2)
 val AirClipAccentDeep    = Color(0xFF4436D9)
-val AirClipGreen         = Color(0xFF59D499)
-val AirClipBlue          = Color(0xFF5FA7FF)
-val AirClipYellow        = Color(0xFFFFC531)
-val AirClipDestructive   = Color(0xFFE5342A)
+val AirClipGreen         = Color(0xFF6CE0A8)
+val AirClipBlue          = Color(0xFF70CBFF)
+val AirClipYellow        = Color(0xFFFFD45C)
+val AirClipDestructive   = Color(0xFFFF5B55)
 val AirClipSelectionFill = Color(0x225647F2)
-val AirClipActiveFill    = Color(0x18FFFFFF)
+val AirClipActiveFill    = Color(0x1AFFFFFF)
 
 // ── Typography ───────────────────────────────────────────────────────────────
 
@@ -125,21 +125,21 @@ private fun buildLightM3() = lightColorScheme(
     primary            = Color(0xFF5647F2),
     onPrimary          = Color.White,
     primaryContainer   = Color(0x145647F2),
-    onPrimaryContainer = Color(0xFF0A0A12),
-    secondary          = Color(0xFF2563EB),
+    onPrimaryContainer = Color(0xFF15161A),
+    secondary          = Color(0xFF006FA8),
     onSecondary        = Color.White,
-    tertiary           = Color(0xFF16A34A),
+    tertiary           = Color(0xFF167B4B),
     onTertiary         = Color.White,
-    background         = Color(0xFFFFFFFF),
-    onBackground       = Color(0xFF0A0A12),
-    surface            = Color(0xFFF5F5F7),
-    onSurface          = Color(0xFF0A0A12),
-    surfaceVariant     = Color(0xFFFFFFFF),
-    onSurfaceVariant   = Color(0xFF6C7280),
-    error              = Color(0xFFDC2626),
+    background         = Color(0xFFF4F5F7),
+    onBackground       = Color(0xFF15161A),
+    surface            = Color(0xFFFFFFFF),
+    onSurface          = Color(0xFF15161A),
+    surfaceVariant     = Color(0xFFF8F9FB),
+    onSurfaceVariant   = Color(0xFF5B6270),
+    error              = Color(0xFFB42318),
     onError            = Color.White,
-    outline            = Color(0xFFD4D4D8),
-    outlineVariant     = Color(0xFFEBEBEF),
+    outline            = Color(0x241C1D20),
+    outlineVariant     = Color(0x141C1D20),
 )
 
 private fun buildDarkM3() = darkColorScheme(
@@ -147,20 +147,20 @@ private fun buildDarkM3() = darkColorScheme(
     onPrimary          = Color.White,
     primaryContainer   = Color(0x225647F2),
     onPrimaryContainer = Color(0xFFF2F3F5),
-    secondary          = Color(0xFF5FA7FF),
-    onSecondary        = Color(0xFF121418),
-    tertiary           = Color(0xFF59D499),
-    onTertiary         = Color(0xFF121418),
-    background         = Color(0xFF121418),
+    secondary          = Color(0xFF70CBFF),
+    onSecondary        = Color(0xFF101113),
+    tertiary           = Color(0xFF6CE0A8),
+    onTertiary         = Color(0xFF101113),
+    background         = Color(0xFF101113),
     onBackground       = Color(0xFFF2F3F5),
-    surface            = Color(0xFF1E2024),
+    surface            = Color(0xFF1C1D20),
     onSurface          = Color(0xFFF2F3F5),
-    surfaceVariant     = Color(0xFF23262B),
-    onSurfaceVariant   = Color(0xFFC4C8D0),
-    error              = Color(0xFFE5342A),
+    surfaceVariant     = Color(0xFF25262A),
+    onSurfaceVariant   = Color(0xFF8F949D),
+    error              = Color(0xFFFF5B55),
     onError            = Color.White,
-    outline            = Color(0xFF444A56),
-    outlineVariant     = Color(0xFF343741),
+    outline            = Color(0x24FFFFFF),
+    outlineVariant     = Color(0x14FFFFFF),
 )
 
 // ── Entry point ──────────────────────────────────────────────────────────────

@@ -42,4 +42,12 @@ final class SyncModeStore: ObservableObject {
         }
     }
 
+    func recoverRuntime() {
+        guard AirClipIdentity.shared.isPaired else { return }
+        if mode.allowsAutomaticCapture {
+            ClipboardMonitor.shared.restart()
+        }
+        SyncEngine.shared.reconnect()
+    }
+
 }

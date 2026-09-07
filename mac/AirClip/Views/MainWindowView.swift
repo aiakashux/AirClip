@@ -87,51 +87,36 @@ private enum MainWindowLayout {
 }
 
 private enum MainWindowPalette {
-    static let shell = adaptive(light: "#F4F6FA", dark: "#121418").opacity(0.88)
+    static let shell = Color.bgBase.opacity(0.88)
     static let shellGlassTint = Color.glassTint.opacity(0.06)
-    static let card = adaptive(light: "#FFFFFF", dark: "#1E2024")
-    static let primaryText = adaptive(light: "#101828", dark: "#F2F3F5")
-    static let secondaryText = adaptive(light: "#4A5565", dark: "#C4C8D0")
-    static let tertiaryText = adaptive(light: "#99A1AF", dark: "#8F949D")
-    static let divider = adaptive(light: "#E5E7EB", dark: "#343741")
-    static let activeFill = adaptive(light: "#F0EFFF", dark: "#27243F")
-    static let hoverFill = adaptive(light: "#F7F8FA", dark: "#272A30")
-    static let pressedFill = adaptive(light: "#F1F3F6", dark: "#323640")
-    static let searchFill = adaptive(light: "#F3F4F6", dark: "#282B31")
-    static let focusStroke = Color(hex: "#5647F2").opacity(0.44)
-    static let selectionStroke = Color(hex: "#5647F2").opacity(0.30)
-    static let rowStroke = adaptive(light: "#DDE3EA", dark: "#3A3E48").opacity(0.72)
-    static let saved = Color(hex: "#10B981")
-    static let destructive = Color(hex: "#EF4444")
-    static let sectionFill = adaptive(light: "#FCFCFD", dark: "#23262B")
-    static let dangerHoverFill = adaptive(light: "#FEF2F2", dark: "#351D20")
-    static let online = Color(hex: "#19C332")
-    static let offline = adaptive(light: "#D7D8DA", dark: "#5D6470")
-    static let sidebarText = adaptive(light: "#1E293B", dark: "#E8EDF5")
-    static let sidebarHoverFill = adaptive(light: "#EEF2F7", dark: "#2A2E36")
-    static let sidebarActiveFill = adaptive(light: "#F0EFFF", dark: "#27243F")
-    static let sidebarActiveBorder = adaptive(light: "#C9C3FF", dark: "#4A43A8")
-    static let sidebarItemBorder = Color(hex: "#EEF1F1")
-    static let searchIdleFill = adaptive(light: "#F3F4F6", dark: "#34373D").opacity(0.40)
-    static let searchIdleBorder = adaptive(light: "#F1F1F1", dark: "#4A4E57")
-    static let sectionHeaderText = adaptive(light: "#6A7282", dark: "#A5ADBC")
-    static let listTitleText = adaptive(light: "#232E43", dark: "#EEF2F7")
-    static let listMetaText = adaptive(light: "#232E43", dark: "#C8CED8").opacity(0.50)
-
-    private static func adaptive(light: String, dark: String) -> Color {
-        Color(NSColor(name: nil, dynamicProvider: { appearance in
-            let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-            let hex = (isDark ? dark : light).trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
-            var int: UInt64 = 0
-            Scanner(string: hex).scanHexInt64(&int)
-            return NSColor(
-                srgbRed: CGFloat((int & 0xFF0000) >> 16) / 255,
-                green: CGFloat((int & 0x00FF00) >> 8) / 255,
-                blue: CGFloat(int & 0x0000FF) / 255,
-                alpha: 1
-            )
-        }))
-    }
+    static let card = Color.bgElevated
+    static let primaryText = Color.textPrimary
+    static let secondaryText = Color.textSecondary
+    static let tertiaryText = Color.textTertiary
+    static let divider = Color.borderSubtle
+    static let activeFill = Color.activeFill
+    static let hoverFill = Color.hoverFill
+    static let pressedFill = Color.activeFill
+    static let searchFill = Color.bgFloating
+    static let focusStroke = Color.accent.opacity(0.44)
+    static let selectionStroke = Color.accent.opacity(0.30)
+    static let rowStroke = Color.borderDefault
+    static let saved = Color.encryptedGreen
+    static let destructive = Color.destructiveRed
+    static let sectionFill = Color.bgFloating
+    static let dangerHoverFill = Color.destructiveRed.opacity(0.10)
+    static let online = Color.encryptedGreen
+    static let offline = Color.textTertiary
+    static let sidebarText = Color.textSubtle
+    static let sidebarHoverFill = Color.hoverFill
+    static let sidebarActiveFill = Color.selectionFill
+    static let sidebarActiveBorder = Color.accent.opacity(0.30)
+    static let sidebarItemBorder = Color.borderSubtle
+    static let searchIdleFill = Color.bgFloating.opacity(0.40)
+    static let searchIdleBorder = Color.borderDefault
+    static let sectionHeaderText = Color.textSecondary
+    static let listTitleText = Color.textPrimary
+    static let listMetaText = Color.textSecondary
 }
 
 private enum MainWindowMotion {
@@ -477,6 +462,7 @@ private enum ClipTypeFilter: String, CaseIterable {
     case text
     case links
     case images
+    case colors
 
     var title: String {
         switch self {
@@ -484,6 +470,7 @@ private enum ClipTypeFilter: String, CaseIterable {
         case .text: return "Text"
         case .links: return "Links"
         case .images: return "Images"
+        case .colors: return "Color"
         }
     }
 
@@ -493,14 +480,17 @@ private enum ClipTypeFilter: String, CaseIterable {
         case .text: return .text
         case .links: return .url
         case .images: return .image
+        case .colors: return .color
         }
     }
 }
 
 private struct ClipboardWorkspace: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.undoManager) private var undoManager
     @Query(sort: \ClipboardItem.receivedAt, order: .reverse) private var allItems: [ClipboardItem]
     @ObservedObject private var revealStore = SensitiveContentRevealStore.shared
+    @ObservedObject private var syncModeStore = SyncModeStore.shared
 
     let filter: ClipFilter
     let workspaceWidth: CGFloat
@@ -551,6 +541,10 @@ private struct ClipboardWorkspace: View {
     private var listPane: some View {
         VStack(alignment: .leading, spacing: 0) {
             searchBar
+            typeFilterRow
+            if syncModeStore.mode == .manualOnly {
+                manualSendRow
+            }
             sectionHeader
             if filteredItems.isEmpty {
                 emptyListState
@@ -574,6 +568,21 @@ private struct ClipboardWorkspace: View {
                 .fill(MainWindowPalette.divider)
                 .frame(width: 1)
         }
+    }
+
+    private var manualSendRow: some View {
+        Button {
+            ManualClipboardSender.sendCurrentClipboard()
+        } label: {
+            Label("Send Clipboard", systemImage: "paperplane.fill")
+                .font(.system(size: 11, weight: .medium))
+                .frame(maxWidth: .infinity)
+                .frame(height: 28)
+        }
+        .buttonStyle(.borderedProminent)
+        .tint(.accent)
+        .padding(.horizontal, MainWindowLayout.listSearchHorizontalInset)
+        .padding(.bottom, 8)
     }
 
     private var searchBar: some View {
@@ -634,6 +643,7 @@ private struct ClipboardWorkspace: View {
             }
             .buttonStyle(.plain)
             .help("Clear search")
+            .accessibilityLabel("Clear search")
         }
     }
 
@@ -669,6 +679,8 @@ private struct ClipboardWorkspace: View {
         }
         .buttonStyle(.plain)
         .help("Show \(typeFilter.title.lowercased()) clips")
+        .accessibilityLabel("Show \(typeFilter.title.lowercased()) clips")
+        .accessibilityValue(selected ? "Selected" : "")
     }
 
     @ViewBuilder
@@ -1041,12 +1053,17 @@ private struct ClipboardWorkspace: View {
     }
 
     private func delete(_ item: ClipboardItem) {
+        let snapshot = ClipboardItemSnapshot(item)
         if selectedItem?.id == item.id {
             selectedItem = filteredItems.first { $0.id != item.id }
         }
         revealStore.setRevealed(false, for: item.id)
         modelContext.delete(item)
         try? modelContext.save()
+        undoManager?.registerUndo(withTarget: LocalHistoryStore.shared) { store in
+            store.restore(snapshot)
+        }
+        undoManager?.setActionName("Delete Clipboard Item")
     }
 
     private func isSensitive(_ item: ClipboardItem) -> Bool {
@@ -1351,6 +1368,7 @@ private struct FloatingActions: View {
                     }
                 }
             }
+            .keyboardShortcut("c", modifiers: .command)
             ActionIconButton(
                 icon: isSaved ? .bookmarkCheck : .bookmarkAdd,
                 foregroundColor: isSaved ? MainWindowPalette.saved : MainWindowPalette.secondaryText,
@@ -1364,6 +1382,7 @@ private struct FloatingActions: View {
                 help: "Delete",
                 action: onDelete
             )
+            .keyboardShortcut(.delete, modifiers: [])
         }
         .padding(9)
         .frame(width: actionBarWidth, height: MainWindowLayout.actionBarHeight)
@@ -1413,6 +1432,7 @@ private struct ActionIconButton: View {
         }
         .buttonStyle(.plain)
         .help(help)
+        .accessibilityLabel(help)
         .onHover { hovering in
             withAnimation(.easeOut(duration: MainWindowMotion.hoverDuration)) {
                 isHovered = hovering
@@ -1515,10 +1535,22 @@ private struct DevicesPanel: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 12) {
                 Text("Devices")
-                    .font(.custom("Beary", size: 24))
+                    .font(.airClipTitle1)
                     .foregroundColor(MainWindowPalette.primaryText)
 
                 Spacer()
+
+                if !devices.isEmpty {
+                    Button {
+                        SyncEngine.shared.reconnect()
+                        currentWiFiNetwork.requestAccessAndRefresh()
+                    } label: {
+                        Label("Reconnect", systemImage: "arrow.clockwise")
+                            .font(.airClipCaptionMed)
+                    }
+                    .buttonStyle(.bordered)
+                    .accessibilityHint("Reconnects nearby paired devices")
+                }
 
                 DeviceAddButton {
                     isShowingPairingSheet = true
@@ -1526,62 +1558,45 @@ private struct DevicesPanel: View {
             }
             .frame(height: 30, alignment: .topLeading)
 
-            GeometryReader { proxy in
-                let size = proxy.size
-                let center = CGPoint(x: size.width / 2, y: size.height / 2)
-                let placements = orbitPlacements(in: size)
+            VStack(spacing: 12) {
+                connectionSummary
 
-                ZStack {
-                    OrbitBackdrop()
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-                    orbitFade(edge: .top)
-                        .frame(height: 120)
-                        .frame(maxHeight: .infinity, alignment: .top)
-
-                    orbitFade(edge: .bottom)
-                        .frame(height: 120)
-                        .frame(maxHeight: .infinity, alignment: .bottom)
-
-                    ForEach(placements) { placement in
-                        OrbitDeviceNode(
-                            item: placement.item,
-                            isVisible: activeTooltipID == placement.item.device.deviceId,
-                            isActive: activeTooltipID == placement.item.device.deviceId,
-                            tooltipPlacement: placement.tooltipPlacement,
-                            onTap: {
-                                if placement.item.isOnline {
-                                    togglePinned(placement.item.device.deviceId)
-                                } else {
-                                    SyncEngine.shared.reconnect()
-                                    togglePinned(placement.item.device.deviceId)
-                                }
-                            },
-                            onHover: { hovering in updateHoveredDevice(placement.item.device.deviceId, hovering: hovering) },
-                            onRemove: { deviceToRemove = placement.item.device }
-                        )
-                        .position(placement.position)
+                if devices.isEmpty {
+                    VStack(spacing: 12) {
+                        AirClipDeviceIcon(.smartPhone, size: 32, tint: MainWindowPalette.tertiaryText)
+                        Text("No paired devices")
+                            .font(.airClipTitle2)
+                            .foregroundColor(MainWindowPalette.secondaryText)
+                        Text("Add a device to sync clipboard items over your local network.")
+                            .font(.airClipBody)
+                            .foregroundColor(MainWindowPalette.tertiaryText)
+                            .multilineTextAlignment(.center)
                     }
-
-                    NetworkHubView(
-                        wiFiStatus: hubWiFiStatus,
-                        remoteOnlineCount: remoteOnlineCount,
-                        isPaused: syncModeStore.mode == .paused,
-                        diagnostic: lanDiagnostics.diagnostic,
-                        hasDevices: !orbitItems.isEmpty,
-                        onRefresh: {
-                            currentWiFiNetwork.requestAccessAndRefresh()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .accessibilityElement(children: .combine)
+                } else {
+                    ScrollView {
+                        LazyVStack(spacing: 0) {
+                            ForEach(Array(devices.enumerated()), id: \.element.deviceId) { index, device in
+                                deviceRow(device)
+                                if index < devices.count - 1 {
+                                    Rectangle()
+                                        .fill(MainWindowPalette.divider)
+                                        .frame(height: 0.5)
+                                        .padding(.leading, 58)
+                                }
+                            }
                         }
+                    }
+                    .background(MainWindowPalette.sectionFill)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .strokeBorder(MainWindowPalette.divider, lineWidth: 0.5)
                     )
-                    .position(center)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .clipped()
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    clearTooltip()
                 }
             }
+            .padding(.top, 18)
         }
         .padding(.top, MainWindowLayout.devicesTopInset)
         .padding(.horizontal, MainWindowLayout.devicesHorizontalInset)
@@ -1612,6 +1627,108 @@ private struct DevicesPanel: View {
         .onAppear {
             currentWiFiNetwork.requestAccessAndRefresh()
         }
+    }
+
+    private var connectionSummary: some View {
+        HStack(spacing: 10) {
+            AirClipIcon(.wifi, size: 16, variant: .stroke)
+                .foregroundColor(syncModeStore.mode == .paused ? MainWindowPalette.offline : Color.accent)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(hubWiFiStatus.displayName)
+                    .font(.airClipBodyMedium)
+                    .foregroundColor(MainWindowPalette.primaryText)
+                Text(connectionSummaryText)
+                    .font(.airClipCaption)
+                    .foregroundColor(MainWindowPalette.secondaryText)
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 14)
+        .frame(minHeight: 52)
+        .background(MainWindowPalette.sectionFill)
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(MainWindowPalette.divider, lineWidth: 0.5)
+        )
+        .accessibilityElement(children: .combine)
+    }
+
+    private var connectionSummaryText: String {
+        if syncModeStore.mode == .paused { return "Sync paused" }
+        if let helper = hubWiFiStatus.helperText { return helper }
+        switch lanDiagnostics.diagnostic.issue {
+        case .serverFailed: return "Listener unavailable — reconnect or check network access"
+        case .discoveryFailed: return "Discovery unavailable — reconnect or check network access"
+        case .none: return DeviceConnectionStatusText.onlineRemoteDevices(remoteOnlineCount)
+        }
+    }
+
+    private func deviceRow(_ device: PairedDevice) -> some View {
+        let isOnline = peerManager.connectedDeviceIds.contains(device.deviceId)
+        return HStack(spacing: 12) {
+            AirClipDeviceIcon(deviceIcon(for: device), size: 28, tint: isOnline ? Color.accent : MainWindowPalette.tertiaryText)
+                .frame(width: 32, height: 32)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(device.deviceName)
+                    .font(.airClipBodyMedium)
+                    .foregroundColor(MainWindowPalette.primaryText)
+                    .lineLimit(1)
+                Text(deviceDetail(device, isOnline: isOnline))
+                    .font(.airClipCaption)
+                    .foregroundColor(MainWindowPalette.secondaryText)
+                    .lineLimit(1)
+            }
+
+            Spacer()
+
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(isOnline ? MainWindowPalette.online : MainWindowPalette.offline)
+                    .frame(width: 6, height: 6)
+                    .accessibilityHidden(true)
+                Text(isOnline ? "Online" : lastSeenText(device))
+                    .font(.airClipCaption)
+                    .foregroundColor(MainWindowPalette.secondaryText)
+            }
+
+            Menu {
+                if !isOnline {
+                    Button("Reconnect") { SyncEngine.shared.reconnect() }
+                }
+                Button("Remove device", role: .destructive) { deviceToRemove = device }
+            } label: {
+                AirClipIcon(.moreHorizontal, size: 14)
+                    .foregroundColor(MainWindowPalette.secondaryText)
+                    .frame(width: 28, height: 28)
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .accessibilityLabel("Actions for \(device.deviceName)")
+        }
+        .padding(.horizontal, 14)
+        .frame(minHeight: 58)
+        .accessibilityElement(children: .contain)
+    }
+
+    private func deviceDetail(_ device: PairedDevice, isOnline: Bool) -> String {
+        let platform = device.platform.isEmpty ? "Device" : device.platform.capitalized
+        guard let network = device.wifiNetwork, !network.isEmpty else { return platform }
+        return "\(platform) · \(network)"
+    }
+
+    private func lastSeenText(_ device: PairedDevice) -> String {
+        guard device.lastSeenMs > 0 else { return "Offline" }
+        let date = Date(timeIntervalSince1970: TimeInterval(device.lastSeenMs) / 1_000)
+        return RelativeDateTimeFormatter().localizedString(for: date, relativeTo: Date())
+    }
+
+    private func deviceIcon(for device: PairedDevice) -> AirClipDeviceIconName {
+        let value = "\(device.platform) \(device.deviceModel ?? "") \(device.deviceName)".lowercased()
+        if value.contains("mac") || value.contains("laptop") { return .laptop }
+        if value.contains("desktop") || value.contains("windows") || value.contains("linux") { return .tv }
+        return .smartPhone
     }
 
     private func orbitPlacements(in size: CGSize) -> [OrbitDevicePlacement] {
@@ -2506,17 +2623,18 @@ private struct SettingsPanel: View {
     @ObservedObject private var syncModeStore = SyncModeStore.shared
     @ObservedObject private var sensitiveProtection = SensitiveClipboardProtectionStore.shared
 
-    @State private var historyDepth: Int = UserDefaults.standard.object(forKey: "historyDepth") as? Int ?? 1
+    @State private var historyDepth: Int = HistoryRetentionPolicy.selectedIndex()
     @State private var showResetAlert = false
+    @State private var showClearHistoryAlert = false
 
-    private let historyOptions = ["7 days", "30 days", "90 days", "Forever"]
-    private let historyDays = [7, 30, 90, 0]
+    private let historyOptions = HistoryRetentionPolicy.labels
+    private let historyDays = HistoryRetentionPolicy.days
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 Text("Settings")
-                    .font(.custom("Beary", size: 24))
+                    .font(.airClipTitle1)
                     .foregroundColor(MainWindowPalette.primaryText)
                     .padding(.bottom, 24)
 
@@ -2568,11 +2686,23 @@ private struct SettingsPanel: View {
 
                 settingsSection("About") {
                     settingsGroup {
-                        infoRow("Version", value: "1.2.0")
+                        infoRow("Version", value: bundleValue("CFBundleShortVersionString"))
                         settingsDivider
-                        infoRow("Build", value: "2025.1")
+                        infoRow("Build", value: bundleValue("CFBundleVersion"))
                     }
                 }
+
+                SettingsActionRow(
+                    icon: .delete,
+                    title: "Clear History",
+                    subtitle: "Permanently removes every local clip, including saved clips.",
+                    tint: MainWindowPalette.destructive,
+                    hoverFill: MainWindowPalette.dangerHoverFill
+                ) {
+                    showClearHistoryAlert = true
+                }
+                .background(cardBackground(cornerRadius: 16))
+                .padding(.bottom, 12)
 
                 SettingsActionRow(
                     icon: .undo,
@@ -2596,6 +2726,12 @@ private struct SettingsPanel: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This removes this device from AirClip and clears local pairing data. Other devices stay connected.")
+        }
+        .alert("Clear local history?", isPresented: $showClearHistoryAlert) {
+            Button("Clear History", role: .destructive) { LocalHistoryStore.shared.clearAll() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This permanently removes every clipboard item stored on this Mac, including saved clips.")
         }
     }
 
@@ -2776,9 +2912,8 @@ private struct SettingsPanel: View {
     ) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(title)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundColor(MainWindowPalette.primaryText.opacity(0.72))
-                .textCase(.uppercase)
+                .font(.airClipCaptionMed)
+                .foregroundColor(MainWindowPalette.secondaryText)
                 .padding(.leading, 8)
 
             content()
@@ -3092,10 +3227,14 @@ private struct SettingsPanel: View {
 
     private func updateHistoryDepth(_ value: Int) {
         historyDepth = value
-        UserDefaults.standard.set(value, forKey: "historyDepth")
+        HistoryRetentionPolicy.setSelectedIndex(value)
         if historyDays[value] > 0 {
             LocalHistoryStore.shared.pruneToRetention(days: historyDays[value])
         }
+    }
+
+    private func bundleValue(_ key: String) -> String {
+        Bundle.main.object(forInfoDictionaryKey: key) as? String ?? "—"
     }
 
     private func openLocationServicesSettings() {

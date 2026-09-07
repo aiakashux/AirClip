@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 import SwiftData
 import Combine
+import Carbon
 
 /// Owns the NSStatusItem and a borderless NSPanel that contains the entire app UI.
 @MainActor
@@ -20,6 +21,8 @@ final class StatusBarController: NSObject {
     private var unreadObserver: AnyCancellable?
     private var identityPairingObserver: AnyCancellable?
     private var authCompletionObserver: NSObjectProtocol?
+    private var openHotKey: EventHotKeyRef?
+    private var hotKeyHandler: EventHandlerRef?
 
     var isPanelVisible: Bool { panel?.isVisible ?? false }
 
@@ -36,6 +39,7 @@ final class StatusBarController: NSObject {
         item.button?.target = self
         item.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
         statusItem = item
+        registerOpenHotKey()
 
         unreadObserver = UnreadStore.shared.$hasUnread.sink { [weak self] hasUnread in
             guard let button = self?.statusItem?.button else { return }
@@ -142,6 +146,38 @@ final class StatusBarController: NSObject {
         }
 
         presentMainWindow()
+    }
+
+    private func registerOpenHotKey() {
+        var eventType = EventTypeSpec(
+            eventClass: OSType(kEventClassKeyboard),
+            eventKind: UInt32(kEventHotKeyPressed)
+        )
+        InstallEventHandler(
+            GetApplicationEventTarget(),
+            { _, _, context in
+                guard let context else { return OSStatus(eventNotHandledErr) }
+                let controller = Unmanaged<StatusBarController>
+                    .fromOpaque(context)
+                    .takeUnretainedValue()
+                Task { @MainActor in controller.openMainWindow() }
+                return noErr
+            },
+            1,
+            &eventType,
+            Unmanaged.passUnretained(self).toOpaque(),
+            &hotKeyHandler
+        )
+
+        let hotKeyID = EventHotKeyID(signature: 0x41434C50, id: 1) // ACLP
+        RegisterEventHotKey(
+            UInt32(kVK_ANSI_V),
+            UInt32(cmdKey | shiftKey),
+            hotKeyID,
+            GetApplicationEventTarget(),
+            0,
+            &openHotKey
+        )
     }
 
     private func presentMainWindow() {
@@ -270,7 +306,9 @@ final class StatusBarController: NSObject {
         quitItem.target = self
         menu.addItem(quitItem)
 
-        statusItem?.popUpMenu(menu)
+        statusItem?.menu = menu
+        statusItem?.button?.performClick(nil)
+        statusItem?.menu = nil
     }
 
     @objc private func contextOpenApp() {

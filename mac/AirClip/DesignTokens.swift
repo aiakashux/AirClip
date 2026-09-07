@@ -19,7 +19,7 @@ extension Color {
     static let textSubtle    = adaptive("#CACDD3", light: "#30343B")  // toast, secondary labels
     static let textSecondary = adaptive("#8F949D", light: "#5B6270")  // subtitles, captions
     static let textTertiary  = adaptive("#626875", light: "#7A8392")  // section headers, placeholders
-    static let textLink      = adaptive("#5647F2", light: "#4436D9")
+    static let textLink      = adaptive("#A59DFF", light: "#4436D9")
 
     // MARK: Borders — 4 tiers
 

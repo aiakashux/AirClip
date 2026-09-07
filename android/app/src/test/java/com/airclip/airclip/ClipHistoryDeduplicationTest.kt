@@ -6,6 +6,11 @@ import org.junit.Test
 class ClipHistoryDeduplicationTest {
 
     @Test
+    fun `code-like text stays regular text`() {
+        assertEquals(ClipKind.TEXT, detectClipKind("fun copy() { return true }"))
+    }
+
+    @Test
     fun `reconciles live and history records for the same logical clip`() {
         val live = record(
             messageId = "lan-random",
@@ -88,16 +93,39 @@ class ClipHistoryDeduplicationTest {
     }
 
     @Test
-    fun `removes image bytes before history is persisted`() {
+    fun `preserves persisted image when duplicate upgrades a preview-only record`() {
+        val previewOnly = record(
+            messageId = "preview-only",
+            timestampMs = 10_000L,
+            kind = ClipKind.IMAGE,
+        )
+        val persisted = record(
+            messageId = "persisted",
+            timestampMs = 75_000L,
+            kind = ClipKind.IMAGE,
+        ).copy(imageFileName = "persisted-image.img")
+
+        assertEquals(
+            "persisted-image.img",
+            ClipHistoryStore.deduplicate(listOf(previewOnly, persisted)).single().imageFileName,
+        )
+    }
+
+    @Test
+    fun `stores an image file reference without embedding image bytes`() {
         val fullImage = record(
             messageId = "image",
             timestampMs = 10_000L,
             kind = ClipKind.IMAGE,
-        ).copy(imageDataBase64 = "a".repeat(1_000_000))
+        ).copy(
+            imageDataBase64 = "a".repeat(1_000_000),
+            imageFileName = "persisted-image.img",
+        )
 
         val stored = ClipHistoryStore.prepareForStorage(listOf(fullImage)).single()
 
         assertEquals(null, stored.imageDataBase64)
+        assertEquals("persisted-image.img", stored.imageFileName)
         assertEquals(ClipKind.IMAGE.name, stored.kind)
         assertEquals("content-hash", stored.cipherHash)
     }

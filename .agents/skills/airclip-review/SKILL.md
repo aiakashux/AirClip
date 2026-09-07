@@ -242,7 +242,7 @@ textPrimary    rgba(255,255,255,0.92) → #EAEAEA → 14.5:1  ✅ AAA
 textSecondary  rgba(255,255,255,0.45) → #848484 →  5.2:1  ✅ AA
 textTertiary   rgba(255,255,255,0.25) → #4F4F4F →  2.8:1  ⚠️  DECORATIVE ONLY
 textPlaceholder rgba(255,255,255,0.20)→ #424242 →  2.2:1  ⚠️  Placeholder — WCAG exempt
-accent         #FF6363               →          →  4.6:1  ✅ AA at 13pt+
+accent         #5647F2               →          →  2.9:1  ⚠️  controls/icons only
 encryptedGreen #59D499               →          →  8.1:1  ✅ AAA
 syncBlue       #56C2FF               →          →  7.4:1  ✅ AAA
 warningYellow  #FFC531               →          →  9.1:1  ✅ AAA
@@ -254,7 +254,7 @@ warningYellow  #FFC531               →          →  9.1:1  ✅ AAA
 textPrimary_light   rgba(0,0,0,0.88) → #1D1D1D → 14.2:1  ✅ AAA
 textSecondary_light rgba(0,0,0,0.45) → #8C8C8C →  4.7:1  ✅ AA
 textTertiary_light  rgba(0,0,0,0.25) → #BFBFBF →  1.8:1  ⚠️  DECORATIVE ONLY
-accent              #FF6363          →         →  3.5:1  ⚠️  Light mode: 18pt+ only
+accent              #5647F2          →         →  5.3:1  ✅ AA
 ```
 
 ### Critical Rules

@@ -129,6 +129,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     isPairingWaiting = false,
                     pairingQr     = null,
                     pairingCode   = null,
+                    pairingCodeExpiresAtMs = 0L,
                     lastError     = null,
                     openDevicesOnFirstLaunch = true,
                     deviceAddedToastId = System.currentTimeMillis(),
@@ -177,6 +178,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         // Pairing UI state (shown on onboarding screen)
         val pairingQr: Bitmap?              = null,
         val pairingCode: String?            = null,
+        val pairingCodeExpiresAtMs: Long    = 0L,
         val isPairingWaiting: Boolean       = false,
     )
 
@@ -247,6 +249,17 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             deviceId   = AirClipIdentity.deviceId!!,
             deviceName = name,
             publicKey  = keyManager.getPublicKeyBase64(),
+            onPayloadChanged = { payload ->
+                _uiState.update {
+                    it.copy(
+                        isPairingWaiting = true,
+                        pairingQr = PairingSession.generateQrBitmap(),
+                        pairingCode = payload.code,
+                        pairingCodeExpiresAtMs = System.currentTimeMillis() + PairingSession.CODE_LIFETIME_MS,
+                        lastError = null,
+                    )
+                }
+            },
         )
 
         // Start LAN server so existing device can send pair_request to us
@@ -255,24 +268,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         LanServer.start(keyManager)
         com.airclip.airclip.lan.LanBrowser.start(app, httpClient, keyManager)
 
-        // Generate QR bitmap on IO thread
-        val qrBitmap = PairingSession.generateQrBitmap()
-
-        _uiState.update {
-            it.copy(
-                isPairingWaiting = true,
-                pairingQr        = qrBitmap,
-                pairingCode      = PairingSession.currentCode,
-                lastError        = null,
-            )
-        }
         log("Pairing session started — code=${PairingSession.currentCode}")
     }
 
     /** Refresh the displayed QR/code (called when code expires after 60s). */
     fun onRefreshPairingCode() = viewModelScope.launch(Dispatchers.IO) {
-        val qrBitmap = PairingSession.generateQrBitmap()
-        _uiState.update { it.copy(pairingQr = qrBitmap, pairingCode = PairingSession.currentCode) }
+        PairingSession.refreshNow()
     }
 
     /** Cancel the pairing wait and return to the Create/Join choice. */
@@ -281,7 +282,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         PairingSession.stop()
         LanServer.stop()
         com.airclip.airclip.lan.LanBrowser.stop(app)
-        _uiState.update { it.copy(isPairingWaiting = false, pairingQr = null, pairingCode = null, lastError = null) }
+        _uiState.update {
+            it.copy(
+                isPairingWaiting = false,
+                pairingQr = null,
+                pairingCode = null,
+                pairingCodeExpiresAtMs = 0L,
+                lastError = null,
+            )
+        }
     }
 
     // ── Join via QR scan (existing device shows QR, this device scans) ────────
@@ -572,6 +581,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 isPairingWaiting = false,
                 pairingQr = null,
                 pairingCode = null,
+                pairingCodeExpiresAtMs = 0L,
             )
         }
     }
@@ -608,6 +618,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     isPairingWaiting = false,
                     pairingQr = null,
                     pairingCode = null,
+                    pairingCodeExpiresAtMs = 0L,
                     lastError = null,
                     openDevicesOnFirstLaunch = true,
                     deviceAddedToastId = System.currentTimeMillis(),
@@ -765,9 +776,20 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _uiState.update { it.copy(clipHistory = updated) }
     }
 
-    fun onDeleteClip(item: ClipItemRecord) = runAsync("deleteClip") {
+    fun onDeleteClip(item: ClipItemRecord, onComplete: () -> Unit = {}) = runAsync("deleteClip") {
         val updated = ClipHistoryStore.remove(getApplication(), item.messageId)
         _uiState.update { it.copy(clipHistory = updated) }
+        onComplete()
+    }
+
+    fun onRestoreClip(item: ClipItemRecord) = runAsync("restoreClip") {
+        val updated = ClipHistoryStore.merge(getApplication(), listOf(item))
+        _uiState.update { it.copy(clipHistory = updated) }
+    }
+
+    fun onClearHistory() {
+        SyncEngine.clearHistory(getApplication())
+        _uiState.update { it.copy(clipHistory = emptyList()) }
     }
 
     // ── Devices tab ───────────────────────────────────────────────────────────
@@ -894,5 +916,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 log(msg)
             }
         }
+    }
+
+    override fun onCleared() {
+        PairingSession.stop()
+        super.onCleared()
     }
 }

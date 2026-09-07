@@ -28,16 +28,24 @@ final class ClipboardMonitor {
     // MARK: - Lifecycle
 
     func start() {
-        guard timer == nil else { return }
+        guard timer?.isValid != true else { return }
         lastChangeCount = NSPasteboard.general.changeCount
-        timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+        let timer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in self?.poll() }
         }
+        timer.tolerance = 0.1
+        RunLoop.main.add(timer, forMode: .common)
+        self.timer = timer
     }
 
     func stop() {
         timer?.invalidate()
         timer = nil
+    }
+
+    func restart() {
+        stop()
+        start()
     }
 
     // MARK: - Loop-prevention API
