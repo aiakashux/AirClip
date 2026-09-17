@@ -1,4 +1,4 @@
-# AirClip Mac + Android Audit
+# Airclip Mac + Android Audit
 
 Date: 2026-09-06  
 Scope: current working tree, installed Mac app, feature parity, Mac UI, and reported reliability issues.
@@ -15,13 +15,13 @@ The product is also not at feature parity. The largest gaps are Mac manual send,
 
 Evidence:
 
-- `PeerConnection` removes peers for `.failed` and `.cancelled`, but not `.waiting` (`mac/AirClip/Core/PeerConnection.swift:37`). A waiting connection can remain registered.
-- `PeerManager.connectIfNeeded` refuses a new connection while that stale peer or pending hint remains (`mac/AirClip/Core/PeerManager.swift:40`).
-- `LanBrowser` and `LanServer` report failure but retain their non-nil browser/listener. Later `start()` calls therefore return without restarting (`mac/AirClip/Core/LanBrowser.swift:17`, `mac/AirClip/Core/LanServer.swift:51`).
+- `PeerConnection` removes peers for `.failed` and `.cancelled`, but not `.waiting` (`mac/Airclip/Core/PeerConnection.swift:37`). A waiting connection can remain registered.
+- `PeerManager.connectIfNeeded` refuses a new connection while that stale peer or pending hint remains (`mac/Airclip/Core/PeerManager.swift:40`).
+- `LanBrowser` and `LanServer` report failure but retain their non-nil browser/listener. Later `start()` calls therefore return without restarting (`mac/Airclip/Core/LanBrowser.swift:17`, `mac/Airclip/Core/LanServer.swift:51`).
 - There is no wake, network-path, or application-reactivation recovery hook in the Mac target.
-- `receiveNext()` ignores completion state and unconditionally starts another receive when no error is returned (`mac/AirClip/Core/PeerConnection.swift:50`). A graceful close needs to terminate the receive loop.
-- Network callbacks, encryption/decryption, SwiftData fetches, history backfill, and image normalization are main-actor work. Reconnecting can push 20 image-heavy items while blocking UI (`mac/AirClip/Core/PeerConnection.swift:349`, `mac/AirClip/Core/LocalHistoryStore.swift:145`, `mac/AirClip/Views/ClipTypeDetector.swift:24`).
-- Send failures are ignored, so stale peers look healthy until something else removes them (`mac/AirClip/Core/PeerConnection.swift:416`).
+- `receiveNext()` ignores completion state and unconditionally starts another receive when no error is returned (`mac/Airclip/Core/PeerConnection.swift:50`). A graceful close needs to terminate the receive loop.
+- Network callbacks, encryption/decryption, SwiftData fetches, history backfill, and image normalization are main-actor work. Reconnecting can push 20 image-heavy items while blocking UI (`mac/Airclip/Core/PeerConnection.swift:349`, `mac/Airclip/Core/LocalHistoryStore.swift:145`, `mac/Airclip/Views/ClipTypeDetector.swift:24`).
+- Send failures are ignored, so stale peers look healthy until something else removes them (`mac/Airclip/Core/PeerConnection.swift:416`).
 
 Recommended fix:
 
@@ -33,13 +33,13 @@ Recommended fix:
 
 ### P0 — Mac clipboard capture can silently stop
 
-The Mac clipboard timer is started only when pairing or sync-mode policy is applied (`mac/AirClip/Core/SyncModeStore.swift:25`). There is no health check or wake/reactivation restart. Local clips are inserted only after this timer captures them, so a dead/stalled timer explains why new Mac copies also disappear from local history.
+The Mac clipboard timer is started only when pairing or sync-mode policy is applied (`mac/Airclip/Core/SyncModeStore.swift:25`). There is no health check or wake/reactivation restart. Local clips are inserted only after this timer captures them, so a dead/stalled timer explains why new Mac copies also disappear from local history.
 
 Recommended fix: make clipboard monitoring self-healing on wake/reactivation and use a run-loop mode that remains appropriate for a menu-bar utility. Keep the existing change-count guard; do not add a second monitor.
 
 ### P1 — Copy confirmation is intentionally three seconds long
 
-`copyCloseDelay` is `3.00` seconds (`mac/AirClip/Views/PopoverView.swift:21`). The cards disappear after 0.10 seconds, leaving the confirmation floating alone. This is the reported lingering tooltip.
+`copyCloseDelay` is `3.00` seconds (`mac/Airclip/Views/PopoverView.swift:21`). The cards disappear after 0.10 seconds, leaving the confirmation floating alone. This is the reported lingering tooltip.
 
 Recommended behavior: show an inline check state for roughly 500–800 ms and close the panel around 700 ms, or close immediately and rely on the check state when Reduce Motion is enabled. Remove the spring and the heavy toast shadow.
 
@@ -107,13 +107,13 @@ Useful after stabilization:
 
 There are currently three visual sources of truth:
 
-1. `mac/AirClip/DesignTokens.swift`
+1. `mac/Airclip/DesignTokens.swift`
 2. private `MainWindowPalette` values in `MainWindowView.swift`
-3. `AirClipTheme.kt` on Android
+3. `AirclipTheme.kt` on Android
 
-Violet `#5647F2` is the approved AirClip accent; coral is explicitly excluded. The repository’s older AirClip design guidance still specifies coral `#FF6363` and should be corrected when implementation starts. Within the Mac app, the main window, popover, and shared components also use different raw surface/text values. Android light mode uses pure white for the base while Mac uses a cool gray shell. This is why the products feel related but not identical.
+Purple `#6740BF` is the approved Airclip accent; coral is explicitly excluded. The repository’s older Airclip design guidance still specifies coral `#FF6363` and should be corrected when implementation starts. Within the Mac app, the main window, popover, and shared components also use different raw surface/text values. Android light mode uses pure white for the base while Mac uses a cool gray shell. This is why the products feel related but not identical.
 
-Recommendation: align the existing semantic tokens on violet `#5647F2` across both platforms. Do not introduce another design-system layer. Remove private/raw color copies as each screen is touched.
+Recommendation: align the existing semantic tokens on purple `#6740BF` across both platforms. Do not introduce another design-system layer. Remove private/raw color copies as each screen is touched.
 
 ### Mac Home
 

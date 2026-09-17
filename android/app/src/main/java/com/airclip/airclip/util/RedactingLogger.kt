@@ -9,7 +9,7 @@ import android.util.Log
  * All callers must route through this class — do not use Log.* directly for sensitive values.
  */
 object RedactingLogger {
-    private const val TAG = "AirClip"
+    private const val TAG = "Airclip"
 
     fun info(msg: String) = Log.i(TAG, msg)
     fun warn(msg: String) = Log.w(TAG, msg)

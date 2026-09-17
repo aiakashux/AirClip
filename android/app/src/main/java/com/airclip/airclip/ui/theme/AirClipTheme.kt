@@ -13,7 +13,7 @@ import com.airclip.airclip.AppAppearanceSetting
 
 // ── Color data class — all semantic tokens in one place ─────────────────────
 
-data class AirClipColorScheme(
+data class AirclipColorScheme(
     val bgBase: Color,
     val bgElevated: Color,
     val bgFloating: Color,
@@ -35,18 +35,18 @@ data class AirClipColorScheme(
 
 // ── Light palette ────────────────────────────────────────────────────────────
 
-fun lightAirClipColors() = AirClipColorScheme(
-    bgBase        = Color(0xFFF4F5F7),
+fun lightAirclipColors() = AirclipColorScheme(
+    bgBase        = Color.White,
     bgElevated    = Color(0xFFFFFFFF),
     bgFloating    = Color(0xFFF8F9FB),
     textPrimary   = Color(0xFF15161A),
-    textSecondary = Color(0xFF5B6270),
+    textSecondary = Color(0xFF5B6370),
     textTertiary  = Color(0xFF7A8392),
     borderSubtle  = Color(0x141C1D20),
     borderDefault = Color(0x241C1D20),
-    accent        = Color(0xFF5647F2),
-    accentDeep    = Color(0xFF4436D9),
-    selectionFill = Color(0x145647F2),   // accent 8%
+    accent        = Color(0xFF6740BF),
+    accentDeep    = Color(0xFF6740BF),
+    selectionFill = Color(0x146740BF),   // accent 8%
     activeFill    = Color(0x1A1C1D20),
     green         = Color(0xFF167B4B),
     blue          = Color(0xFF006FA8),
@@ -57,7 +57,7 @@ fun lightAirClipColors() = AirClipColorScheme(
 
 // ── Dark palette ─────────────────────────────────────────────────────────────
 
-fun darkAirClipColors() = AirClipColorScheme(
+fun darkAirclipColors() = AirclipColorScheme(
     bgBase        = Color(0xFF101113),
     bgElevated    = Color(0xFF1C1D20),
     bgFloating    = Color(0xFF25262A),
@@ -66,9 +66,9 @@ fun darkAirClipColors() = AirClipColorScheme(
     textTertiary  = Color(0xFF626875),
     borderSubtle  = Color(0x14FFFFFF),
     borderDefault = Color(0x24FFFFFF),
-    accent        = Color(0xFF5647F2),
-    accentDeep    = Color(0xFF4436D9),
-    selectionFill = Color(0x225647F2),
+    accent        = Color(0xFFA59DFF),
+    accentDeep    = Color(0xFF6740BF),
+    selectionFill = Color(0x22A59DFF),
     activeFill    = Color(0x1AFFFFFF),
     green         = Color(0xFF6CE0A8),
     blue          = Color(0xFF70CBFF),
@@ -79,36 +79,36 @@ fun darkAirClipColors() = AirClipColorScheme(
 
 // ── CompositionLocal ─────────────────────────────────────────────────────────
 
-val LocalAirClipColors = staticCompositionLocalOf { lightAirClipColors() }
+val LocalAirclipColors = staticCompositionLocalOf { lightAirclipColors() }
 
 // ── Convenience extension — use inside any @Composable ───────────────────────
-// Usage: val c = LocalAirClipColors.current
+// Usage: val c = LocalAirclipColors.current
 // Or via extension: MaterialTheme.airClip
 
-val MaterialTheme.airClip: AirClipColorScheme
-    @Composable get() = LocalAirClipColors.current
+val MaterialTheme.airClip: AirclipColorScheme
+    @Composable get() = LocalAirclipColors.current
 
 // ── Legacy top-level aliases (dark defaults — kept so any untouched code compiles)
-val AirClipBgBase        = Color(0xFF101113)
-val AirClipBgElevated    = Color(0xFF1C1D20)
-val AirClipBgFloating    = Color(0xFF25262A)
-val AirClipTextPrimary   = Color(0xFFF2F3F5)
-val AirClipTextSecondary = Color(0xFF8F949D)
-val AirClipTextTertiary  = Color(0xFF626875)
-val AirClipBorderSubtle  = Color(0x14FFFFFF)
-val AirClipBorderDefault = Color(0x24FFFFFF)
-val AirClipAccent        = Color(0xFF5647F2)
-val AirClipAccentDeep    = Color(0xFF4436D9)
-val AirClipGreen         = Color(0xFF6CE0A8)
-val AirClipBlue          = Color(0xFF70CBFF)
-val AirClipYellow        = Color(0xFFFFD45C)
-val AirClipDestructive   = Color(0xFFFF5B55)
-val AirClipSelectionFill = Color(0x225647F2)
-val AirClipActiveFill    = Color(0x1AFFFFFF)
+val AirclipBgBase        = Color(0xFF101113)
+val AirclipBgElevated    = Color(0xFF1C1D20)
+val AirclipBgFloating    = Color(0xFF25262A)
+val AirclipTextPrimary   = Color(0xFFF2F3F5)
+val AirclipTextSecondary = Color(0xFF8F949D)
+val AirclipTextTertiary  = Color(0xFF626875)
+val AirclipBorderSubtle  = Color(0x14FFFFFF)
+val AirclipBorderDefault = Color(0x24FFFFFF)
+val AirclipAccent        = Color(0xFFA59DFF)
+val AirclipAccentDeep    = Color(0xFF6740BF)
+val AirclipGreen         = Color(0xFF6CE0A8)
+val AirclipBlue          = Color(0xFF70CBFF)
+val AirclipYellow        = Color(0xFFFFD45C)
+val AirclipDestructive   = Color(0xFFFF5B55)
+val AirclipSelectionFill = Color(0x22A59DFF)
+val AirclipActiveFill    = Color(0x1AFFFFFF)
 
 // ── Typography ───────────────────────────────────────────────────────────────
 
-val AirClipTypography = Typography(
+val AirclipTypography = Typography(
     titleLarge  = TextStyle(fontWeight = FontWeight.SemiBold, fontSize = 20.sp, lineHeight = 28.sp),
     titleMedium = TextStyle(fontWeight = FontWeight.SemiBold, fontSize = 17.sp, lineHeight = 24.sp),
     bodyLarge   = TextStyle(fontWeight = FontWeight.Normal,   fontSize = 15.sp, lineHeight = 22.sp),
@@ -122,15 +122,15 @@ val AirClipTypography = Typography(
 // ── M3 schemes ───────────────────────────────────────────────────────────────
 
 private fun buildLightM3() = lightColorScheme(
-    primary            = Color(0xFF5647F2),
+    primary            = Color(0xFF6740BF),
     onPrimary          = Color.White,
-    primaryContainer   = Color(0x145647F2),
+    primaryContainer   = Color(0x146740BF),
     onPrimaryContainer = Color(0xFF15161A),
     secondary          = Color(0xFF006FA8),
     onSecondary        = Color.White,
     tertiary           = Color(0xFF167B4B),
     onTertiary         = Color.White,
-    background         = Color(0xFFF4F5F7),
+    background         = Color.White,
     onBackground       = Color(0xFF15161A),
     surface            = Color(0xFFFFFFFF),
     onSurface          = Color(0xFF15161A),
@@ -143,9 +143,9 @@ private fun buildLightM3() = lightColorScheme(
 )
 
 private fun buildDarkM3() = darkColorScheme(
-    primary            = Color(0xFF5647F2),
-    onPrimary          = Color.White,
-    primaryContainer   = Color(0x225647F2),
+    primary            = Color(0xFFA59DFF),
+    onPrimary          = Color(0xFF101113),
+    primaryContainer   = Color(0x22A59DFF),
     onPrimaryContainer = Color(0xFFF2F3F5),
     secondary          = Color(0xFF70CBFF),
     onSecondary        = Color(0xFF101113),
@@ -166,7 +166,7 @@ private fun buildDarkM3() = darkColorScheme(
 // ── Entry point ──────────────────────────────────────────────────────────────
 
 @Composable
-fun AirClipTheme(
+fun AirclipTheme(
     appearanceSetting: AppAppearanceSetting = AppAppearanceSetting.LIGHT,
     content: @Composable () -> Unit,
 ) {
@@ -175,13 +175,13 @@ fun AirClipTheme(
         AppAppearanceSetting.LIGHT  -> false
         AppAppearanceSetting.SYSTEM -> isSystemInDarkTheme()
     }
-    val colors = if (darkTheme) darkAirClipColors() else lightAirClipColors()
+    val colors = if (darkTheme) darkAirclipColors() else lightAirclipColors()
     val m3Colors = if (darkTheme) buildDarkM3() else buildLightM3()
 
-    CompositionLocalProvider(LocalAirClipColors provides colors) {
+    CompositionLocalProvider(LocalAirclipColors provides colors) {
         MaterialTheme(
             colorScheme = m3Colors,
-            typography  = AirClipTypography,
+            typography  = AirclipTypography,
             content     = content,
         )
     }

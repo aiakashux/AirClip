@@ -4,7 +4,7 @@ import AppIntents
 
 // MARK: - Timeline entry
 
-struct AirClipWidgetEntry: TimelineEntry {
+struct AirclipWidgetEntry: TimelineEntry {
     let date:       Date
     let state:      WidgetSyncState
     let preview:    String
@@ -13,25 +13,25 @@ struct AirClipWidgetEntry: TimelineEntry {
 
 // MARK: - Timeline provider
 
-struct AirClipWidgetProvider: TimelineProvider {
+struct AirclipWidgetProvider: TimelineProvider {
 
-    func placeholder(in context: Context) -> AirClipWidgetEntry {
-        AirClipWidgetEntry(date: Date(), state: .synced, preview: "", syncMs: 0)
+    func placeholder(in context: Context) -> AirclipWidgetEntry {
+        AirclipWidgetEntry(date: Date(), state: .synced, preview: "", syncMs: 0)
     }
 
-    func getSnapshot(in context: Context, completion: @escaping (AirClipWidgetEntry) -> Void) {
+    func getSnapshot(in context: Context, completion: @escaping (AirclipWidgetEntry) -> Void) {
         completion(currentEntry())
     }
 
-    func getTimeline(in context: Context, completion: @escaping (Timeline<AirClipWidgetEntry>) -> Void) {
+    func getTimeline(in context: Context, completion: @escaping (Timeline<AirclipWidgetEntry>) -> Void) {
         let entry    = currentEntry()
         // Refresh in 5 minutes to update elapsed timestamps; earlier refresh triggered by app via WidgetCenter.
         let nextDate = Calendar.current.date(byAdding: .minute, value: 5, to: Date()) ?? Date()
         completion(Timeline(entries: [entry], policy: .after(nextDate)))
     }
 
-    private func currentEntry() -> AirClipWidgetEntry {
-        AirClipWidgetEntry(
+    private func currentEntry() -> AirclipWidgetEntry {
+        AirclipWidgetEntry(
             date:    Date(),
             state:   WidgetSharedState.state,
             preview: WidgetSharedState.preview,
@@ -42,8 +42,8 @@ struct AirClipWidgetProvider: TimelineProvider {
 
 // MARK: - Widget view
 
-struct AirClipWidgetEntryView: View {
-    var entry: AirClipWidgetProvider.Entry
+struct AirclipWidgetEntryView: View {
+    var entry: AirclipWidgetProvider.Entry
 
     var body: some View {
         HStack(spacing: 10) {
@@ -89,7 +89,7 @@ struct AirClipWidgetEntryView: View {
     private var primaryText: String {
         switch entry.state {
         case .noDevices:   return "No devices nearby"
-        case .synced:      return "AirClip in sync"
+        case .synced:      return "Airclip in sync"
         case .pending:     return "New from Mac"
         case .readyToSend: return "Ready to sync"
         }
@@ -137,14 +137,14 @@ struct AirClipWidgetEntryView: View {
 
 // MARK: - Widget declaration
 
-struct AirClipWidget: Widget {
-    let kind: String = "AirClipWidget"
+struct AirclipWidget: Widget {
+    let kind: String = "AirclipWidget"
 
     var body: some WidgetConfiguration {
-        StaticConfiguration(kind: kind, provider: AirClipWidgetProvider()) { entry in
-            AirClipWidgetEntryView(entry: entry)
+        StaticConfiguration(kind: kind, provider: AirclipWidgetProvider()) { entry in
+            AirclipWidgetEntryView(entry: entry)
         }
-        .configurationDisplayName("AirClip")
+        .configurationDisplayName("Airclip")
         .description("Clipboard sync status and quick actions.")
         .supportedFamilies([.systemMedium])
     }

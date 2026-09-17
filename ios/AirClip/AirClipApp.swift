@@ -2,7 +2,7 @@ import SwiftUI
 import BackgroundTasks
 
 @main
-struct AirClipApp: App {
+struct AirclipApp: App {
     @StateObject private var authManager = AuthManager.shared
     @StateObject private var syncEngine  = SyncEngine.shared
     @Environment(\.scenePhase) private var scenePhase

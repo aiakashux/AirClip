@@ -32,7 +32,7 @@ enum class AppAppearanceSetting(val label: String) {
  * Call [init] once in [MainViewModel]'s init block before reading properties.
  */
 object Prefs {
-    val historyRetentionDays = listOf(1, 3, 7, 15, 30, 0)
+    val historyRetentionDays = listOf(1, 3, 7, 15, 0)
 
     private lateinit var sp: SharedPreferences
     val isInitialized: Boolean
@@ -61,16 +61,19 @@ object Prefs {
     var historyDepth: Int
         get() {
             val stored = sp.getInt(KEY_HISTORY_DEPTH, 4)
-            if (sp.getInt(KEY_HISTORY_DEPTH_VERSION, 1) < 2) {
-                val migrated = when (stored.coerceIn(0, 3)) {
-                    0 -> 2 // 7 days
-                    1 -> 4 // 30 days
-                    2 -> 4 // closest available to legacy 90 days
-                    else -> 5 // Forever
+            val version = sp.getInt(KEY_HISTORY_DEPTH_VERSION, 1)
+            if (version < 3) {
+                val migrated = if (version < 2) {
+                    when (stored.coerceIn(0, 3)) {
+                        0 -> 2 // 7 days
+                        else -> 4 // Legacy 30/90-day and forever choices become Forever.
+                    }
+                } else {
+                    if (stored >= 4) 4 else stored.coerceIn(0, historyRetentionDays.lastIndex)
                 }
                 sp.edit()
                     .putInt(KEY_HISTORY_DEPTH, migrated)
-                    .putInt(KEY_HISTORY_DEPTH_VERSION, 2)
+                    .putInt(KEY_HISTORY_DEPTH_VERSION, 3)
                     .apply()
                 return migrated
             }
@@ -79,7 +82,7 @@ object Prefs {
         set(value) {
             sp.edit()
                 .putInt(KEY_HISTORY_DEPTH, value.coerceIn(0, historyRetentionDays.lastIndex))
-                .putInt(KEY_HISTORY_DEPTH_VERSION, 2)
+                .putInt(KEY_HISTORY_DEPTH_VERSION, 3)
                 .apply()
         }
 

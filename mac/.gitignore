@@ -7,8 +7,8 @@ xcuserdata/
 *.moved-aside
 
 # Xcode local settings
-AirClip.xcodeproj/xcuserdata/
-AirClip.xcodeproj/project.xcworkspace/xcuserdata/
+Airclip.xcodeproj/xcuserdata/
+Airclip.xcodeproj/project.xcworkspace/xcuserdata/
 
 # macOS
 .DS_Store

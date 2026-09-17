@@ -1,8 +1,8 @@
-# AirClip Product Requirements
+# Airclip Product Requirements
 
 ## What It Is
 
-AirClip is a private clipboard sync utility for people who work across multiple devices.
+Airclip is a private clipboard sync utility for people who work across multiple devices.
 
 > Copy on one device. Paste on another. No messages to yourself.
 

@@ -20,6 +20,8 @@ struct OnboardingView: View {
     @State private var step: OnboardingStep = .choice
     @State private var isCreating = true
     @State private var deviceName = ""
+    @State private var spaceName = ""
+    @State private var seenSpaceNames = Set<String>()
     @State private var joinCode = ""
     @State private var isLoading = false
     @State private var errorMessage: String?
@@ -41,14 +43,13 @@ struct OnboardingView: View {
                             presentJoinModal()
                         },
                         onCreate: {
-                            isCreating = true
-                            errorMessage = nil
-                            withAnimation(.easeOut(duration: 0.18)) { step = .nameDevice }
+                            beginCreatingAirclip()
                         }
                     )
                 } else if step == .nameDevice && isCreating {
                     MacCreateAirclipModal(
-                        deviceName: $deviceName,
+                        spaceName: $spaceName,
+                        onRefreshName: refreshSpaceName,
                         errorMessage: errorMessage,
                         isLoading: isLoading,
                         onCreate: continueAfterName,
@@ -76,7 +77,10 @@ struct OnboardingView: View {
                 if isJoinModalPresented {
                     MacJoinAirclipModal(
                         qrImage: pairing.qrImage,
+                        qrRevision: pairing.qrRevision,
                         code: pairing.currentCode,
+                        expiresAt: pairing.expiresAt,
+                        onRefresh: pairing.refreshNow,
                         onClose: dismissJoinModal
                     )
                     .transition(.opacity.combined(with: .offset(y: 12)))
@@ -121,17 +125,15 @@ struct OnboardingView: View {
 
             VStack(spacing: 20) {
                 OnboardingSplashButton(
-                    title: "Create an Airclip",
+                    title: "Create a space",
                     icon: .plus,
                     style: .primary
                 ) {
-                    isCreating = true
-                    errorMessage = nil
-                    withAnimation(.easeOut(duration: 0.18)) { step = .nameDevice }
+                    beginCreatingAirclip()
                 }
 
                 OnboardingSplashButton(
-                    title: "Join your Airclip",
+                    title: "Join a space",
                     icon: .link,
                     style: .secondary
                 ) {
@@ -173,7 +175,7 @@ struct OnboardingView: View {
             }
 
             OnboardingSplashButton(
-                title: isCreating ? "Create an Airclip" : "Continue",
+                title: isCreating ? "Create space" : "Continue",
                 icon: isCreating ? .plus : .arrowRight,
                 style: .primary,
                 isLoading: isLoading,
@@ -196,33 +198,9 @@ struct OnboardingView: View {
                 .font(.system(size: 22, weight: .regular))
                 .foregroundStyle(Color(hex: "#202327"))
 
-            ZStack {
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(Color(hex: "#F5F4F7"))
-                    .frame(width: min(width, 240), height: min(width, 240))
-
-                if let qr = pairing.qrImage {
-                    Image(nsImage: qr)
-                        .resizable()
-                        .interpolation(.none)
-                        .frame(width: min(width - 32, 208), height: min(width - 32, 208))
-                } else {
-                    ProgressView().controlSize(.small)
-                }
-            }
-
-            if let code = pairing.currentCode {
-                VStack(spacing: 4) {
-                    Text("Numeric code")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(Color(hex: "#868C98"))
-                        .textCase(.uppercase)
-                    Text(formattedCode(code))
-                        .font(.system(size: 30, weight: .regular, design: .monospaced))
-                        .foregroundStyle(Color(hex: "#202327"))
-                        .tracking(5)
-                }
-            }
+            MacJoinQRCodeCard(qrImage: pairing.qrImage, revision: pairing.qrRevision)
+            MacJoinCodeView(code: pairing.currentCode)
+            MacPairingRefreshRow(expiresAt: pairing.expiresAt, onRefresh: pairing.refreshNow)
 
             OnboardingSplashButton(title: "Done", icon: .tick, style: .primary) {
                 finishOnboarding(opening: .openDevicesTab)
@@ -235,7 +213,7 @@ struct OnboardingView: View {
     private func enterCodeStep(width: CGFloat, isCompact: Bool) -> some View {
         VStack(spacing: isCompact ? 14 : 18) {
             VStack(spacing: 6) {
-                Text("Join your Airclip")
+                Text("Join a space")
                     .font(.system(size: 22, weight: .regular))
                     .foregroundStyle(Color(hex: "#202327"))
                 Text("Enter the 6-digit code from another device on the same Wi-Fi.")
@@ -254,13 +232,13 @@ struct OnboardingView: View {
             }
 
             OnboardingSplashButton(
-                title: "Join your Airclip",
+                title: "Join space",
                 icon: .link,
                 style: .primary,
                 isLoading: isLoading,
                 isDisabled: PairingSession.normalizedCode(joinCode).count < 6
             ) {
-                joinAirClip()
+                joinAirclip()
             }
 
             OnboardingBackButton {
@@ -272,12 +250,27 @@ struct OnboardingView: View {
 
     // MARK: - Actions
 
+    private func beginCreatingAirclip() {
+        if spaceName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            refreshSpaceName()
+        }
+        isCreating = true
+        errorMessage = nil
+        withAnimation(.easeOut(duration: 0.18)) { step = .nameDevice }
+    }
+
+    private func refreshSpaceName() {
+        guard let name = SpaceNameSuggestions.next(excluding: seenSpaceNames) else { return }
+        seenSpaceNames.insert(name)
+        spaceName = name
+    }
+
     private func presentJoinModal() {
         let name = deviceName.trimmingCharacters(in: .whitespaces).isEmpty
             ? (Host.current().localizedName ?? "My Mac")
             : deviceName.trimmingCharacters(in: .whitespaces)
         deviceName = name
-        AirClipIdentity.shared.setDeviceName(name)
+        AirclipIdentity.shared.setDeviceName(name)
         errorMessage = nil
         LanServer.shared.start()
         pairing.onPairSuccess = { finishOnboarding(opening: .openDevicesTab) }
@@ -297,11 +290,12 @@ struct OnboardingView: View {
 
     private func continueAfterName() {
         let name = deviceName.trimmingCharacters(in: .whitespaces)
-        AirClipIdentity.shared.setDeviceName(name)
+        let space = spaceName.trimmingCharacters(in: .whitespaces)
+        AirclipIdentity.shared.setDeviceName(name)
         errorMessage = nil
 
         if isCreating {
-            AirClipIdentity.shared.createAirClip(name: name)
+            AirclipIdentity.shared.createAirclip(spaceName: space, deviceName: name)
             LanServer.shared.start()
             pairing.onPairSuccess = { finishOnboarding(opening: .openDevicesTab) }
             PairingSession.shared.start()
@@ -315,14 +309,14 @@ struct OnboardingView: View {
         }
     }
 
-    private func joinAirClip() {
+    private func joinAirclip() {
         let code = PairingSession.normalizedCode(joinCode)
         let name = deviceName.trimmingCharacters(in: .whitespaces)
         isLoading = true
         errorMessage = nil
 
-        PairingClient.shared.joinAirClip(code: code, myName: name) { airClipId, devices in
-            AirClipIdentity.shared.joinAirClip(airClipId: airClipId, myName: name, allDevices: devices)
+        PairingClient.shared.joinAirclip(code: code, myName: name) { airClipId, spaceName, devices in
+            AirclipIdentity.shared.joinAirclip(airClipId: airClipId, myName: name, spaceName: spaceName, allDevices: devices)
             self.isLoading = false
             self.finishOnboarding(opening: .openDevicesTab)
         } onError: { message in
@@ -343,7 +337,7 @@ struct OnboardingView: View {
     }
 
     private func requestFirstRunPermissionsIfNeeded() {
-        guard !AirClipIdentity.shared.isPaired else { return }
+        guard !AirclipIdentity.shared.isPaired else { return }
 
         if UserDefaults.standard.bool(forKey: firstRunPermissionPromptKey) {
             CurrentWiFiNetwork.shared.requestAccessAndRefresh()
@@ -359,13 +353,13 @@ struct OnboardingView: View {
 
             try? await Task.sleep(nanoseconds: 700_000_000)
             await MainActor.run {
-                guard !AirClipIdentity.shared.isPaired else { return }
+                guard !AirclipIdentity.shared.isPaired else { return }
                 LanBrowser.shared.start()
             }
 
             try? await Task.sleep(nanoseconds: 1_200_000_000)
             await MainActor.run {
-                guard !AirClipIdentity.shared.isPaired else { return }
+                guard !AirclipIdentity.shared.isPaired else { return }
                 LanBrowser.shared.stop()
             }
         }
@@ -374,6 +368,35 @@ struct OnboardingView: View {
     private func formattedCode(_ code: String) -> String {
         guard code.count == 6 else { return code }
         return "\(code.prefix(3)) \(code.suffix(3))"
+    }
+}
+
+private enum SpaceNameSuggestions {
+    private static let names = [
+        "Jelly Comet", "Lucky Orbit", "Fizzy Nova", "Purple Portal", "Candy Compass",
+        "Bubble Moon", "Cosmic Marble", "Peachy Planet", "Jolly Meteor", "Magic Rocket",
+        "Sunny Nebula", "Bouncy Pixel", "Glitter Galaxy", "Mango Moon", "Tiny Satellite",
+        "Sparkle Orbit", "Jelly Star", "Happy Comet", "Fuzzy Planet", "Lucky Meteor",
+        "Bubble Nova", "Cosmic Dice", "Peachy Orbit", "Jolly Rocket", "Magic Moon",
+        "Sunny Star", "Bouncy Comet", "Glitter Portal", "Mango Meteor", "Tiny Nova",
+        "Sparkle Planet", "Jelly Orbit", "Happy Rocket", "Fuzzy Moon", "Lucky Star",
+        "Bubble Comet", "Cosmic Compass", "Peachy Nova", "Jolly Planet", "Magic Meteor",
+        "Sunny Orbit", "Bouncy Rocket", "Glitter Moon", "Mango Star", "Tiny Comet",
+        "Sparkle Nova", "Jelly Planet", "Happy Meteor", "Fuzzy Orbit", "Lucky Moon",
+        "Bubble Rocket", "Cosmic Pixel", "Peachy Meteor", "Jolly Star", "Magic Comet",
+        "Sunny Planet", "Bouncy Nova", "Glitter Orbit", "Mango Moonbeam", "Tiny Rocket",
+        "Sparkle Comet", "Jelly Nova", "Happy Planet", "Fuzzy Meteor", "Lucky Rocket",
+        "Bubble Star", "Cosmic Lantern", "Peachy Moon", "Jolly Comet", "Magic Nova",
+        "Sunny Rocket", "Bouncy Planet", "Glitter Star", "Mango Orbit", "Tiny Meteor",
+        "Sparkle Moon", "Jelly Rocket", "Happy Nova", "Fuzzy Star", "Lucky Planet",
+        "Bubble Meteor", "Cosmic Portal", "Peachy Rocket", "Jolly Moon", "Magic Star",
+        "Sunny Comet", "Bouncy Orbit", "Glitter Nova", "Mango Planet", "Tiny Moon",
+        "Sparkle Rocket", "Jelly Meteor", "Happy Orbit", "Fuzzy Nova", "Lucky Comet",
+        "Bubble Planet", "Cosmic Prism", "Peachy Star", "Jolly Orbit", "Magic Moonbeam"
+    ]
+
+    static func next(excluding seen: Set<String>) -> String? {
+        names.filter { !seen.contains($0) }.randomElement()
     }
 }
 
@@ -413,7 +436,7 @@ private struct MacInitialSplashScreen: View {
 
             HStack(spacing: 20) {
                 MacSplashButton(
-                    title: "Join your Airclip",
+                    title: "Join a space",
                     svg: MacSplashSVG.joinIcon,
                     foreground: Color(hex: "#202327"),
                     background: Color(hex: "#EFF0F1"),
@@ -422,7 +445,7 @@ private struct MacInitialSplashScreen: View {
                 )
 
                 MacSplashButton(
-                    title: "Create an Airclip",
+                    title: "Create a space",
                     svg: MacSplashSVG.createIcon,
                     foreground: .white,
                     background: .black,
@@ -573,56 +596,69 @@ private struct MacSplashButton: View {
 
 private struct MacSplashSVGImage: View {
     let svg: String
+    var tint: Color? = nil
 
     var body: some View {
         Image(nsImage: MacSplashSVG.image(from: svg))
+            .renderingMode(tint == nil ? .original : .template)
             .resizable()
             .scaledToFit()
+            .foregroundStyle(tint ?? .primary)
     }
 }
 
 private struct MacCreateAirclipModal: View {
-    @Binding var deviceName: String
+    @Binding var spaceName: String
 
+    let onRefreshName: () -> Void
     let errorMessage: String?
     let isLoading: Bool
     let onCreate: () -> Void
     let onBack: () -> Void
 
     private var isCreateDisabled: Bool {
-        deviceName.trimmingCharacters(in: .whitespaces).isEmpty
+        spaceName.trimmingCharacters(in: .whitespaces).isEmpty
     }
 
     var body: some View {
         ZStack(alignment: .topLeading) {
             Color.white
 
-            Button(action: onBack) {
-                MacSplashSVGImage(svg: MacSplashSVG.backArrowIcon)
-                    .frame(width: 32, height: 32)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .position(x: 192, y: 96)
-            .accessibilityLabel("Back")
+            HStack {
+                Button(action: onBack) {
+                    MacSplashSVGImage(svg: MacSplashSVG.backArrowIcon)
+                        .frame(width: 32, height: 32)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .frame(width: 48, height: 48)
+                .accessibilityLabel("Back")
 
-            MacSplashSVGImage(svg: MacSplashSVG.logoBlue)
-                .frame(width: 157, height: 40)
-                .position(x: 430.5, y: 96)
+                Spacer(minLength: 0)
+
+                MacSplashSVGImage(svg: MacSplashSVG.logo, tint: .accent)
+                    .frame(width: 157, height: 40)
+
+                Spacer(minLength: 0)
+                Color.clear.frame(width: 48, height: 48)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 168)
+            .padding(.top, 72)
 
             VStack(spacing: 0) {
-                Text("Name this device")
+                Text("Name your space")
                     .font(.custom("Beary", size: 32))
                     .foregroundStyle(Color(hex: "#202327"))
-                    .frame(width: 254, height: 35)
+                    .frame(width: 364, height: 35)
 
-                Text("Helps you recognise it on your other devices.")
+                Text("A shared space for all your devices.")
                     .font(.system(size: 16, weight: .regular))
                     .foregroundStyle(Color(hex: "#6A7282"))
                     .frame(width: 364, height: 24)
                     .padding(.top, 4)
 
-                MacCreateDeviceNameField(text: $deviceName)
+                MacCreateDeviceNameField(text: $spaceName, onRefreshName: onRefreshName)
                     .padding(.top, 32)
 
                 if let errorMessage {
@@ -635,7 +671,7 @@ private struct MacCreateAirclipModal: View {
                 }
 
                 MacCreateModalButton(
-                    title: "Create an Airclip",
+                    title: "Create space",
                     svg: MacSplashSVG.createIcon,
                     isLoading: isLoading,
                     isDisabled: isCreateDisabled,
@@ -652,38 +688,111 @@ private struct MacCreateAirclipModal: View {
 
 private struct MacCreateDeviceNameField: View {
     @Binding var text: String
+    let onRefreshName: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var isFocused: Bool
+    @State private var isRefreshing = false
+    @State private var refreshTurns = 0
+    @State private var isRefreshHovered = false
+    @State private var revealProgress = 1.0
+    @State private var draftText: String
+
+    init(text: Binding<String>, onRefreshName: @escaping () -> Void) {
+        _text = text
+        self.onRefreshName = onRefreshName
+        _draftText = State(initialValue: text.wrappedValue)
+    }
 
     var body: some View {
-        TextField("", text: $text)
-            .font(.system(size: 20, weight: .regular))
-            .foregroundStyle(Color(hex: "#202327"))
-            .textFieldStyle(.plain)
-            .focused($isFocused)
-            .onChange(of: text) { _, newValue in
-                let limitedName = DeviceDisplayText.limitedName(newValue)
-                if limitedName != newValue {
-                    text = limitedName
+        ZStack {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color.white)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .strokeBorder(
+                            isFocused ? Color(hex: "#202327").opacity(0.35) : Color(hex: "#D6D6D6"),
+                            lineWidth: 1
+                        )
+                )
+
+            HStack(spacing: 0) {
+                TextField("", text: $draftText)
+                    .font(.system(size: 20, weight: .regular))
+                    .foregroundStyle(Color(hex: "#202327"))
+                    .textFieldStyle(.plain)
+                    .focused($isFocused)
+                    .onChange(of: draftText) { _, newValue in
+                        let limitedName = DeviceDisplayText.limitedName(newValue)
+                        if limitedName != newValue {
+                            draftText = limitedName
+                        } else if !isRefreshing {
+                            text = limitedName
+                        }
+                    }
+                    .padding(.leading, 16)
+                    .padding(.trailing, 8)
+                    .blur(radius: isRefreshing && !reduceMotion ? 6 * (1 - revealProgress) : 0)
+                    .opacity(isRefreshing ? 0.4 + (0.6 * revealProgress) : 1)
+
+                Button {
+                    guard !isRefreshing else { return }
+                    withAnimation(.timingCurve(0.23, 1, 0.32, 1, duration: 0.08)) {
+                        revealProgress = 0
+                        isRefreshing = true
+                    }
+                    withAnimation(.timingCurve(0.23, 1, 0.32, 1, duration: 0.25)) { refreshTurns += 1 }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+                        onRefreshName()
+                        guard !reduceMotion else {
+                            draftText = text
+                            withAnimation(.timingCurve(0.23, 1, 0.32, 1, duration: 0.18)) {
+                                revealProgress = 1
+                                isRefreshing = false
+                            }
+                            return
+                        }
+
+                        let newName = Array(text)
+                        draftText = ""
+                        let characterDelay = 0.18 / Double(max(newName.count, 1))
+
+                        for index in newName.indices {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + characterDelay * Double(index + 1)) {
+                                withAnimation(.linear(duration: characterDelay)) {
+                                    draftText = String(newName.prefix(index + 1))
+                                    revealProgress = Double(index + 1) / Double(newName.count)
+                                }
+                                if index == newName.count - 1 {
+                                    withAnimation(.timingCurve(0.23, 1, 0.32, 1, duration: 0.08)) {
+                                        isRefreshing = false
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } label: {
+                    AirclipIcon(.refresh, size: 22)
+                        .foregroundStyle(Color(hex: "#43474E"))
+                        .rotationEffect(.degrees(Double(refreshTurns) * 360))
+                        .frame(width: 48, height: 48)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .fill(isRefreshHovered ? Color(hex: "#F2F2F4") : .white)
+                        )
                 }
+                .buttonStyle(.plain)
+                .onHover { isRefreshHovered = $0 }
+                .animation(.easeOut(duration: 0.10), value: isRefreshHovered)
+                .accessibilityLabel("Suggest another space name")
+                .padding(.trailing, 8)
             }
-            .padding(.horizontal, 16)
-            .frame(width: 348, height: 64)
-            .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(Color.white)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .strokeBorder(
-                                isFocused ? Color(hex: "#202327").opacity(0.35) : Color(hex: "#D6D6D6"),
-                                lineWidth: 1
-                            )
-                    )
-            )
-            .onAppear {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
-                    isFocused = true
-                }
+        }
+        .frame(width: 348, height: 64)
+        .onAppear {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+                isFocused = true
             }
+        }
     }
 }
 
@@ -705,23 +814,22 @@ private struct MacCreateModalButton: View {
                         .tint(.white)
                         .frame(width: 20, height: 20)
                 } else {
-                    MacSplashSVGImage(svg: svg)
+                    MacSplashSVGImage(svg: svg, tint: isDisabled ? Color(hex: "#43474E") : nil)
                         .frame(width: 20, height: 20)
                 }
 
                 Text(title)
                     .font(.custom("Beary", size: 18))
-                    .foregroundStyle(Color.white)
+                    .foregroundStyle(isDisabled ? Color(hex: "#43474E") : .white)
                     .lineLimit(1)
                     .offset(y: 1.5)
             }
-            .frame(width: 348, height: 60)
+            .frame(width: 348, height: 64)
             .background(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(Color.black)
+                    .fill(isDisabled ? Color(hex: "#C8CBD0") : .black)
             )
             .scaleEffect(isPressed ? 0.985 : 1)
-            .opacity(isDisabled ? 0.45 : 1)
             .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
         .buttonStyle(.plain)
@@ -742,7 +850,10 @@ private struct MacCreateModalButton: View {
 
 private struct MacJoinAirclipModal: View {
     let qrImage: NSImage?
+    let qrRevision: Int
     let code: String?
+    let expiresAt: Date?
+    let onRefresh: () -> Void
     let onClose: () -> Void
 
     var body: some View {
@@ -759,27 +870,31 @@ private struct MacJoinAirclipModal: View {
             .accessibilityLabel("Back")
 
             VStack(spacing: 0) {
-                Text("Join your Airclip")
+                Text("Join a space")
                     .font(.custom("Beary", size: 32))
                     .foregroundStyle(Color(hex: "#202327"))
                     .frame(width: 238, height: 35)
 
-                Text("Open Airclip on an existing device and scan this QR code or have them enter the code below")
+                Text("Open Airclip on your other device. Choose Join a space, then scan or enter the code below.")
                     .font(.system(size: 16, weight: .regular))
                     .lineSpacing(4)
                     .foregroundStyle(Color(hex: "#6F7785"))
                     .multilineTextAlignment(.center)
+                    .lineLimit(2)
                     .frame(width: 364, height: 48)
                     .padding(.top, 4)
 
-                MacJoinQRCodeCard(qrImage: qrImage)
-                    .padding(.top, 60)
+                MacJoinQRCodeCard(qrImage: qrImage, revision: qrRevision)
+                    .padding(.top, 48)
 
                 MacJoinCodeView(code: code)
-                    .padding(.top, 40)
+                    .padding(.top, 32)
+
+                MacPairingRefreshRow(expiresAt: expiresAt, onRefresh: onRefresh)
+                    .padding(.top, 12)
             }
-            .frame(width: 364, height: 435, alignment: .top)
-            .position(x: 430, y: 297.5)
+            .frame(width: 364, height: 475, alignment: .top)
+            .position(x: 430, y: 317.5)
         }
         .frame(width: MacInitialSplashMetrics.width, height: MacInitialSplashMetrics.height)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -790,6 +905,17 @@ private struct MacJoinAirclipModal: View {
 
 private struct MacJoinQRCodeCard: View {
     let qrImage: NSImage?
+    let revision: Int
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var currentImage: NSImage?
+    @State private var previousImage: NSImage?
+    @State private var transitionProgress = 1.0
+
+    init(qrImage: NSImage?, revision: Int) {
+        self.qrImage = qrImage
+        self.revision = revision
+        _currentImage = State(initialValue: qrImage)
+    }
 
     var body: some View {
         ZStack {
@@ -797,31 +923,55 @@ private struct MacJoinQRCodeCard: View {
                 .fill(Color.white)
                 .overlay(
                     RoundedRectangle(cornerRadius: 28.5714, style: .continuous)
-                        .strokeBorder(Color(hex: "#F7F7F6"), lineWidth: 16.0714)
+                        .strokeBorder(Color(hex: "#F7F7F6"), lineWidth: 14)
                 )
-                .frame(width: 200, height: 200)
+                .frame(width: 188, height: 188)
 
-            if let qrImage {
-                Image(nsImage: qrImage)
+            if let previousImage {
+                Image(nsImage: previousImage)
                     .resizable()
                     .interpolation(.none)
-                    .frame(width: 157, height: 157)
-            } else {
+                    .frame(width: 148, height: 148)
+                    .opacity(1 - transitionProgress)
+                    .accessibilityHidden(true)
+            }
+
+            if let currentImage {
+                Image(nsImage: currentImage)
+                    .resizable()
+                    .interpolation(.none)
+                    .frame(width: 148, height: 148)
+                    .opacity(transitionProgress)
+                    .accessibilityLabel("Pairing QR code")
+            } else if previousImage == nil {
                 ProgressView()
                     .controlSize(.small)
-                    .frame(width: 157, height: 157)
+                    .frame(width: 148, height: 148)
             }
         }
-        .frame(width: 200, height: 200)
+        .frame(width: 188, height: 188)
+        .onChange(of: revision) { _, _ in
+            previousImage = currentImage
+            currentImage = qrImage
+            guard !reduceMotion else {
+                transitionProgress = 1
+                return
+            }
+            transitionProgress = 0
+            withAnimation(.timingCurve(0.23, 1, 0.32, 1, duration: 0.18)) {
+                transitionProgress = 1
+            }
+        }
     }
 }
 
 private struct MacJoinCodeView: View {
     let code: String?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var digits: [String] {
         let normalized = PairingSession.normalizedCode(code ?? "")
-        return Array(normalized.padding(toLength: 6, withPad: "0", startingAt: 0).prefix(6)).map(String.init)
+        return Array(normalized.padding(toLength: 6, withPad: " ", startingAt: 0).prefix(6)).map(String.init)
     }
 
     var body: some View {
@@ -830,6 +980,12 @@ private struct MacJoinCodeView: View {
                 ForEach(0..<3, id: \.self) { index in
                     Text(digits[index])
                         .frame(width: 38, height: 48)
+                        .contentTransition(.numericText())
+                        .animation(
+                            reduceMotion ? nil : .timingCurve(0.23, 1, 0.32, 1, duration: 0.18)
+                                .delay(Double(index) * 0.018),
+                            value: digits[index]
+                        )
                 }
             }
             .padding(.horizontal, 8)
@@ -846,6 +1002,12 @@ private struct MacJoinCodeView: View {
                 ForEach(3..<6, id: \.self) { index in
                     Text(digits[index])
                         .frame(width: 38, height: 48)
+                        .contentTransition(.numericText())
+                        .animation(
+                            reduceMotion ? nil : .timingCurve(0.23, 1, 0.32, 1, duration: 0.18)
+                                .delay(Double(index) * 0.018),
+                            value: digits[index]
+                        )
                 }
             }
             .padding(.horizontal, 8)
@@ -862,14 +1024,39 @@ private struct MacJoinCodeView: View {
     }
 }
 
+private struct MacPairingRefreshRow: View {
+    let expiresAt: Date?
+    let onRefresh: () -> Void
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            let remaining = max(0, Int(ceil((expiresAt ?? context.date).timeIntervalSince(context.date))))
+            HStack(spacing: 12) {
+                Text("Refreshes in \(remaining)s")
+                    .foregroundStyle(Color(hex: "#6A7282"))
+                Button("Refresh", action: onRefresh)
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Color(hex: "#6740BF"))
+            }
+            .font(.system(size: 13, weight: .regular))
+        }
+    }
+}
+
 enum MacSplashSVG {
     static var logoBlue: String {
-        logo.replacingOccurrences(of: "fill=\"white\"", with: "fill=\"#4657F5\"")
+        logo
     }
 
-    static let logoSidebar = """
-    <svg width="97" height="24" viewBox="0 0 97 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M10.0781 2.38862C13.263 -0.796154 18.4264 -0.796258 21.6113 2.38862C24.7962 5.5735 24.7961 10.7369 21.6113 13.9218L13.9218 21.6113C10.7369 24.796 5.57348 24.7961 2.38861 21.6113C-0.796266 18.4264 -0.79614 13.263 2.38861 10.0781L10.0781 2.38862ZM19.8642 4.13569C17.6444 1.91594 14.0449 1.91604 11.8251 4.13569L4.13568 11.8251C1.91607 14.045 1.91594 17.6445 4.13568 19.8642C6.35542 22.0839 9.95493 22.0838 12.1747 19.8642L19.8642 12.1748C22.0839 9.95494 22.0839 6.35544 19.8642 4.13569ZM11.998 8.50385C12.9631 7.53874 14.528 7.53873 15.4931 8.50385C16.458 9.46899 16.4582 11.0339 15.4931 11.999L10.2499 17.2412C9.2848 18.2062 7.71992 18.2063 6.75482 17.2412C5.79001 16.276 5.78986 14.7111 6.75482 13.746L11.998 8.50385Z" fill="#4C3977"/><path d="M83.1836 7.09453H85.5162V8.52643C86.1013 7.98754 86.7557 7.57183 87.4793 7.27929C88.2184 6.97135 89.0113 6.81738 89.8581 6.81738C90.7357 6.81738 91.5595 6.98675 92.3293 7.32548C93.1145 7.66421 93.792 8.12611 94.3617 8.71119C94.9468 9.28088 95.4087 9.95834 95.7474 10.7436C96.0861 11.5134 96.2555 12.3448 96.2555 13.2379C96.2555 14.1155 96.0861 14.9469 95.7474 15.7321C95.4087 16.502 94.9468 17.1795 94.3617 17.7645C93.792 18.3342 93.1145 18.7884 92.3293 19.1272C91.5595 19.4659 90.7357 19.6352 89.8581 19.6352C89.0113 19.6352 88.2184 19.489 87.4793 19.1964C86.7557 18.8885 86.1013 18.4651 85.5162 17.9262V24.0002H83.1836V7.09453ZM89.7196 17.6952C90.3046 17.6952 90.8512 17.5798 91.3593 17.3488C91.8674 17.1025 92.3139 16.7791 92.6988 16.3788C93.0838 15.9785 93.384 15.5089 93.5995 14.97C93.8151 14.4311 93.9229 13.8537 93.9229 13.2379C93.9229 12.622 93.8151 12.0446 93.5995 11.5057C93.384 10.9514 93.0838 10.4741 92.6988 10.0738C92.3139 9.6735 91.8674 9.35786 91.3593 9.12691C90.8512 8.88056 90.3046 8.75738 89.7196 8.75738C89.1499 8.75738 88.6033 8.88056 88.0798 9.12691C87.5717 9.35786 87.1252 9.6735 86.7403 10.0738C86.3707 10.4741 86.0705 10.9514 85.8395 11.5057C85.624 12.0446 85.5162 12.622 85.5162 13.2379C85.5162 13.8537 85.624 14.4311 85.8395 14.97C86.0705 15.5089 86.3707 15.9785 86.7403 16.3788C87.1252 16.7791 87.5717 17.1025 88.0798 17.3488C88.6033 17.5798 89.1499 17.6952 89.7196 17.6952Z" fill="#4C3977"/><path d="M80.4702 7.09507V19.3586H78.1144V7.09507H80.4702ZM77.9297 3.51531C77.9297 3.14578 78.0606 2.83015 78.3223 2.5684C78.5841 2.30665 78.9074 2.17578 79.2923 2.17578C79.6618 2.17578 79.9775 2.30665 80.2392 2.5684C80.5164 2.83015 80.6549 3.14578 80.6549 3.51531C80.6549 3.90023 80.5164 4.22356 80.2392 4.48531C79.9775 4.74705 79.6618 4.87793 79.2923 4.87793C78.9074 4.87793 78.5841 4.74705 78.3223 4.48531C78.0606 4.22356 77.9297 3.90023 77.9297 3.51531Z" fill="#4C3977"/><path d="M73.0547 2.45312H75.3873V19.3588H73.0547V2.45312Z" fill="#4C3977"/><path d="M60.207 13.2379C60.207 12.3448 60.3764 11.5134 60.7151 10.7436C61.0539 9.95834 61.5081 9.28088 62.0777 8.71119C62.6628 8.12611 63.3403 7.66421 64.1101 7.32548C64.8954 6.98675 65.7345 6.81738 66.6275 6.81738C67.6283 6.81738 68.5444 7.03294 69.3758 7.46405C70.2227 7.87976 70.9386 8.44175 71.5237 9.15L69.9763 10.7205C69.6068 10.1354 69.1295 9.6658 68.5444 9.31167C67.9593 8.94215 67.3204 8.75738 66.6275 8.75738C66.0578 8.75738 65.5266 8.88056 65.0339 9.12691C64.5412 9.35786 64.1101 9.67349 63.7406 10.0738C63.3711 10.4741 63.0785 10.9514 62.863 11.5057C62.6474 12.0446 62.5397 12.6297 62.5397 13.261C62.5397 13.8768 62.6474 14.4619 62.863 15.0162C63.0785 15.5551 63.3711 16.0247 63.7406 16.425C64.1101 16.8253 64.5412 17.1487 65.0339 17.395C65.5266 17.626 66.0578 17.7414 66.6275 17.7414C67.3204 17.7414 67.9593 17.5644 68.5444 17.2102C69.1295 16.8407 69.6068 16.3634 69.9763 15.7783L71.5237 17.3257C70.9386 18.034 70.2227 18.596 69.3758 19.0117C68.529 19.4274 67.6129 19.6352 66.6275 19.6352C65.7345 19.6352 64.8954 19.4659 64.1101 19.1271C63.3403 18.7884 62.6628 18.3342 62.0777 17.7645C61.5081 17.1794 61.0539 16.502 60.7151 15.7321C60.3764 14.9469 60.207 14.1155 60.207 13.2379Z" fill="#4C3977"/><path d="M51.3164 7.09453H53.649V8.06453C54.0647 7.66421 54.5189 7.35627 55.0116 7.14072C55.5197 6.92516 56.0509 6.81738 56.6052 6.81738C57.3443 6.81738 58.0525 6.97905 58.73 7.30238C59.4228 7.61032 60.0079 8.07992 60.4852 8.71119C60.1465 8.97294 59.8078 9.25778 59.469 9.56572C59.1303 9.87365 58.8609 10.1123 58.6607 10.2817C58.3682 9.88135 58.0294 9.57342 57.6445 9.35786C57.2596 9.1423 56.8593 9.01913 56.4435 8.98834C55.8585 8.95754 55.3196 9.08072 54.8269 9.35786C54.3496 9.61961 53.957 10.0045 53.649 10.5126V19.3581H51.3164V7.09453Z" fill="#4C3977"/><path d="M48.5991 7.09507V19.3586H46.2434V7.09507H48.5991ZM46.0586 3.51531C46.0586 3.14578 46.1895 2.83015 46.4512 2.5684C46.713 2.30665 47.0363 2.17578 47.4212 2.17578C47.7907 2.17578 48.1064 2.30665 48.3681 2.5684C48.6453 2.83015 48.7838 3.14578 48.7838 3.51531C48.7838 3.90023 48.6453 4.22356 48.3681 4.48531C48.1064 4.74705 47.7907 4.87793 47.4212 4.87793C47.0363 4.87793 46.713 4.74705 46.4512 4.48531C46.1895 4.22356 46.0586 3.90023 46.0586 3.51531Z" fill="#4C3977"/><path d="M29.7734 19.3591L36.3094 2.33789H37.9953L44.5313 19.3591H42.0139L40.582 15.5946H33.7227L32.2908 19.3591H29.7734ZM34.5311 13.516H39.7737L37.1408 6.6798L34.5311 13.516Z" fill="#4C3977"/></svg>
+    private static let logoSidebarBase = """
+    <svg width="98" height="25" viewBox="0 0 98 25" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M10.0781 2.38862C13.263 -0.796154 18.4264 -0.796258 21.6113 2.38862C24.7962 5.5735 24.7961 10.7369 21.6113 13.9218L13.9218 21.6113C10.7369 24.796 5.57348 24.7961 2.38861 21.6113C-0.796266 18.4264 -0.79614 13.263 2.38861 10.0781L10.0781 2.38862ZM19.8642 4.13569C17.6444 1.91594 14.0449 1.91604 11.8251 4.13569L4.13568 11.8251C1.91607 14.045 1.91594 17.6445 4.13568 19.8642C6.35542 22.0839 9.95493 22.0838 12.1747 19.8642L19.8642 12.1748C22.0839 9.95494 22.0839 6.35544 19.8642 4.13569ZM11.998 8.50385C12.9631 7.53874 14.528 7.53873 15.4931 8.50385C16.458 9.46899 16.4582 11.0339 15.4931 11.999L10.2499 17.2412C9.2848 18.2062 7.71992 18.2063 6.75482 17.2412C5.79001 16.276 5.78986 14.7111 6.75482 13.746L11.998 8.50385Z" fill="#6740BF"/><path d="M83.1836 7.09453H85.5162V8.52643C86.1013 7.98754 86.7557 7.57183 87.4793 7.27929C88.2184 6.97135 89.0113 6.81738 89.8581 6.81738C90.7357 6.81738 91.5595 6.98675 92.3293 7.32548C93.1145 7.66421 93.792 8.12611 94.3617 8.71119C94.9468 9.28088 95.4087 9.95834 95.7474 10.7436C96.0861 11.5134 96.2555 12.3448 96.2555 13.2379C96.2555 14.1155 96.0861 14.9469 95.7474 15.7321C95.4087 16.502 94.9468 17.1795 94.3617 17.7645C93.792 18.3342 93.1145 18.7884 92.3293 19.1272C91.5595 19.4659 90.7357 19.6352 89.8581 19.6352C89.0113 19.6352 88.2184 19.489 87.4793 19.1964C86.7557 18.8885 86.1013 18.4651 85.5162 17.9262V24.0002H83.1836V7.09453Z" fill="#6740BF"/><path d="M80.4702 7.09507V19.3586H78.1144V7.09507H80.4702ZM77.9297 3.51531C77.9297 3.14578 78.0606 2.83015 78.3223 2.5684C78.5841 2.30665 78.9074 2.17578 79.2923 2.17578C79.6618 2.17578 79.9775 2.30665 80.2392 2.5684C80.5164 2.83015 80.6549 3.14578 80.6549 3.51531C80.6549 3.90023 80.5164 4.22356 80.2392 4.48531C79.9775 4.74705 79.6618 4.87793 79.2923 4.87793C78.9074 4.87793 78.5841 4.74705 78.3223 4.48531C78.0606 4.22356 77.9297 3.90023 77.9297 3.51531Z" fill="#6740BF"/><path d="M73.0547 2.45312H75.3873V19.3588H73.0547V2.45312Z" fill="#6740BF"/><path d="M60.207 13.2379C60.207 12.3448 60.3764 11.5134 60.7151 10.7436C61.0539 9.95834 61.5081 9.28088 62.0777 8.71119C62.6628 8.12611 63.3403 7.66421 64.1101 7.32548C64.8954 6.98675 65.7345 6.81738 66.6275 6.81738C67.6283 6.81738 68.5444 7.03294 69.3758 7.46405C70.2227 7.87976 70.9386 8.44175 71.5237 9.15L69.9763 10.7205C69.6068 10.1354 69.1295 9.6658 68.5444 9.31167C67.9593 8.94215 67.3204 8.75738 66.6275 8.75738C66.0578 8.75738 65.5266 8.88056 65.0339 9.12691C64.5412 9.35786 64.1101 9.67349 63.7406 10.0738C63.3711 10.4741 63.0785 10.9514 62.863 11.5057C62.6474 12.0446 62.5397 12.6297 62.5397 13.261C62.5397 13.8768 62.6474 14.4619 62.863 15.0162C63.0785 15.5551 63.3711 16.0247 63.7406 16.425C64.1101 16.8253 64.5412 17.1487 65.0339 17.395C65.5266 17.626 66.0578 17.7414 66.6275 17.7414C67.3204 17.7414 67.9593 17.5644 68.5444 17.2102C69.1295 16.8407 69.6068 16.3634 69.9763 15.7783L71.5237 17.3257C70.9386 18.034 70.2227 18.596 69.3758 19.0117C68.529 19.4274 67.6129 19.6352 66.6275 19.6352C65.7345 19.6352 64.8954 19.4659 64.1101 19.1271C63.3403 18.7884 62.6628 18.3342 62.0777 17.7645C61.5081 17.1794 61.0539 16.502 60.7151 15.7321C60.3764 14.9469 60.207 14.1155 60.207 13.2379Z" fill="#6740BF"/><path d="M51.3164 7.09453H53.649V8.06453C54.0647 7.66421 54.5189 7.35627 55.0116 7.14072C55.5197 6.92516 56.0509 6.81738 56.6052 6.81738C57.3443 6.81738 58.0525 6.97905 58.73 7.30238C59.4228 7.61032 60.0079 8.07992 60.4852 8.71119C60.1465 8.97294 59.8078 9.25778 59.469 9.56572C59.1303 9.87365 58.8609 10.1123 58.6607 10.2817C58.3682 9.88135 58.0294 9.57342 57.6445 9.35786C57.2596 9.1423 56.8593 9.01913 56.4435 8.98834C55.8585 8.95754 55.3196 9.08072 54.8269 9.35786C54.3496 9.61961 53.957 10.0045 53.649 10.5126V19.3581H51.3164V7.09453Z" fill="#6740BF"/><path d="M48.5991 7.09507V19.3586H46.2434V7.09507H48.5991ZM46.0586 3.51531C46.0586 3.14578 46.1895 2.83015 46.4512 2.5684C46.713 2.30665 47.0363 2.17578 47.4212 2.17578C47.7907 2.17578 48.1064 2.30665 48.3681 2.5684C48.6453 2.83015 48.7838 3.14578 48.7838 3.51531C48.7838 3.90023 48.6453 4.22356 48.3681 4.48531C48.1064 4.74705 47.7907 4.87793 47.4212 4.87793C47.0363 4.87793 46.713 4.74705 46.4512 4.48531C46.1895 4.22356 46.0586 3.90023 46.0586 3.51531Z" fill="#6740BF"/><path d="M29.7734 19.3591L36.3094 2.33789H37.9953L44.5313 19.3591H42.0139L40.582 15.5946H33.7227L32.2908 19.3591H29.7734ZM34.5311 13.516H39.7737L37.1408 6.6798L34.5311 13.516Z" fill="#6740BF"/></svg>
     """
+
+    static var onboardingLogo: String { logoSidebarBase }
+
+    static var logoSidebar: String {
+        logo
+    }
 
     static let logo = """
     <svg width="195" height="50" viewBox="0 0 195 50" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M20.8438 4.9404C27.4312 -1.64675 38.111 -1.64685 44.6983 4.9404C51.2856 11.5277 51.2856 22.2076 44.6983 28.7949L28.795 44.6982C22.2077 51.2854 11.5279 51.2853 4.94051 44.6982C-1.64684 38.1109 -1.64684 27.431 4.94051 20.8437L20.8438 4.9404ZM41.0841 8.55466C36.4929 3.96355 29.0493 3.96365 24.4581 8.55466L8.55477 24.458C3.96359 29.0491 3.96359 36.4928 8.55477 41.084C13.146 45.6749 20.5896 45.675 25.1807 41.084L41.0841 25.1806C45.6751 20.5895 45.6751 13.1458 41.0841 8.55466ZM24.8145 17.5898C26.8107 15.5937 30.0469 15.5937 32.0431 17.5898C34.039 19.586 34.0391 22.8223 32.0431 24.8183L21.2003 35.6611C19.2041 37.6572 15.967 37.6572 13.9708 35.6611C11.9749 33.665 11.9749 30.4287 13.9708 28.4326L24.8145 17.5898Z" fill="white"/><path d="M168.367 15.7254H173.046V18.5978C174.22 17.5168 175.533 16.6829 176.984 16.096C178.467 15.4783 180.058 15.1694 181.756 15.1694C183.517 15.1694 185.169 15.5092 186.714 16.1887C188.289 16.8682 189.648 17.7948 190.791 18.9684C191.964 20.1112 192.891 21.4702 193.57 23.0454C194.25 24.5898 194.59 26.2576 194.59 28.049C194.59 29.8095 194.25 31.4774 193.57 33.0526C192.891 34.5969 191.964 35.9559 190.791 37.1296C189.648 38.2724 188.289 39.1835 186.714 39.863C185.169 40.5425 183.517 40.8823 181.756 40.8823C180.058 40.8823 178.467 40.5889 176.984 40.002C175.533 39.3843 174.22 38.5349 173.046 37.4539V49.6386H168.367V15.7254ZM181.478 36.9906C182.652 36.9906 183.749 36.759 184.768 36.2957C185.787 35.8015 186.683 35.1529 187.455 34.3498C188.227 33.5468 188.829 32.6048 189.262 31.5237C189.694 30.4427 189.91 29.2845 189.91 28.049C189.91 26.8136 189.694 25.6553 189.262 24.5743C188.829 23.4624 188.227 22.5049 187.455 21.7019C186.683 20.8988 185.787 20.2657 184.768 19.8024C183.749 19.3082 182.652 19.0611 181.478 19.0611C180.336 19.0611 179.239 19.3082 178.189 19.8024C177.17 20.2657 176.274 20.8988 175.502 21.7019C174.761 22.5049 174.158 23.4624 173.695 24.5743C173.263 25.6553 173.046 26.8136 173.046 28.049C173.046 29.2845 173.263 30.4427 173.695 31.5237C174.158 32.6048 174.761 33.5468 175.502 34.3498C176.274 35.1529 177.17 35.8015 178.189 36.2957C179.239 36.759 180.336 36.9906 181.478 36.9906Z" fill="white"/><path d="M162.92 15.7261V40.327H158.195V15.7261H162.92ZM157.824 8.54502C157.824 7.80375 158.087 7.17058 158.612 6.64551C159.137 6.12044 159.785 5.85791 160.558 5.85791C161.299 5.85791 161.932 6.12044 162.457 6.64551C163.013 7.17058 163.291 7.80375 163.291 8.54502C163.291 9.31718 163.013 9.96579 162.457 10.4909C161.932 11.0159 161.299 11.2785 160.558 11.2785C159.785 11.2785 159.137 11.0159 158.612 10.4909C158.087 9.96579 157.824 9.31718 157.824 8.54502Z" fill="white"/><path d="M148.051 6.41357H152.73V40.3267H148.051V6.41357Z" fill="white"/><path d="M122.273 28.049C122.273 26.2576 122.613 24.5898 123.293 23.0454C123.972 21.4702 124.883 20.1112 126.026 18.9684C127.2 17.7948 128.559 16.8682 130.103 16.1887C131.678 15.5092 133.362 15.1694 135.153 15.1694C137.161 15.1694 138.998 15.6018 140.666 16.4667C142.365 17.3006 143.801 18.4279 144.975 19.8487L141.871 22.9991C141.13 21.8254 140.172 20.8834 138.998 20.173C137.825 19.4317 136.543 19.0611 135.153 19.0611C134.01 19.0611 132.945 19.3082 131.956 19.8024C130.968 20.2657 130.103 20.8988 129.362 21.7019C128.621 22.5049 128.034 23.4624 127.601 24.5743C127.169 25.6553 126.953 26.829 126.953 28.0954C126.953 29.3308 127.169 30.5045 127.601 31.6164C128.034 32.6974 128.621 33.6394 129.362 34.4425C130.103 35.2455 130.968 35.8941 131.956 36.3883C132.945 36.8516 134.01 37.0833 135.153 37.0833C136.543 37.0833 137.825 36.7281 138.998 36.0177C140.172 35.2764 141.13 34.3189 141.871 33.1453L144.975 36.2493C143.801 37.6701 142.365 38.7975 140.666 39.6314C138.967 40.4653 137.13 40.8823 135.153 40.8823C133.362 40.8823 131.678 40.5425 130.103 39.863C128.559 39.1835 127.2 38.2724 126.026 37.1296C124.883 35.9559 123.972 34.5969 123.293 33.0526C122.613 31.4774 122.273 29.8095 122.273 28.049Z" fill="white"/><path d="M104.438 15.7254H109.117V17.6712C109.951 16.8682 110.862 16.2505 111.85 15.818C112.869 15.3856 113.935 15.1694 115.047 15.1694C116.529 15.1694 117.95 15.4937 119.309 16.1424C120.699 16.7601 121.873 17.7021 122.83 18.9684C122.151 19.4935 121.471 20.0649 120.792 20.6826C120.112 21.3004 119.572 21.7791 119.17 22.1189C118.583 21.3158 117.904 20.6981 117.132 20.2657C116.36 19.8333 115.557 19.5862 114.723 19.5244C113.549 19.4626 112.468 19.7097 111.48 20.2657C110.522 20.7907 109.734 21.5629 109.117 22.5821V40.3263H104.438V15.7254Z" fill="white"/><path d="M98.9869 15.7261V40.327H94.2613V15.7261H98.9869ZM93.8906 8.54502C93.8906 7.80375 94.1532 7.17058 94.6782 6.64551C95.2033 6.12044 95.8519 5.85791 96.6241 5.85791C97.3653 5.85791 97.9985 6.12044 98.5236 6.64551C99.0795 7.17058 99.3575 7.80375 99.3575 8.54502C99.3575 9.31718 99.0795 9.96579 98.5236 10.4909C97.9985 11.0159 97.3653 11.2785 96.6241 11.2785C95.8519 11.2785 95.2033 11.0159 94.6782 10.4909C94.1532 9.96579 93.8906 9.31718 93.8906 8.54502Z" fill="white"/><path d="M61.2227 40.3269L74.3339 6.18213H77.7159L90.8272 40.3269H85.7773L82.9048 32.7752H69.145L66.2726 40.3269H61.2227ZM70.7665 28.6056H81.2833L76.0018 14.8921L70.7665 28.6056Z" fill="white"/></svg>
@@ -939,7 +1126,7 @@ private struct OnboardingOrbitalHero: View {
 
                 OrbitalMarkers(center: center, radius: innerDiameter / 2)
 
-                AirClipSplashLogo()
+                AirclipSplashLogo()
                     .position(center)
             }
             .frame(width: width, height: height)
@@ -1013,7 +1200,7 @@ private struct Triangle: Shape {
     }
 }
 
-private struct AirClipSplashLogo: View {
+private struct AirclipSplashLogo: View {
     var body: some View {
         HStack(spacing: 14) {
             SplashClipMark()
@@ -1058,7 +1245,7 @@ private enum OnboardingButtonStyle {
 
 private struct OnboardingSplashButton: View {
     let title: String
-    let icon: AirClipIconName
+    let icon: AirclipIconName
     let style: OnboardingButtonStyle
     var isLoading: Bool = false
     var isDisabled: Bool = false
@@ -1075,7 +1262,7 @@ private struct OnboardingSplashButton: View {
                         .tint(foreground)
                         .frame(width: 20, height: 20)
                 } else {
-                    AirClipIcon(icon, size: 20)
+                    AirclipIcon(icon, size: 20)
                         .foregroundStyle(foreground)
                         .frame(width: 20, height: 20)
                 }

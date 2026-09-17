@@ -1,8 +1,8 @@
-# AirClip Architecture
+# Airclip Architecture
 
 ## Overview
 
-AirClip syncs clipboard content directly between paired devices over the local network. No cloud server is in the clipboard delivery path.
+Airclip syncs clipboard content directly between paired devices over the local network. No cloud server is in the clipboard delivery path.
 
 ```
 Mac app                              Android app
@@ -30,7 +30,7 @@ Mac app                              Android app
 - `SyncEngine` — same role as Mac: policy gating, send coordination
 - `LanServer` / `LanBrowser` / `PeerManager` — NSD discovery and WebSocket peers
 - `ClipHistoryStore` — local history with full-text storage
-- `AirClipCaptureActivity` / `AirClipWidget` — manual send entry points
+- `AirclipCaptureActivity` / `AirclipWidget` — manual send entry points
 
 ### Backend (`backend/`)
 Legacy. Not in the active clipboard path. Contains FastAPI account/device bootstrap code that may be reactivated later as optional infrastructure. Do not treat it as authoritative for current behavior.

@@ -1,13 +1,13 @@
 ---
 name: airclip-review
-description: "AirClip design review skill. Use when building components, auditing screens, or reviewing UX decisions for the AirClip macOS app. Includes component patterns, contrast ratios, UX laws, and AirClip-specific patterns. Requires /airclip-design to be loaded for tokens."
+description: "Airclip design review skill. Use when building components, auditing screens, or reviewing UX decisions for the Airclip macOS app. Includes component patterns, contrast ratios, UX laws, and Airclip-specific patterns. Requires /airclip-design to be loaded for tokens."
 trigger: manual
 ---
 
-# AirClip Design Review — Components & UX
+# Airclip Design Review — Components & UX
 **Use this alongside `/airclip-design` for tokens and motion.**
 
-> This skill covers: component patterns, contrast ratios (WCAG), UX laws applied to AirClip, and app-specific patterns. Load `/airclip-design` first for color tokens, typography, spacing, and motion.
+> This skill covers: component patterns, contrast ratios (WCAG), UX laws applied to Airclip, and app-specific patterns. Load `/airclip-design` first for color tokens, typography, spacing, and motion.
 
 ---
 
@@ -192,7 +192,7 @@ VStack(spacing: 12) {
 
 ---
 
-## 2. AirClip-Specific Patterns
+## 2. Airclip-Specific Patterns
 
 ### Clipboard Item Types
 
@@ -225,7 +225,7 @@ Label: "E2E Encrypted" — NOT "Secure" (specific = trustworthy)
 
 ## 3. Contrast Ratios — WCAG Compliance
 
-> AirClip handles private data. Accessibility is part of being trustworthy.
+> Airclip handles private data. Accessibility is part of being trustworthy.
 
 ### WCAG Targets
 
@@ -242,7 +242,7 @@ textPrimary    rgba(255,255,255,0.92) → #EAEAEA → 14.5:1  ✅ AAA
 textSecondary  rgba(255,255,255,0.45) → #848484 →  5.2:1  ✅ AA
 textTertiary   rgba(255,255,255,0.25) → #4F4F4F →  2.8:1  ⚠️  DECORATIVE ONLY
 textPlaceholder rgba(255,255,255,0.20)→ #424242 →  2.2:1  ⚠️  Placeholder — WCAG exempt
-accent         #5647F2               →          →  2.9:1  ⚠️  controls/icons only
+accent         #6740BF               →          →  2.5:1  ⚠️  controls/icons only
 encryptedGreen #59D499               →          →  8.1:1  ✅ AAA
 syncBlue       #56C2FF               →          →  7.4:1  ✅ AAA
 warningYellow  #FFC531               →          →  9.1:1  ✅ AAA
@@ -254,7 +254,7 @@ warningYellow  #FFC531               →          →  9.1:1  ✅ AAA
 textPrimary_light   rgba(0,0,0,0.88) → #1D1D1D → 14.2:1  ✅ AAA
 textSecondary_light rgba(0,0,0,0.45) → #8C8C8C →  4.7:1  ✅ AA
 textTertiary_light  rgba(0,0,0,0.25) → #BFBFBF →  1.8:1  ⚠️  DECORATIVE ONLY
-accent              #5647F2          →         →  5.3:1  ✅ AA
+accent              #6740BF          →         →  6.2:1  ✅ AA
 ```
 
 ### Critical Rules
@@ -288,7 +288,7 @@ Before shipping any screen, verify:
 
 ---
 
-## 4. UX Laws Applied to AirClip
+## 4. UX Laws Applied to Airclip
 
 ### Fitts's Law — Larger targets, faster clicks
 
@@ -357,7 +357,7 @@ Before shipping any screen, verify:
 ### Aesthetic–Usability Effect — Beautiful = feels easier to use
 
 ```
-For AirClip, trust IS the product. E2E encryption is meaningless
+For Airclip, trust IS the product. E2E encryption is meaningless
 if the app looks hacked together. The design IS the security story.
 
 ✅ Every screen must pass: "would I trust this with my passwords?"
@@ -369,7 +369,7 @@ if the app looks hacked together. The design IS the security story.
 ### Tesler's Law — Complexity must go somewhere — absorb it in the app
 
 ```
-AirClip's complexity: encryption, key management, network state, conflict resolution.
+Airclip's complexity: encryption, key management, network state, conflict resolution.
 The app absorbs ALL of it. The user sees only: "it works."
 
 ✅ Device pairing: one QR scan — no manual key entry

@@ -5,7 +5,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.os.Bundle
 import com.airclip.airclip.Prefs
-import com.airclip.airclip.AirClipIdentity
+import com.airclip.airclip.AirclipIdentity
 import com.airclip.airclip.ManualSendBootstrap
 import com.airclip.airclip.SyncEngine
 import com.airclip.airclip.SyncService
@@ -116,8 +116,8 @@ class ClipboardSendActivity : Activity() {
         return ManualSendBootstrap.prepare(
             mode = Prefs.syncMode,
             loadIdentity = {
-                AirClipIdentity.loadFromDisk(ctx)
-                AirClipIdentity.isPaired
+                AirclipIdentity.loadFromDisk(ctx)
+                AirclipIdentity.isPaired
             },
             loadKeys = {
                 km.loadFromDisk()

@@ -37,7 +37,7 @@ data class DeliveredMessage(
 // Listener interface
 // ---------------------------------------------------------------------------
 
-interface AirClipWsListener {
+interface AirclipWsListener {
     fun onConnected()
     fun onDisconnected(code: Int, reason: String)
     fun onDeliverClipboard(msg: DeliveredMessage)
@@ -53,7 +53,7 @@ interface AirClipWsListener {
 // ---------------------------------------------------------------------------
 
 /**
- * Persistent WebSocket client for the AirClip relay.
+ * Persistent WebSocket client for the Airclip relay.
  *
  * Auth rules (docs/protocol.md §5):
  *   - Token sent in Authorization header only — NEVER in query params.
@@ -62,10 +62,10 @@ interface AirClipWsListener {
  *
  * Reconnection: exponential backoff, 1 s → 30 s cap.
  */
-class AirClipWebSocket(
+class AirclipWebSocket(
     private val wsBaseUrl: String,
     private val deviceToken: String,
-    private val listener: AirClipWsListener
+    private val listener: AirclipWsListener
 ) {
     private val gson = Gson()
 

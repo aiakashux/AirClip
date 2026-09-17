@@ -1,12 +1,29 @@
 package com.airclip.airclip
 
+import com.airclip.airclip.lan.shouldClearPeerStateOnServiceLost
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlinx.coroutines.runBlocking
+import com.airclip.airclip.lan.prefersIncomingConnection
 
 class SyncModeTest {
+
+    @Test
+    fun `transient service loss keeps an authenticated connection`() {
+        assertFalse(shouldClearPeerStateOnServiceLost(hasAuthenticatedPeer = true))
+        assertTrue(shouldClearPeerStateOnServiceLost(hasAuthenticatedPeer = false))
+    }
+
+    @Test
+    fun `simultaneous peers choose the same physical connection`() {
+        val lowerId = "android-device"
+        val higherId = "mac-device"
+
+        assertFalse(prefersIncomingConnection(lowerId, higherId))
+        assertTrue(prefersIncomingConnection(higherId, lowerId))
+    }
 
     @Test
     fun `auto allows automatic capture manual send and LAN service`() {

@@ -23,6 +23,7 @@ final class StatusBarController: NSObject {
     private var authCompletionObserver: NSObjectProtocol?
     private var openHotKey: EventHotKeyRef?
     private var hotKeyHandler: EventHandlerRef?
+    private var hotKeyObserver: AnyCancellable?
 
     var isPanelVisible: Bool { panel?.isVisible ?? false }
 
@@ -34,12 +35,14 @@ final class StatusBarController: NSObject {
         let defaultIcon = NSImage(named: "menubar-default")
         defaultIcon?.isTemplate = true
         item.button?.image = defaultIcon
-        item.button?.image?.accessibilityDescription = "AirClip"
+        item.button?.image?.accessibilityDescription = "Airclip"
         item.button?.action = #selector(togglePanel)
         item.button?.target = self
         item.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
         statusItem = item
-        registerOpenHotKey()
+        installPasteHotKeyHandler()
+        hotKeyObserver = PasteShortcutStore.shared.$shortcut
+            .sink { [weak self] _ in self?.updatePasteHotKeyRegistration() }
 
         unreadObserver = UnreadStore.shared.$hasUnread.sink { [weak self] hasUnread in
             guard let button = self?.statusItem?.button else { return }
@@ -47,10 +50,10 @@ final class StatusBarController: NSObject {
             let image = NSImage(named: imageName)
             image?.isTemplate = true
             button.image = image
-            button.image?.accessibilityDescription = hasUnread ? "AirClip – New items" : "AirClip"
+            button.image?.accessibilityDescription = hasUnread ? "Airclip – New items" : "Airclip"
         }
 
-        identityPairingObserver = AirClipIdentity.shared.$isPaired
+        identityPairingObserver = AirclipIdentity.shared.$isPaired
             .removeDuplicates()
             .sink { [weak self] _ in
                 guard let window = self?.mainWindow else { return }
@@ -120,7 +123,7 @@ final class StatusBarController: NSObject {
         }
 
         // Show onboarding if not yet paired; otherwise start sync.
-        if !AirClipIdentity.shared.isPaired {
+        if !AirclipIdentity.shared.isPaired {
             openMainWindow()
         } else {
             SyncModeStore.shared.applyRuntimePolicy()
@@ -148,7 +151,7 @@ final class StatusBarController: NSObject {
         presentMainWindow()
     }
 
-    private func registerOpenHotKey() {
+    private func installPasteHotKeyHandler() {
         var eventType = EventTypeSpec(
             eventClass: OSType(kEventClassKeyboard),
             eventKind: UInt32(kEventHotKeyPressed)
@@ -160,7 +163,7 @@ final class StatusBarController: NSObject {
                 let controller = Unmanaged<StatusBarController>
                     .fromOpaque(context)
                     .takeUnretainedValue()
-                Task { @MainActor in controller.openMainWindow() }
+                Task { @MainActor in controller.pasteLatestItem() }
                 return noErr
             },
             1,
@@ -169,15 +172,48 @@ final class StatusBarController: NSObject {
             &hotKeyHandler
         )
 
+    }
+
+    private func updatePasteHotKeyRegistration() {
+        if let openHotKey {
+            UnregisterEventHotKey(openHotKey)
+            self.openHotKey = nil
+        }
+
+        guard let shortcut = PasteShortcutStore.shared.shortcut else { return }
         let hotKeyID = EventHotKeyID(signature: 0x41434C50, id: 1) // ACLP
         RegisterEventHotKey(
-            UInt32(kVK_ANSI_V),
-            UInt32(cmdKey | shiftKey),
+            shortcut.keyCode,
+            shortcut.modifiers,
             hotKeyID,
             GetApplicationEventTarget(),
             0,
             &openHotKey
         )
+    }
+
+    private func pasteLatestItem() {
+        guard let packet = LocalHistoryStore.shared.latestPacket() else {
+            NSSound.beep()
+            return
+        }
+        guard CGPreflightPostEventAccess() || CGRequestPostEventAccess() else {
+            NSSound.beep()
+            return
+        }
+        ClipboardMonitor.shared.suppressPacket(packet)
+        ClipboardCapture.write(packet, to: .general)
+
+        guard let source = CGEventSource(stateID: .hidSystemState),
+              let keyDown = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(kVK_ANSI_V), keyDown: true),
+              let keyUp = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(kVK_ANSI_V), keyDown: false) else {
+            NSSound.beep()
+            return
+        }
+        keyDown.flags = .maskCommand
+        keyUp.flags = .maskCommand
+        keyDown.post(tap: .cghidEventTap)
+        keyUp.post(tap: .cghidEventTap)
     }
 
     private func presentMainWindow() {
@@ -235,7 +271,7 @@ final class StatusBarController: NSObject {
     }
 
     private func syncMainWindowToolbar(for window: NSWindow) {
-        guard AirClipIdentity.shared.isPaired else {
+        guard AirclipIdentity.shared.isPaired else {
             window.toolbar = nil
             return
         }
@@ -247,7 +283,7 @@ final class StatusBarController: NSObject {
 
     private func updateMainWindowToolbarVisibility(for window: NSWindow) {
         guard let toolbar = window.toolbar else { return }
-        toolbar.isVisible = AirClipIdentity.shared.isPaired
+        toolbar.isVisible = AirclipIdentity.shared.isPaired
     }
 
     private func mainWindowToolbarNeedsConfiguration(for window: NSWindow) -> Bool {
@@ -257,13 +293,12 @@ final class StatusBarController: NSObject {
     }
 
     private func sidebarToolbarImage() -> NSImage {
-        let image = NSImage(systemSymbolName: "sidebar.left", accessibilityDescription: "Toggle Sidebar")
-            ?? NSImage(systemSymbolName: "sidebar.leading", accessibilityDescription: "Toggle Sidebar")
-            ?? NSImage(named: NSImage.Name("NSListViewTemplate"))
-            ?? NSImage(size: NSSize(width: 20, height: 20))
+        let image = NSImage(
+            systemSymbolName: "sidebar.left",
+            accessibilityDescription: "Toggle Sidebar"
+        ) ?? NSImage(size: NSSize(width: 20, height: 20))
         image.size = NSSize(width: 20, height: 20)
         image.isTemplate = true
-        image.accessibilityDescription = "Toggle Sidebar"
         return image
     }
 
@@ -272,7 +307,7 @@ final class StatusBarController: NSObject {
             showContextMenu()
             return
         }
-        guard AirClipIdentity.shared.isPaired else {
+        guard AirclipIdentity.shared.isPaired else {
             openMainWindow()
             return
         }
@@ -286,7 +321,7 @@ final class StatusBarController: NSObject {
     private func showContextMenu() {
         let menu = NSMenu()
 
-        let openItem = NSMenuItem(title: "Open AirClip", action: #selector(contextOpenApp), keyEquivalent: "")
+        let openItem = NSMenuItem(title: "Open Airclip", action: #selector(contextOpenApp), keyEquivalent: "")
         openItem.target = self
         menu.addItem(openItem)
 
@@ -296,13 +331,13 @@ final class StatusBarController: NSObject {
 
         menu.addItem(.separator())
 
-        let aboutItem = NSMenuItem(title: "About AirClip", action: #selector(contextAbout), keyEquivalent: "")
+        let aboutItem = NSMenuItem(title: "About Airclip", action: #selector(contextAbout), keyEquivalent: "")
         aboutItem.target = self
         menu.addItem(aboutItem)
 
         menu.addItem(.separator())
 
-        let quitItem = NSMenuItem(title: "Quit AirClip", action: #selector(contextQuit), keyEquivalent: "q")
+        let quitItem = NSMenuItem(title: "Quit Airclip", action: #selector(contextQuit), keyEquivalent: "q")
         quitItem.target = self
         menu.addItem(quitItem)
 
@@ -316,7 +351,7 @@ final class StatusBarController: NSObject {
         openMainWindow(onDesktopSpace: true)
     }
 
-    func openAirClipFromNotification() {
+    func openAirclipFromNotification() {
         if isPanelVisible { closePopover() }
         openMainWindow(onDesktopSpace: true)
         DispatchQueue.main.async {
@@ -425,7 +460,76 @@ extension StatusBarController: NSToolbarDelegate {
         item.target = self
         item.action = #selector(toggleMainWindowSidebar)
         item.image = sidebarToolbarImage()
+        item.isNavigational = true
         return item
+    }
+
+    func validateToolbarItem(_ item: NSToolbarItem) -> Bool {
+        item.itemIdentifier == Self.sidebarToolbarItemIdentifier && AirclipIdentity.shared.isPaired
+    }
+}
+
+@MainActor
+final class PasteShortcutStore: ObservableObject {
+    struct Shortcut: Codable, Equatable {
+        let keyCode: UInt32
+        let modifiers: UInt32
+        let keyLabel: String
+
+        var displayKeys: [String] {
+            var keys: [String] = []
+            if modifiers & UInt32(cmdKey) != 0 { keys.append("⌘") }
+            if modifiers & UInt32(optionKey) != 0 { keys.append("⌥") }
+            if modifiers & UInt32(controlKey) != 0 { keys.append("⌃") }
+            if modifiers & UInt32(shiftKey) != 0 { keys.append("⇧") }
+            return keys + [keyLabel]
+        }
+    }
+
+    static let shared = PasteShortcutStore()
+
+    @Published private(set) var shortcut: Shortcut? {
+        didSet { save() }
+    }
+
+    private static let defaultsKey = "pasteLatestShortcut"
+
+    private init() {
+        shortcut = UserDefaults.standard.data(forKey: Self.defaultsKey)
+            .flatMap { try? JSONDecoder().decode(Shortcut.self, from: $0) }
+    }
+
+    @discardableResult
+    func set(keyCode: UInt16, modifiers: NSEvent.ModifierFlags, keyLabel: String) -> Bool {
+        let flags = modifiers.intersection(.deviceIndependentFlagsMask)
+        let carbonModifiers = carbonModifiers(from: flags)
+        let modifierCount = [cmdKey, optionKey, controlKey, shiftKey]
+            .filter { carbonModifiers & UInt32($0) != 0 }
+            .count
+        guard (1...2).contains(modifierCount), !keyLabel.isEmpty else { return false }
+        shortcut = Shortcut(keyCode: UInt32(keyCode), modifiers: carbonModifiers, keyLabel: keyLabel)
+        return true
+    }
+
+    func clear() {
+        shortcut = nil
+    }
+
+    private func save() {
+        guard let shortcut else {
+            UserDefaults.standard.removeObject(forKey: Self.defaultsKey)
+            return
+        }
+        UserDefaults.standard.set(try? JSONEncoder().encode(shortcut), forKey: Self.defaultsKey)
+    }
+
+    private func carbonModifiers(from flags: NSEvent.ModifierFlags) -> UInt32 {
+        var result: UInt32 = 0
+        if flags.contains(.command) { result |= UInt32(cmdKey) }
+        if flags.contains(.option) { result |= UInt32(optionKey) }
+        if flags.contains(.control) { result |= UInt32(controlKey) }
+        if flags.contains(.shift) { result |= UInt32(shiftKey) }
+        return result
     }
 }
 
@@ -453,26 +557,39 @@ final class GlobalEventMonitor {
 // MARK: - Root view (popover panel)
 
 struct RootView: View {
-    @ObservedObject private var identity = AirClipIdentity.shared
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ObservedObject private var identity = AirclipIdentity.shared
     @ObservedObject private var appearance = AppAppearanceStore.shared
 
     var body: some View {
         Group {
             if identity.isPaired {
                 PopoverView()
+                    .transition(rootTransition)
             } else {
                 OnboardingView()
                     .frame(width: 360, height: 480)
+                    .transition(rootTransition)
             }
         }
         .preferredColorScheme(appearance.colorScheme)
+    }
+
+    private var rootTransition: AnyTransition {
+        .asymmetric(
+            insertion: .opacity.animation(reduceMotion
+                ? .easeOut(duration: 0.12)
+                : .timingCurve(0.23, 1, 0.32, 1, duration: 0.22)),
+            removal: .opacity.animation(.easeOut(duration: reduceMotion ? 0.12 : 0.14))
+        )
     }
 }
 
 // MARK: - Window root view (single window, onboarding → main routing)
 
 struct WindowRootView: View {
-    @ObservedObject private var identity = AirClipIdentity.shared
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ObservedObject private var identity = AirclipIdentity.shared
     @ObservedObject private var appearance = AppAppearanceStore.shared
     let size: NSSize
 
@@ -480,13 +597,24 @@ struct WindowRootView: View {
         Group {
             if identity.isPaired {
                 MainWindowView()
+                    .transition(rootTransition)
             } else {
                 OnboardingView()
+                    .transition(rootTransition)
             }
         }
         .frame(width: size.width, height: size.height)
         .background(MainWindowChromePalette.shell)
         .preferredColorScheme(appearance.colorScheme)
+    }
+
+    private var rootTransition: AnyTransition {
+        .asymmetric(
+            insertion: .opacity.animation(reduceMotion
+                ? .easeOut(duration: 0.12)
+                : .timingCurve(0.23, 1, 0.32, 1, duration: 0.22)),
+            removal: .opacity.animation(.easeOut(duration: reduceMotion ? 0.12 : 0.14))
+        )
     }
 }
 

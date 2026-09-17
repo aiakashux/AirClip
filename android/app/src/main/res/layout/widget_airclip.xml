@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    AirClip widget — 4×1 home screen widget.
-    All four states live in a single layout; visibility is toggled by AirClipWidget.
+    Airclip widget — 4×1 home screen widget.
+    All four states live in a single layout; visibility is toggled by AirclipWidget.
     States: no_devices | synced | pending | ready_to_send
 -->
 <LinearLayout
@@ -37,7 +37,7 @@
             android:id="@+id/widget_primary"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="AirClip"
+            android:text="Airclip"
             android:textColor="#EAEAEA"
             android:textSize="13sp"
             android:textStyle="normal"

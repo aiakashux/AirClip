@@ -65,7 +65,7 @@ class SensitiveClipboardPolicyTest {
             "/Users/akash/Downloads/resume-final.pdf",
             "file:///Users/akash/Documents/history/report.png",
             "C:\\Users\\Akash\\Desktop\\portfolio.html",
-            "https://www.figma.com/design/p6I5nXWy6uzKwQcwwdu8xp/AirClip?node-id=286-6709&t=uuB8tXRKrzMhu6yF-11",
+            "https://www.figma.com/design/p6I5nXWy6uzKwQcwwdu8xp/Airclip?node-id=286-6709&t=uuB8tXRKrzMhu6yF-11",
             "file:///Users/cosmic-sky/Downloads/ideascale-cs-chunk1.html",
             "This sentence has exactly twelve ordinary lowercase words and should remain normal text.",
         )

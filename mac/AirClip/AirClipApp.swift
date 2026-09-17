@@ -3,7 +3,7 @@ import AppKit
 import UserNotifications
 
 @main
-struct AirClipApp: App {
+struct AirclipApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
     var body: some Scene {
@@ -39,7 +39,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             name: NSWorkspace.didWakeNotification,
             object: nil
         )
-
         // StatusBarController validates any stored session before starting sync.
     }
 
@@ -66,7 +65,7 @@ final class DeviceNotificationCoordinator: NSObject, UNUserNotificationCenterDel
     func configure() {
         let openAction = UNNotificationAction(
             identifier: Self.openActionIdentifier,
-            title: "Open AirClip",
+            title: "Open Airclip",
             options: [.foreground]
         )
         let category = UNNotificationCategory(
@@ -90,7 +89,7 @@ final class DeviceNotificationCoordinator: NSObject, UNUserNotificationCenterDel
             deviceID: device.deviceId,
             deviceName: device.deviceName,
             title: "New device added",
-            body: "\(device.deviceName) is now part of this AirClip network."
+            body: "\(device.deviceName) is now part of this Airclip space."
         )
     }
 
@@ -100,7 +99,7 @@ final class DeviceNotificationCoordinator: NSObject, UNUserNotificationCenterDel
             deviceID: device.deviceId,
             deviceName: device.deviceName,
             title: "Device connected",
-            body: "\(device.deviceName) is now available in AirClip."
+            body: "\(device.deviceName) is now available in Airclip."
         )
     }
 
@@ -189,7 +188,7 @@ final class DeviceNotificationCoordinator: NSObject, UNUserNotificationCenterDel
         }
 
         await MainActor.run {
-            StatusBarController.shared.openAirClipFromNotification()
+            StatusBarController.shared.openAirclipFromNotification()
         }
     }
 }

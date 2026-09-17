@@ -40,6 +40,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _uiState = MutableStateFlow(UiState())
     val uiState: StateFlow<UiState> = _uiState
+    private val seenSpaceNames = mutableSetOf<String>()
 
     init {
         Prefs.init(app)
@@ -55,25 +56,26 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
         // Load identity from disk on startup
         viewModelScope.launch(Dispatchers.IO) {
-            AirClipIdentity.loadFromDisk(app)
+            AirclipIdentity.loadFromDisk(app)
             keyManager.loadFromDisk()
 
-            if (AirClipIdentity.isPaired) {
+            if (AirclipIdentity.isPaired) {
                 _uiState.update {
                     it.copy(
                         pairingState = PairingState.Paired,
-                        deviceName   = AirClipIdentity.deviceName,
-                        pairedDevices = AirClipIdentity.pairedDevices.values.toList(),
-                        myDeviceId   = AirClipIdentity.deviceId,
+                        deviceName   = AirclipIdentity.deviceName,
+                        spaceName    = AirclipIdentity.spaceName,
+                        pairedDevices = AirclipIdentity.pairedDevices.values.toList(),
+                        myDeviceId   = AirclipIdentity.deviceId,
                     )
                 }
                 initSync(app)
                 autoConnect()
             } else {
                 // Ensure we have a device_id for the QR even before pairing completes
-                AirClipIdentity.ensureDeviceId()
+                AirclipIdentity.ensureDeviceId()
                 if (!keyManager.isInitialized) keyManager.generateKeypair()
-                _uiState.update { it.copy(deviceName = AirClipIdentity.deviceName) }
+                _uiState.update { it.copy(deviceName = AirclipIdentity.deviceName) }
             }
         }
 
@@ -92,7 +94,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         viewModelScope.launch {
-            AirClipIdentity.pairedDevicesFlow.collect { devices ->
+            AirclipIdentity.pairedDevicesFlow.collect { devices ->
                 _uiState.update { it.copy(pairedDevices = devices) }
             }
         }
@@ -104,9 +106,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         // Wire LanServer pairing callbacks to ViewModel
-        LanServer.onPairAccepted = { airClipId, deviceId, deviceName, publicKey ->
+        LanServer.onPairAccepted = { airClipId, spaceName, deviceId, deviceName, publicKey ->
             val app2 = getApplication<Application>()
-            val wasPaired = AirClipIdentity.isPaired
+            val wasPaired = AirclipIdentity.isPaired
             val device = PairedDevice(
                 deviceId   = deviceId,
                 deviceName = deviceName,
@@ -115,24 +117,24 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 lastSeenMs = System.currentTimeMillis(),
             )
             if (wasPaired) {
-                AirClipIdentity.addOrUpdateDevice(app2, device)
+                AirclipIdentity.addOrUpdateDevice(app2, device)
             } else {
-                AirClipIdentity.joinAirClip(app2, airClipId, AirClipIdentity.deviceName, listOf(device))
+                AirclipIdentity.joinAirclip(app2, airClipId, AirclipIdentity.deviceName, spaceName, listOf(device))
             }
             PairingSession.stop()
             _uiState.update {
                 it.copy(
                     pairingState  = PairingState.Paired,
-                    deviceName    = AirClipIdentity.deviceName,
-                    pairedDevices = AirClipIdentity.pairedDevices.values.toList(),
-                    myDeviceId    = AirClipIdentity.deviceId,
+                    deviceName    = AirclipIdentity.deviceName,
+                    spaceName     = AirclipIdentity.spaceName,
+                    pairedDevices = AirclipIdentity.pairedDevices.values.toList(),
+                    myDeviceId    = AirclipIdentity.deviceId,
                     isPairingWaiting = false,
                     pairingQr     = null,
                     pairingCode   = null,
                     pairingCodeExpiresAtMs = 0L,
                     lastError     = null,
                     openDevicesOnFirstLaunch = true,
-                    deviceAddedToastId = System.currentTimeMillis(),
                 )
             }
             initSync(app2)
@@ -155,6 +157,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     data class UiState(
         val pairingState: PairingState      = PairingState.NotPaired,
         val deviceName: String              = "",
+        val spaceName: String               = "",
         val myDeviceId: String?             = null,
         val pairedDevices: List<PairedDevice> = emptyList(),
         val connectedPeerCount: Int         = 0,
@@ -173,7 +176,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val pendingSensitiveFinding: SensitiveFinding? = null,
         val sensitiveBlockedNotice: SensitiveFinding? = null,
         val openDevicesOnFirstLaunch: Boolean = false,
-        val deviceAddedToastId: Long = 0L,
         val showNetworkSwitchConfirmation: Boolean = false,
         // Pairing UI state (shown on onboarding screen)
         val pairingQr: Bitmap?              = null,
@@ -187,7 +189,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         data class Code(
             val host: String,
             val targetDeviceId: String,
-            val targetAirClipId: String,
+            val targetAirclipId: String,
             val code: String,
             val myName: String,
         ) : PendingNetworkSwitch
@@ -198,33 +200,47 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     // ── Onboarding: device name ───────────────────────────────────────────────
 
     fun onDeviceNameChange(v: String) {
-        AirClipIdentity.setDeviceName(v)
+        AirclipIdentity.setDeviceName(v)
         _uiState.update { it.copy(deviceName = v, lastError = null) }
+    }
+
+    fun onSpaceNameChange(v: String) {
+        _uiState.update { it.copy(spaceName = v, lastError = null) }
+    }
+
+    fun suggestSpaceName(force: Boolean = false): String? {
+        if (!force && _uiState.value.spaceName.isNotBlank()) return null
+        val name = SpaceNameSuggestions.next(seenSpaceNames) ?: return null
+        seenSpaceNames += name
+        _uiState.update { it.copy(spaceName = name, lastError = null) }
+        return name
     }
 
     fun onRenameDevice(name: String) = runAsync("renameDevice") {
         val app = getApplication<Application>()
         val trimmed = name.trim()
         if (trimmed.isEmpty()) return@runAsync
-        AirClipIdentity.renameDevice(app, trimmed)
+        AirclipIdentity.renameDevice(app, trimmed)
         _uiState.update { it.copy(deviceName = trimmed) }
     }
 
-    // ── Onboarding: Create an AirClip network ────────────────────────────────────
+    // ── Onboarding: Create an Airclip space ──────────────────────────────────────
 
-    fun onCreateAirClip() = runAsync("createAirClip") {
+    fun onCreateAirclip() = runAsync("createAirclip") {
         val app  = getApplication<Application>()
         val name = _uiState.value.deviceName.ifBlank { android.os.Build.MODEL }
+        val spaceName = _uiState.value.spaceName.trim()
         _uiState.update { it.copy(lastError = null) }
 
         if (!keyManager.isInitialized) keyManager.generateKeypair()
-        AirClipIdentity.createAirClip(app, name)
+        AirclipIdentity.createAirclip(app, name, spaceName)
 
         _uiState.update {
             it.copy(
                 pairingState  = PairingState.Paired,
                 deviceName    = name,
-                myDeviceId    = AirClipIdentity.deviceId,
+                spaceName     = spaceName,
+                myDeviceId    = AirclipIdentity.deviceId,
                 pairedDevices = emptyList(),
                 lastError     = null,
                 openDevicesOnFirstLaunch = true,
@@ -232,22 +248,23 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
         initSync(app)
         autoConnect()
-        log("AirClip created — device_id=${AirClipIdentity.deviceId?.take(8)}")
+        log("Airclip created — device_id=${AirclipIdentity.deviceId?.take(8)}")
     }
 
-    // ── Onboarding: Join an AirClip network — show pairing QR for scanning ───────
+    // ── Onboarding: Join an Airclip space — show pairing QR for scanning ─────────
 
     fun onStartPairingSession() = runAsync("startPairing") {
         val name = _uiState.value.deviceName.ifBlank { android.os.Build.MODEL }
-        AirClipIdentity.setDeviceName(name)
-        AirClipIdentity.ensureDeviceId()
+        AirclipIdentity.setDeviceName(name)
+        AirclipIdentity.ensureDeviceId()
         if (!keyManager.isInitialized) keyManager.generateKeypair()
 
-        // Start pairing session (QR + code, refreshes every 60s)
+        // Start pairing session (QR + code, refreshes every 30s)
         PairingSession.start(
-            airClipId     = AirClipIdentity.airClipId,     // null for new device
-            deviceId   = AirClipIdentity.deviceId!!,
+            airClipId     = AirclipIdentity.airClipId,     // null for new device
+            deviceId   = AirclipIdentity.deviceId!!,
             deviceName = name,
+            spaceName = AirclipIdentity.spaceName,
             publicKey  = keyManager.getPublicKeyBase64(),
             onPayloadChanged = { payload ->
                 _uiState.update {
@@ -265,13 +282,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         // Start LAN server so existing device can send pair_request to us
         val app = getApplication<Application>()
         SyncEngine.init(app, keyManager, httpClient)
-        LanServer.start(keyManager)
+        LanServer.start(app, keyManager)
         com.airclip.airclip.lan.LanBrowser.start(app, httpClient, keyManager)
 
         log("Pairing session started — code=${PairingSession.currentCode}")
     }
 
-    /** Refresh the displayed QR/code (called when code expires after 60s). */
+    /** Refresh the displayed QR/code (called when code expires after 30s). */
     fun onRefreshPairingCode() = viewModelScope.launch(Dispatchers.IO) {
         PairingSession.refreshNow()
     }
@@ -296,7 +313,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     // ── Join via QR scan (existing device shows QR, this device scans) ────────
 
     /**
-     * Called after this device scans an existing AirClip member's QR.
+     * Called after this device scans an existing Airclip member's QR.
      * The QR contains {airclip_id, device_id, device_name, public_key, code, host?, ssid?}.
      *
      * Priority:
@@ -316,7 +333,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             qrContent,
             com.airclip.airclip.pairing.PairingPayload::class.java,
         )
-        val networkIdForPairRequest = payload.airclip_id ?: AirClipIdentity.airClipId.orEmpty()
+        val networkIdForPairRequest = payload.airclip_id ?: AirclipIdentity.airClipId.orEmpty()
         if (shouldConfirmNetworkSwitch(networkIdForPairRequest, allowNetworkSwitch)) {
             pendingNetworkSwitch = PendingNetworkSwitch.Qr(qrContent)
             _uiState.update { it.copy(showNetworkSwitchConfirmation = true, lastError = null) }
@@ -324,11 +341,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         val myName = _uiState.value.deviceName.ifBlank { android.os.Build.MODEL }
-        AirClipIdentity.setDeviceName(myName)
-        AirClipIdentity.ensureDeviceId()
+        AirclipIdentity.setDeviceName(myName)
+        AirclipIdentity.ensureDeviceId()
         if (!keyManager.isInitialized) keyManager.generateKeypair()
 
-        val onSuccess: (String, List<PairedDevice>) -> Unit = ::completeOutgoingPairing
+        val onSuccess: (String, String?, List<PairedDevice>) -> Unit = ::completeOutgoingPairing
         val showPairingError: (String) -> Unit = { reason ->
             val hint = if (payload.ssid != null)
                 "Make sure you're connected to \"${payload.ssid}\" Wi-Fi."
@@ -347,9 +364,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             com.airclip.airclip.pairing.PairingClient.sendPairRequestToHost(
                 host           = directHost,
                 targetDeviceId = payload.device_id,
-                targetAirClipId   = networkIdForPairRequest,
+                targetAirclipId   = networkIdForPairRequest,
                 code           = payload.code,
-                myDeviceId     = AirClipIdentity.deviceId!!,
+                myDeviceId     = AirclipIdentity.deviceId!!,
                 myDeviceName   = myName,
                 myPublicKey    = keyManager.getPublicKeyBase64(),
                 httpClient     = httpClient,
@@ -359,7 +376,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                         connectToScannedDeviceThroughDiscovery(
                             payload = payload,
                             myName = myName,
-                            targetAirClipId = networkIdForPairRequest,
+                            targetAirclipId = networkIdForPairRequest,
                             onSuccess = onSuccess,
                             onError = onPairingUnavailable,
                         )
@@ -372,7 +389,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         connectToScannedDeviceThroughDiscovery(
             payload = payload,
             myName = myName,
-            targetAirClipId = networkIdForPairRequest,
+            targetAirclipId = networkIdForPairRequest,
             onSuccess = onSuccess,
             onError = onPairingUnavailable,
         )
@@ -381,8 +398,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private suspend fun connectToScannedDeviceThroughDiscovery(
         payload: com.airclip.airclip.pairing.PairingPayload,
         myName: String,
-        targetAirClipId: String,
-        onSuccess: (String, List<PairedDevice>) -> Unit,
+        targetAirclipId: String,
+        onSuccess: (String, String?, List<PairedDevice>) -> Unit,
         onError: (String) -> Unit,
     ) {
         val app = getApplication<Application>()
@@ -398,9 +415,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 com.airclip.airclip.pairing.PairingClient.sendPairRequestToHost(
                     host           = cached,
                     targetDeviceId = payload.device_id,
-                    targetAirClipId   = targetAirClipId,
+                    targetAirclipId   = targetAirclipId,
                     code           = payload.code,
-                    myDeviceId     = AirClipIdentity.deviceId!!,
+                    myDeviceId     = AirclipIdentity.deviceId!!,
                     myDeviceName   = myName,
                     myPublicKey    = keyManager.getPublicKeyBase64(),
                     httpClient     = httpClient,
@@ -426,8 +443,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
         val app = getApplication<Application>()
         val myName = _uiState.value.deviceName.ifBlank { android.os.Build.MODEL }
-        AirClipIdentity.setDeviceName(myName)
-        AirClipIdentity.ensureDeviceId()
+        AirclipIdentity.setDeviceName(myName)
+        AirclipIdentity.ensureDeviceId()
         if (!keyManager.isInitialized) keyManager.generateKeypair()
 
         SyncEngine.init(app, keyManager, httpClient)
@@ -442,12 +459,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val hosts = ResolvedHostCache.all().entries.toList()
         if (hosts.isEmpty()) {
             _uiState.update {
-                it.copy(lastError = "No AirClip device found. Make sure both devices are on the same Wi-Fi.")
+                it.copy(lastError = "No Airclip device found. Make sure both devices are on the same Wi-Fi.")
             }
             return@runAsync
         }
 
         probeNextHostForCode(hosts, code, myName, 0)
+    }
+
+    fun onPairingCodeEntryOpened() {
+        _uiState.update { it.copy(lastError = null) }
     }
 
     private fun probeNextHostForCode(
@@ -468,11 +489,19 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             httpClient = httpClient,
             onFound = { deviceId, _, _, airClipId ->
                 val targetDeviceId = deviceId.ifBlank { targetHint }
-                if (shouldConfirmNetworkSwitch(airClipId, allowNetworkSwitch = false)) {
+                val pairingAirclipId = PairingCompletionPolicy.pairingAirclipId(
+                    targetAirclipId = airClipId,
+                    currentAirclipId = AirclipIdentity.airClipId,
+                )
+                if (pairingAirclipId == null) {
+                    _uiState.update { it.copy(lastError = "Create or join a space before adding another new device.") }
+                    return@probeHostForCode
+                }
+                if (shouldConfirmNetworkSwitch(pairingAirclipId, allowNetworkSwitch = false)) {
                     pendingNetworkSwitch = PendingNetworkSwitch.Code(
                         host = host,
                         targetDeviceId = targetDeviceId,
-                        targetAirClipId = airClipId,
+                        targetAirclipId = pairingAirclipId,
                         code = code,
                         myName = myName,
                     )
@@ -482,7 +511,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 sendPairRequestToFoundHost(
                     host = host,
                     targetDeviceId = targetDeviceId,
-                    targetAirClipId = airClipId,
+                    targetAirclipId = pairingAirclipId,
                     code = code,
                     myName = myName,
                 )
@@ -496,16 +525,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private fun sendPairRequestToFoundHost(
         host: String,
         targetDeviceId: String,
-        targetAirClipId: String,
+        targetAirclipId: String,
         code: String,
         myName: String,
     ) {
         PairingClient.sendPairRequestToHost(
             host = host,
             targetDeviceId = targetDeviceId,
-            targetAirClipId = targetAirClipId,
+            targetAirclipId = targetAirclipId,
             code = code,
-            myDeviceId = AirClipIdentity.deviceId!!,
+            myDeviceId = AirclipIdentity.deviceId!!,
             myDeviceName = myName,
             myPublicKey = keyManager.getPublicKeyBase64(),
             httpClient = httpClient,
@@ -517,12 +546,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun shouldConfirmNetworkSwitch(
-        targetAirClipId: String,
+        targetAirclipId: String,
         allowNetworkSwitch: Boolean,
     ): Boolean {
-        if (allowNetworkSwitch || targetAirClipId.isBlank()) return false
-        val currentAirClipId = AirClipIdentity.airClipId ?: return false
-        return AirClipIdentity.isPaired && currentAirClipId != targetAirClipId
+        if (allowNetworkSwitch || targetAirclipId.isBlank()) return false
+        val currentAirclipId = AirclipIdentity.airClipId ?: return false
+        return AirclipIdentity.isPaired && currentAirclipId != targetAirclipId
     }
 
     fun onCancelNetworkSwitch() {
@@ -540,7 +569,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             is PendingNetworkSwitch.Code -> pending.myName
             is PendingNetworkSwitch.Qr -> _uiState.value.deviceName.ifBlank { android.os.Build.MODEL }
         }
-        resetLocalAirClipForNetworkSwitch(app, myName)
+        resetLocalAirclipForNetworkSwitch(app, myName)
 
         when (pending) {
             is PendingNetworkSwitch.Qr -> handleQrScanned(
@@ -552,7 +581,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 sendPairRequestToFoundHost(
                     host = pending.host,
                     targetDeviceId = pending.targetDeviceId,
-                    targetAirClipId = pending.targetAirClipId,
+                    targetAirclipId = pending.targetAirclipId,
                     code = pending.code,
                     myName = myName,
                 )
@@ -560,15 +589,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private suspend fun resetLocalAirClipForNetworkSwitch(app: Application, myName: String) {
+    private suspend fun resetLocalAirclipForNetworkSwitch(app: Application, myName: String) {
         SyncService.stop(app)
         SyncEngine.disconnect()
         PairingSession.stop()
         keyManager.clearKeypair()
-        AirClipIdentity.clearAll(app)
+        AirclipIdentity.clearAll(app)
         SyncEngine.clearLocalSession(app)
         ResolvedHostCache.clear()
-        AirClipIdentity.setDeviceName(myName)
+        AirclipIdentity.setDeviceName(myName)
         _uiState.update {
             it.copy(
                 pairingState = PairingState.NotPaired,
@@ -587,56 +616,57 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun prepareOutgoingPairingIdentity(myName: String) {
-        AirClipIdentity.setDeviceName(myName)
-        AirClipIdentity.ensureDeviceId()
+        AirclipIdentity.setDeviceName(myName)
+        AirclipIdentity.ensureDeviceId()
         if (!keyManager.isInitialized) keyManager.generateKeypair()
     }
 
-    private fun completeOutgoingPairing(airClipId: String, allDevices: List<PairedDevice>) {
+    private fun completeOutgoingPairing(airClipId: String, spaceName: String?, allDevices: List<PairedDevice>) {
         val app = getApplication<Application>()
         val myName = _uiState.value.deviceName.ifBlank { android.os.Build.MODEL }
         viewModelScope.launch(Dispatchers.IO) {
             if (PairingCompletionPolicy.shouldMergeIntoExistingNetwork(
-                    isAlreadyPaired = AirClipIdentity.isPaired,
-                    currentAirClipId = AirClipIdentity.airClipId,
-                    incomingAirClipId = airClipId,
+                    isAlreadyPaired = AirclipIdentity.isPaired,
+                    currentAirclipId = AirclipIdentity.airClipId,
+                    incomingAirclipId = airClipId,
                 )
             ) {
                 allDevices
-                    .filter { it.deviceId != AirClipIdentity.deviceId }
-                    .forEach { AirClipIdentity.addOrUpdateDevice(app, it) }
+                    .filter { it.deviceId != AirclipIdentity.deviceId }
+                    .forEach { AirclipIdentity.addOrUpdateDevice(app, it) }
             } else {
-                AirClipIdentity.joinAirClip(app, airClipId, myName, allDevices)
+                AirclipIdentity.joinAirclip(app, airClipId, myName, spaceName, allDevices)
             }
             PairingSession.stop()
             com.airclip.airclip.lan.LanBrowser.stop(app)
             _uiState.update {
                 it.copy(
                     pairingState = PairingState.Paired,
-                    pairedDevices = AirClipIdentity.pairedDevices.values.toList(),
-                    myDeviceId = AirClipIdentity.deviceId,
+                    pairedDevices = AirclipIdentity.pairedDevices.values.toList(),
+                    myDeviceId = AirclipIdentity.deviceId,
+                    spaceName = AirclipIdentity.spaceName,
                     isPairingWaiting = false,
                     pairingQr = null,
                     pairingCode = null,
                     pairingCodeExpiresAtMs = 0L,
                     lastError = null,
                     openDevicesOnFirstLaunch = true,
-                    deviceAddedToastId = System.currentTimeMillis(),
                 )
             }
             initSync(app)
             autoConnect()
-            log("Joined AirClip")
+            log("Joined Airclip")
         }
     }
 
     // ── Main app: clipboard ───────────────────────────────────────────────────
 
     fun onAppForegrounded() {
-        if (AirClipIdentity.isPaired) {
+        if (AirclipIdentity.isPaired) {
             initSync(getApplication())
             if (_uiState.value.syncMode.keepsLanServiceRunning) {
                 autoConnect()
+                SyncEngine.refreshConnections()
                 SyncEngine.markLocalActivity()
                 SyncEngine.refreshHistorySync()
             }
@@ -649,10 +679,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _uiState.update { it.copy(openDevicesOnFirstLaunch = false) }
     }
 
-    fun onDeviceAddedToastShown() {
-        _uiState.update { it.copy(deviceAddedToastId = 0L) }
-    }
-
     fun onCaptureClipboard() {
         if (!_uiState.value.syncMode.allowsManualSend) return
         captureCurrentClipboard(SensitiveSendIntent.MANUAL)
@@ -661,7 +687,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private fun captureCurrentClipboard(
         intent: SensitiveSendIntent = SensitiveSendIntent.AUTOMATIC,
     ) {
-        if (AirClipIdentity.deviceId == null) return
+        if (AirclipIdentity.deviceId == null) return
         val app = getApplication<Application>()
         val cm  = app.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         val text = try {
@@ -681,7 +707,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun onClipboardChanged(text: String) {
         if (!_uiState.value.syncMode.allowsAutomaticCapture) return
-        if (AirClipIdentity.deviceId == null) return
+        if (AirclipIdentity.deviceId == null) return
         requestSend(text, SensitiveSendIntent.AUTOMATIC)
     }
 
@@ -797,25 +823,25 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun onRefreshDevices() {
         _uiState.update {
             it.copy(
-                pairedDevices = AirClipIdentity.pairedDevices.values.toList(),
+                pairedDevices = AirclipIdentity.pairedDevices.values.toList(),
                 lastManualRefreshAtMs = System.currentTimeMillis(),
             )
         }
-        if (AirClipIdentity.isPaired) {
-            reconnectLanRuntime()
+        if (AirclipIdentity.isPaired) {
+            SyncEngine.reconnect()
             SyncEngine.refreshHistorySync()
         }
     }
 
     fun onReconnectDevice() {
-        if (!AirClipIdentity.isPaired) return
-        reconnectLanRuntime()
+        if (!AirclipIdentity.isPaired) return
+        SyncEngine.reconnect()
     }
 
     fun onRemoveDevice(deviceId: String) = runAsync("removeDevice") {
         val app = getApplication<Application>()
-        AirClipIdentity.removeDevice(app, deviceId)
-        _uiState.update { it.copy(pairedDevices = AirClipIdentity.pairedDevices.values.toList()) }
+        AirclipIdentity.removeDevice(app, deviceId)
+        _uiState.update { it.copy(pairedDevices = AirclipIdentity.pairedDevices.values.toList()) }
     }
 
     private suspend fun handleRemovedFromNetwork() {
@@ -824,7 +850,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         SyncEngine.disconnect()
         PairingSession.stop()
         keyManager.clearKeypair()
-        AirClipIdentity.clearAll(app)
+        AirclipIdentity.clearAll(app)
         _uiState.update {
             UiState(
                 deviceName = android.os.Build.MODEL,
@@ -832,7 +858,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 sensitiveRules = Prefs.sensitiveRules(),
             )
         }
-        log("This device was removed from the AirClip network")
+        log("This device was removed from the Airclip space")
     }
 
     // ── Settings ──────────────────────────────────────────────────────────────
@@ -843,11 +869,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _uiState.update {
             it.copy(
                 syncMode = mode,
-                isConnected = mode.keepsLanServiceRunning && AirClipIdentity.isPaired,
+                isConnected = mode.keepsLanServiceRunning && AirclipIdentity.isPaired,
             )
         }
 
-        if (!AirClipIdentity.isPaired) return
+        if (!AirclipIdentity.isPaired) return
 
         if (mode.keepsLanServiceRunning) {
             SyncService.start(app)
@@ -856,21 +882,21 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun onResetAirClip() = runAsync("resetAirClip") {
+    fun onResetAirclip() = runAsync("resetAirclip") {
         val app = getApplication<Application>()
-        AirClipIdentity.deviceId?.let { PeerManager.broadcastDeviceRemoval(it) }
+        AirclipIdentity.deviceId?.let { PeerManager.broadcastDeviceRemoval(it) }
         delay(200)
         SyncService.stop(app)
         SyncEngine.disconnect()
         PairingSession.stop()
         keyManager.clearKeypair()
-        AirClipIdentity.clearAll(app)
+        AirclipIdentity.clearAll(app)
         ClipHistoryStore.clear(app)
         Prefs.clearAll()
         _uiState.update {
             UiState(deviceName = android.os.Build.MODEL)
         }
-        log("AirClip reset — all data cleared")
+        log("Airclip reset — all data cleared")
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -892,11 +918,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             _uiState.update { it.copy(isConnected = false) }
             log("Sync paused")
         }
-    }
-
-    private fun reconnectLanRuntime() {
-        SyncEngine.disconnect()
-        autoConnect()
     }
 
     private fun log(msg: String) {
@@ -922,4 +943,31 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         PairingSession.stop()
         super.onCleared()
     }
+}
+
+internal object SpaceNameSuggestions {
+    private val names = listOf(
+        "Jelly Comet", "Lucky Orbit", "Fizzy Nova", "Purple Portal", "Candy Compass",
+        "Bubble Moon", "Cosmic Marble", "Peachy Planet", "Jolly Meteor", "Magic Rocket",
+        "Sunny Nebula", "Bouncy Pixel", "Glitter Galaxy", "Mango Moon", "Tiny Satellite",
+        "Sparkle Orbit", "Jelly Star", "Happy Comet", "Fuzzy Planet", "Lucky Meteor",
+        "Bubble Nova", "Cosmic Dice", "Peachy Orbit", "Jolly Rocket", "Magic Moon",
+        "Sunny Star", "Bouncy Comet", "Glitter Portal", "Mango Meteor", "Tiny Nova",
+        "Sparkle Planet", "Jelly Orbit", "Happy Rocket", "Fuzzy Moon", "Lucky Star",
+        "Bubble Comet", "Cosmic Compass", "Peachy Nova", "Jolly Planet", "Magic Meteor",
+        "Sunny Orbit", "Bouncy Rocket", "Glitter Moon", "Mango Star", "Tiny Comet",
+        "Sparkle Nova", "Jelly Planet", "Happy Meteor", "Fuzzy Orbit", "Lucky Moon",
+        "Bubble Rocket", "Cosmic Pixel", "Peachy Meteor", "Jolly Star", "Magic Comet",
+        "Sunny Planet", "Bouncy Nova", "Glitter Orbit", "Mango Moonbeam", "Tiny Rocket",
+        "Sparkle Comet", "Jelly Nova", "Happy Planet", "Fuzzy Meteor", "Lucky Rocket",
+        "Bubble Star", "Cosmic Lantern", "Peachy Moon", "Jolly Comet", "Magic Nova",
+        "Sunny Rocket", "Bouncy Planet", "Glitter Star", "Mango Orbit", "Tiny Meteor",
+        "Sparkle Moon", "Jelly Rocket", "Happy Nova", "Fuzzy Star", "Lucky Planet",
+        "Bubble Meteor", "Cosmic Portal", "Peachy Rocket", "Jolly Moon", "Magic Star",
+        "Sunny Comet", "Bouncy Orbit", "Glitter Nova", "Mango Planet", "Tiny Moon",
+        "Sparkle Rocket", "Jelly Meteor", "Happy Orbit", "Fuzzy Nova", "Lucky Comet",
+        "Bubble Planet", "Cosmic Prism", "Peachy Star", "Jolly Orbit", "Magic Moonbeam",
+    )
+
+    fun next(excluding: Set<String>): String? = names.filterNot(excluding::contains).randomOrNull()
 }

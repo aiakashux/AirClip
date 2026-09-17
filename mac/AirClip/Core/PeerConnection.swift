@@ -39,7 +39,7 @@ final class PeerConnection {
         switch state {
         case .ready:
             if !isIncoming { sendAuth() }
-        case .failed, .cancelled:
+        case .waiting, .failed, .cancelled:
             close()
         default:
             break
@@ -103,27 +103,13 @@ final class PeerConnection {
         guard isIncoming else { return }
         guard
             let peerId     = json["device_id"]  as? String,
-            let peerAirClipId = json["airclip_id"]    as? String,
+            let peerAirclipId = json["airclip_id"]    as? String,
             let peerPubKey = json["public_key"] as? String
         else { close(); return }
 
-        if !PeerManager.shared.isTrusted(airClipId: peerAirClipId, deviceId: peerId) {
-            guard !AirClipIdentity.shared.isPaired, PairingSession.shared.currentCode != nil else {
-                close()
-                return
-            }
-            AirClipIdentity.shared.joinAirClip(
-                airClipId: peerAirClipId,
-                myName: AirClipIdentity.shared.deviceName,
-                allDevices: [
-                    PairedDevice(
-                        deviceId: peerId,
-                        deviceName: json["device_name"] as? String ?? peerId,
-                        publicKey: peerPubKey,
-                        platform: json["platform"] as? String ?? ""
-                    )
-                ]
-            )
+        guard PeerManager.shared.isTrusted(airClipId: peerAirclipId, deviceId: peerId) else {
+            close()
+            return
         }
 
         deviceId  = peerId
@@ -131,8 +117,8 @@ final class PeerConnection {
         deviceName = json["device_name"] as? String
         platform = json["platform"] as? String
         wifiNetwork = json["ssid"] as? String
-        let existingDevice = AirClipIdentity.shared.pairedDevices[peerId]
-        AirClipIdentity.shared.addOrUpdateDevice(
+        let existingDevice = AirclipIdentity.shared.pairedDevices[peerId]
+        AirclipIdentity.shared.addOrUpdateDevice(
             PairedDevice(
                 deviceId: peerId,
                 deviceName: deviceName?.isEmpty == false ? deviceName! : (existingDevice?.deviceName ?? peerId),
@@ -143,7 +129,7 @@ final class PeerConnection {
         )
 
         guard
-            let myId = AirClipIdentity.shared.deviceId,
+            let myId = AirclipIdentity.shared.deviceId,
             let myPk = try? CryptoManager.shared.publicKeyBase64
         else { close(); return }
 
@@ -151,13 +137,13 @@ final class PeerConnection {
             "type": "auth_ok",
             "device_id": myId,
             "public_key": myPk,
-            "device_name": AirClipIdentity.shared.deviceName,
+            "device_name": AirclipIdentity.shared.deviceName,
             "platform": "mac",
         ]
         if let ssid = currentSSID() { reply["ssid"] = ssid }
         sendJSON(reply)
         PeerManager.shared.registerPeer(self)
-        AirClipIdentity.shared.touchDevice(peerId, wifiNetwork: json["ssid"] as? String)
+        AirclipIdentity.shared.touchDevice(peerId, wifiNetwork: json["ssid"] as? String)
         pushHistoryToPeer(publicKey: peerPubKey)
     }
 
@@ -174,8 +160,8 @@ final class PeerConnection {
         deviceName = json["device_name"] as? String
         platform = json["platform"] as? String
         wifiNetwork = json["ssid"] as? String
-        let existingDevice = AirClipIdentity.shared.pairedDevices[peerId]
-        AirClipIdentity.shared.addOrUpdateDevice(
+        let existingDevice = AirclipIdentity.shared.pairedDevices[peerId]
+        AirclipIdentity.shared.addOrUpdateDevice(
             PairedDevice(
                 deviceId: peerId,
                 deviceName: deviceName?.isEmpty == false ? deviceName! : (existingDevice?.deviceName ?? peerId),
@@ -185,11 +171,11 @@ final class PeerConnection {
             )
         )
         PeerManager.shared.registerPeer(self)
-        AirClipIdentity.shared.touchDevice(peerId, wifiNetwork: json["ssid"] as? String)
+        AirclipIdentity.shared.touchDevice(peerId, wifiNetwork: json["ssid"] as? String)
         pushHistoryToPeer(publicKey: peerPk)
     }
 
-    // MARK: - Pairing: pair_request (new device joining this AirClip network)
+    // MARK: - Pairing: pair_request (new device joining this Airclip space)
 
     private func handlePairRequest(_ json: [String: Any]) {
         guard isIncoming else { return }
@@ -198,7 +184,7 @@ final class PeerConnection {
             let peerId     = json["device_id"]   as? String,
             let peerName   = json["device_name"] as? String,
             let peerPubKey = json["public_key"]  as? String,
-            let peerAirClipId = json["airclip_id"]     as? String
+            let peerAirclipId = json["airclip_id"]     as? String
         else { close(); return }
 
         guard PairingSession.shared.verifyCode(code) else {
@@ -209,24 +195,24 @@ final class PeerConnection {
             return
         }
 
-        if let myAirClip = AirClipIdentity.shared.airClipId, myAirClip != peerAirClipId {
+        if let myAirclip = AirclipIdentity.shared.airClipId, myAirclip != peerAirclipId {
             sendJSON(["type": "pair_reject", "reason": "airclip_id_mismatch"])
             close()
             return
         }
 
-        var allDevices = AirClipIdentity.shared.pairedDevices.values
+        var allDevices = AirclipIdentity.shared.pairedDevices.values
             .filter { $0.deviceId != peerId }
             .map { d -> [String: String] in
             ["device_id": d.deviceId, "device_name": d.deviceName,
              "public_key": d.publicKey, "platform": d.platform]
         }
-        if let myId = AirClipIdentity.shared.deviceId,
+        if let myId = AirclipIdentity.shared.deviceId,
            let myKey = try? CryptoManager.shared.publicKeyBase64,
            !allDevices.contains(where: { $0["device_id"] == myId }) {
             allDevices.append([
                 "device_id": myId,
-                "device_name": AirClipIdentity.shared.deviceName,
+                "device_name": AirclipIdentity.shared.deviceName,
                 "public_key": myKey,
                 "platform": "mac",
             ])
@@ -236,18 +222,19 @@ final class PeerConnection {
             deviceId: peerId, deviceName: peerName,
             publicKey: peerPubKey, platform: json["platform"] as? String ?? ""
         )
-        if AirClipIdentity.shared.airClipId == nil {
-            AirClipIdentity.shared.joinAirClip(
-                airClipId: peerAirClipId,
-                myName: AirClipIdentity.shared.deviceName,
+        if AirclipIdentity.shared.airClipId == nil {
+            AirclipIdentity.shared.joinAirclip(
+                airClipId: peerAirclipId,
+                myName: AirclipIdentity.shared.deviceName,
+                spaceName: json["space_name"] as? String,
                 allDevices: [newDevice]
             )
         } else {
-            AirClipIdentity.shared.addOrUpdateDevice(newDevice)
+            AirclipIdentity.shared.addOrUpdateDevice(newDevice)
         }
         PairingSession.shared.onPairSuccess?()
         sendJSON(
-            ["type": "pair_ok", "airclip_id": peerAirClipId, "all_devices": allDevices],
+            ["type": "pair_ok", "airclip_id": peerAirclipId, "space_name": AirclipIdentity.shared.spaceName, "all_devices": allDevices],
             closeAfterSending: true
         )
     }
@@ -265,19 +252,20 @@ final class PeerConnection {
         }
 
         guard
-            let myId = AirClipIdentity.shared.deviceId,
+            let myId = AirclipIdentity.shared.deviceId,
             let myPk = try? CryptoManager.shared.publicKeyBase64
         else { close(); return }
 
         var response: [String: Any] = [
             "type":        "pair_info",
             "device_id":   myId,
-            "device_name": AirClipIdentity.shared.deviceName,
+            "device_name": AirclipIdentity.shared.deviceName,
             "public_key":  myPk,
         ]
-        if let airClipId = AirClipIdentity.shared.airClipId {
+        if let airClipId = AirclipIdentity.shared.airClipId {
             response["airclip_id"] = airClipId
         }
+        response["space_name"] = AirclipIdentity.shared.spaceName
         sendJSON(response, closeAfterSending: true)
     }
 
@@ -324,7 +312,7 @@ final class PeerConnection {
 
     private func handleHeartbeat(_ json: [String: Any]) {
         guard let fromId = deviceId else { return }
-        AirClipIdentity.shared.touchDevice(fromId, wifiNetwork: json["ssid"] as? String)
+        AirclipIdentity.shared.touchDevice(fromId, wifiNetwork: json["ssid"] as? String)
         var reply: [String: Any] = [
             "type": "heartbeat_ack",
             "ts": "\(Int64(Date().timeIntervalSince1970 * 1000))",
@@ -335,18 +323,18 @@ final class PeerConnection {
 
     private func handleHeartbeatAck(_ json: [String: Any]) {
         guard let fromId = deviceId else { return }
-        AirClipIdentity.shared.touchDevice(fromId, wifiNetwork: json["ssid"] as? String)
+        AirclipIdentity.shared.touchDevice(fromId, wifiNetwork: json["ssid"] as? String)
     }
 
     private func handleDeviceRemoved(_ json: [String: Any]) {
         guard DeviceRemovalNotice.targetsCurrentDevice(
             json,
-            currentDeviceId: AirClipIdentity.shared.deviceId
+            currentDeviceId: AirclipIdentity.shared.deviceId
         ) else {
             return
         }
         close()
-        AirClipIdentity.shared.clearAll()
+        AirclipIdentity.shared.clearAll()
     }
 
     // MARK: - History push
@@ -380,20 +368,19 @@ final class PeerConnection {
 
     private func sendAuth() {
         guard
-            let myId     = AirClipIdentity.shared.deviceId,
-            let myAirClipId = AirClipIdentity.shared.airClipId,
+            let myId     = AirclipIdentity.shared.deviceId,
+            let myAirclipId = AirclipIdentity.shared.airClipId,
             let myPk     = try? CryptoManager.shared.publicKeyBase64
         else { return }
 
-        var payload: [String: Any] = [
+        let payload: [String: Any] = [
             "type": "auth",
             "device_id": myId,
-            "airclip_id": myAirClipId,
+            "airclip_id": myAirclipId,
             "public_key": myPk,
-            "device_name": AirClipIdentity.shared.deviceName,
+            "device_name": AirclipIdentity.shared.deviceName,
             "platform": "mac",
         ]
-        if let ssid = currentSSID() { payload["ssid"] = ssid }
         sendJSON(payload)
     }
 

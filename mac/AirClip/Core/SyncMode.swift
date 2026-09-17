@@ -30,9 +30,9 @@ enum SyncMode: String, CaseIterable {
         case .auto:
             return "New clips sync automatically with nearby paired devices."
         case .manualOnly:
-            return "AirClip receives clips automatically; sending requires an explicit action."
+            return "Airclip receives clips automatically; sending requires an explicit action."
         case .paused:
-            return "AirClip stops watching the clipboard and disconnects nearby sync."
+            return "Airclip stops watching the clipboard and disconnects nearby sync."
         }
     }
 

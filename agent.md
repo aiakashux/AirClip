@@ -1,6 +1,6 @@
 # AGENTS.md
 
-This file defines how AI coding agents should work inside the AirClip repository.
+This file defines how AI coding agents should work inside the Airclip repository.
 
 It exists to protect the project architecture, reduce accidental regressions, and keep changes understandable.
 
@@ -10,7 +10,7 @@ Agents must follow these rules before making code changes.
 
 # 1. Project Purpose
 
-AirClip is a secure cross-device clipboard sync system.
+Airclip is a secure cross-device clipboard sync system.
 
 Current MVP goal:
 
@@ -270,6 +270,17 @@ If multiple paths exist, agents should prefer consolidating into a shared helper
 # 6. Naming Rules
 
 Use plain, direct names.
+
+## 6.1 Product name
+
+The product name is always **Airclip**, with only the first letter capitalized.
+Use that spelling in UI copy, documentation, project labels, filenames, and source identifiers. Preserve
+lowercase compatibility identifiers such as `airclip_id`, `com.airclip...`,
+and existing protocol keys.
+
+In user-facing copy, call the Airclip device group a **space**, never a
+network. Reserve **network** for literal connectivity concepts such as Wi-Fi,
+local-network permission, VPN settings, discovery, and network errors.
 
 Prefer:
 

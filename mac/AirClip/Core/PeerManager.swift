@@ -27,8 +27,8 @@ final class PeerManager: ObservableObject {
     // MARK: - Trust
 
     func isTrusted(airClipId: String, deviceId: String) -> Bool {
-        guard let myAirClipId = AirClipIdentity.shared.airClipId else { return false }
-        return airClipId == myAirClipId
+        guard let myAirclipId = AirclipIdentity.shared.airClipId else { return false }
+        return airClipId == myAirclipId
     }
 
     // MARK: - Peer lifecycle
@@ -57,13 +57,20 @@ final class PeerManager: ObservableObject {
         pending.removeValue(forKey: peer.id)
         pendingHints.removeValue(forKey: peer.id)
 
-        let device = AirClipIdentity.shared.pairedDevices[deviceId]
+        let device = AirclipIdentity.shared.pairedDevices[deviceId]
 
         var didRegisterNewPeer = false
         if let existing = peers[deviceId] {
-            // Keep incoming (server-side) connection; close duplicate.
-            if peer.isIncoming { existing.close(); peers[deviceId] = peer }
-            else               { peer.close() }
+            let prefersIncoming = Self.prefersIncomingConnection(
+                localDeviceId: AirclipIdentity.shared.deviceId ?? "",
+                peerDeviceId: deviceId
+            )
+            if existing.isIncoming == peer.isIncoming || peer.isIncoming != prefersIncoming {
+                peer.close()
+            } else {
+                existing.close()
+                peers[deviceId] = peer
+            }
         } else {
             peers[deviceId] = peer
             didRegisterNewPeer = true
@@ -72,6 +79,10 @@ final class PeerManager: ObservableObject {
         if didRegisterNewPeer, let device {
             DeviceNotificationCoordinator.shared.notifyDeviceConnectedOnce(device)
         }
+    }
+
+    static func prefersIncomingConnection(localDeviceId: String, peerDeviceId: String) -> Bool {
+        localDeviceId > peerDeviceId
     }
 
     func disconnectDevice(_ deviceId: String, notifyRemote: Bool = false) {
@@ -94,13 +105,14 @@ final class PeerManager: ObservableObject {
 
     func removePeer(id: UUID) {
         pending.removeValue(forKey: id)
-        let retryHint = pendingHints.removeValue(forKey: id)
-        if let key = peers.first(where: { $0.value.id == id })?.key {
+        let pendingHint = pendingHints.removeValue(forKey: id)
+        let connectedDeviceId = peers.first(where: { $0.value.id == id })?.key
+        if let key = connectedDeviceId {
             peers.removeValue(forKey: key)
         }
         updateCount()
 
-        if let retryHint {
+        if let retryHint = pendingHint ?? connectedDeviceId {
             Task { @MainActor [weak self] in
                 try? await Task.sleep(for: .seconds(1))
                 guard SyncModeStore.shared.mode.keepsLanServiceRunning,
@@ -153,7 +165,7 @@ final class PeerManager: ObservableObject {
     // MARK: - Broadcast
 
     func broadcast(packet: ClipboardPacket) {
-        let myId = AirClipIdentity.shared.deviceId ?? ""
+        let myId = AirclipIdentity.shared.deviceId ?? ""
         for (deviceId, peer) in peers where deviceId != myId {
             guard let pk = peer.publicKey else { continue }
             do {

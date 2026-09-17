@@ -50,7 +50,8 @@ final class LanServer {
 
     func start() {
         guard listener == nil else { return }
-        guard let deviceId = AirClipIdentity.shared.deviceId, !deviceId.isEmpty else { return }
+        AirclipIdentity.shared.ensureDeviceId()
+        guard let deviceId = AirclipIdentity.shared.deviceId, !deviceId.isEmpty else { return }
 
         let params    = NWParameters.tcp
         let wsOptions = NWProtocolWebSocket.Options()
@@ -69,13 +70,15 @@ final class LanServer {
         // Bonjour service name = device_id so peers can skip self-connection.
         l.service = NWListener.Service(name: deviceId, type: AppConfig.lanServiceType)
 
-        l.stateUpdateHandler = { state in
-            Task { @MainActor in
+        l.stateUpdateHandler = { [weak self] state in
+            Task { @MainActor [weak self] in
                 switch state {
                 case .ready:
                     LanRuntimeDiagnostics.shared.clear()
                 case .failed(let error):
                     LanRuntimeDiagnostics.shared.serverFailed(error.localizedDescription)
+                    self?.listener?.cancel()
+                    self?.listener = nil
                 default:
                     break
                 }

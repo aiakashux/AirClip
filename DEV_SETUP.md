@@ -1,12 +1,12 @@
-# AirClip Development Setup
+# Airclip Development Setup
 
-This guide describes the current AirClip MVP: native macOS plus Android clipboard sync over the local network.
+This guide describes the current Airclip MVP: native macOS plus Android clipboard sync over the local network.
 
 The older backend, Redis, and Electron relay setup is legacy. The backend source remains in the repo for historical or future optional work, but it is not required for the active LAN-first clipboard flow.
 
 ## Active MVP
 
-AirClip currently focuses on:
+Airclip currently focuses on:
 
 1. Pairing one Mac and one Android device.
 2. Discovering paired devices on the same Wi-Fi network.
@@ -38,7 +38,7 @@ Recommended physical-device setup:
 ## Repository Layout
 
 ```text
-AirClip
+Airclip
 ├── mac/          Native macOS app
 ├── android/      Native Android app
 ├── backend/      Legacy backend source, not active clipboard transport
@@ -52,8 +52,8 @@ From the repository root:
 
 ```bash
 xcodebuild \
-  -project mac/AirClip.xcodeproj \
-  -scheme AirClip \
+  -project mac/Airclip.xcodeproj \
+  -scheme Airclip \
   -configuration Debug \
   -destination 'platform=macOS' \
   -disableAutomaticPackageResolution \
@@ -77,8 +77,8 @@ Known warning class:
 
 Use Xcode:
 
-1. Open `mac/AirClip.xcodeproj`.
-2. Select the `AirClip` scheme.
+1. Open `mac/Airclip.xcodeproj`.
+2. Select the `Airclip` scheme.
 3. Run on `My Mac`.
 
 Or run the built app from Xcode's derived data output after a successful build.
@@ -120,8 +120,8 @@ Physical device testing is strongly preferred because LAN discovery, foreground 
 
 Use the in-app pairing UI:
 
-1. Start AirClip on macOS.
-2. Start AirClip on Android.
+1. Start Airclip on macOS.
+2. Start Airclip on Android.
 3. Put both devices on the same Wi-Fi network.
 4. Use QR or code pairing.
 5. Confirm that both devices show the peer in the Devices view.
@@ -222,7 +222,7 @@ Check:
 3. VPN is disabled or configured to allow LAN access.
 4. macOS Local Network permission is granted.
 5. Android foreground service is running.
-6. AirClip is not in Paused mode.
+6. Airclip is not in Paused mode.
 
 ### Devices are paired but not connected
 
@@ -271,6 +271,6 @@ Current backend status:
 1. Source remains in `backend/`.
 2. Backend tests now cover the current minimal account/device bootstrap and heartbeat WebSocket behavior.
 3. Backend auth/account/device bootstrap is legacy or future optional infrastructure, not active clipboard transport.
-4. Do not treat backend relay docs, old specs, or old plans as current AirClip behavior.
+4. Do not treat backend relay docs, old specs, or old plans as current Airclip behavior.
 
 If cloud relay returns later, it should be explicitly opt-in, encrypted end to end, sensitive-policy aware, and clearly distinct from the LAN-first flow.

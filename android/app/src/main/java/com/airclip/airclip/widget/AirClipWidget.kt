@@ -10,12 +10,12 @@ import android.widget.RemoteViews
 import com.airclip.airclip.R
 
 /**
- * AirClip home-screen widget (4×1).
+ * Airclip home-screen widget (4×1).
  *
  * Four visual states driven by [WidgetState]:
  *
  *   NO_DEVICES    — grey dot  | "No devices nearby"  | "Same WiFi needed"
- *   SYNCED        — green dot | "AirClip in sync"        | "2 min ago"
+ *   SYNCED        — green dot | "Airclip in sync"        | "2 min ago"
  *   PENDING       — blue dot  | "New from Mac"        | preview  | [Paste]
  *   READY_TO_SEND — accent    | "Ready to sync"       |           | [Send]
  *
@@ -23,7 +23,7 @@ import com.airclip.airclip.R
  *   [Paste] — re-writes last received text to clipboard (already there, confirms)
  *   [Send]  — launches ClipboardSendActivity (transparent) to read + send clipboard
  */
-class AirClipWidget : AppWidgetProvider() {
+class AirclipWidget : AppWidgetProvider() {
 
     override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) {
         ids.forEach { buildAndUpdate(context, manager, it) }
@@ -46,7 +46,7 @@ class AirClipWidget : AppWidgetProvider() {
         if (text.isNotBlank()) {
             val cm = context.getSystemService(Context.CLIPBOARD_SERVICE)
                 as android.content.ClipboardManager
-            cm.setPrimaryClip(android.content.ClipData.newPlainText("AirClip", text))
+            cm.setPrimaryClip(android.content.ClipData.newPlainText("Airclip", text))
         }
         // Transition widget back to synced
         WidgetState.save(context, WidgetState.SYNCED)
@@ -69,10 +69,10 @@ class AirClipWidget : AppWidgetProvider() {
         const val ACTION_PASTE = "com.airclip.airclip.WIDGET_PASTE"
         const val ACTION_SEND  = "com.airclip.airclip.WIDGET_SEND"
 
-        // Dot colours matching AirClip's design tokens
+        // Dot colours matching Airclip's design tokens
         private val COLOR_GREEN  = Color.parseColor("#59D499")
         private val COLOR_BLUE   = Color.parseColor("#56C2FF")
-        private val COLOR_ACCENT = Color.parseColor("#5647F2")
+        private val COLOR_ACCENT = Color.parseColor("#6740BF")
         private val COLOR_GREY   = Color.parseColor("#848484")
         private val COLOR_YELLOW = Color.parseColor("#FFC531")
 
@@ -100,7 +100,7 @@ class AirClipWidget : AppWidgetProvider() {
                 WidgetState.SYNCED -> {
                     val elapsed = WidgetState.elapsedLabel(syncMs)
                     views.setInt(R.id.widget_dot, "setBackgroundColor", COLOR_GREEN)
-                    views.setTextViewText(R.id.widget_primary,   "AirClip in sync")
+                    views.setTextViewText(R.id.widget_primary,   "Airclip in sync")
                     views.setTextViewText(R.id.widget_secondary, elapsed)
                     views.setViewVisibility(R.id.widget_secondary,  if (elapsed.isNotEmpty()) View.VISIBLE else View.GONE)
                     views.setViewVisibility(R.id.widget_action_btn, View.GONE)
@@ -140,7 +140,7 @@ class AirClipWidget : AppWidgetProvider() {
         }
 
         private fun pasteIntent(context: Context): android.app.PendingIntent {
-            val intent = Intent(context, AirClipWidget::class.java).apply { action = ACTION_PASTE }
+            val intent = Intent(context, AirclipWidget::class.java).apply { action = ACTION_PASTE }
             return android.app.PendingIntent.getBroadcast(
                 context, 0, intent,
                 android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
@@ -148,7 +148,7 @@ class AirClipWidget : AppWidgetProvider() {
         }
 
         private fun sendIntent(context: Context): android.app.PendingIntent {
-            val intent = Intent(context, AirClipWidget::class.java).apply { action = ACTION_SEND }
+            val intent = Intent(context, AirclipWidget::class.java).apply { action = ACTION_SEND }
             return android.app.PendingIntent.getBroadcast(
                 context, 1, intent,
                 android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE

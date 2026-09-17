@@ -1,9 +1,9 @@
-# AirClip App Icon
+# Airclip App Icon
 
 Put the final main app icon export here:
 
 ```text
-docs/app-icon/AirClipAppIcon.png
+docs/app-icon/AirclipAppIcon.png
 ```
 
 Preferred source:
@@ -21,7 +21,7 @@ source export separately and use this PNG as the generated fallback.
 Current Figma source:
 
 ```text
-https://www.figma.com/design/p6I5nXWy6uzKwQcwwdu8xp/AirClip?node-id=231-6092
+https://www.figma.com/design/p6I5nXWy6uzKwQcwwdu8xp/Airclip?node-id=231-6092
 ```
 
 This file requires a signed-in Figma session before it can be exported from this

@@ -38,4 +38,25 @@
         android:padding="13dp"
         android:src="@drawable/ic_airclip_arrow_left"
         android:tint="#FF202327" />
+
+    <TextView
+        android:id="@+id/airclip_scanner_code_connect"
+        android:layout_width="wrap_content"
+        android:layout_height="40dp"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginBottom="32dp"
+        android:background="@drawable/airclip_scanner_code_connect_bg"
+        android:clickable="true"
+        android:drawablePadding="8dp"
+        android:drawableStart="@drawable/ic_airclip_code_connect"
+        android:elevation="4dp"
+        android:focusable="true"
+        android:fontFamily="@font/beary"
+        android:gravity="center"
+        android:paddingStart="16dp"
+        android:paddingEnd="18dp"
+        android:text="Connect with code"
+        android:textColor="#FFF7F7F6"
+        android:textSize="14sp"
+        android:visibility="gone" />
 </FrameLayout>

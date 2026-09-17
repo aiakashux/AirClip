@@ -42,7 +42,7 @@ final class SyncEngine: ObservableObject {
     }
 
     func reconnect() {
-        guard AirClipIdentity.shared.isPaired,
+        guard AirclipIdentity.shared.isPaired,
               SyncModeStore.shared.mode.keepsLanServiceRunning
         else { return }
 
@@ -69,7 +69,7 @@ final class SyncEngine: ObservableObject {
                 }
             }
         }
-        let myId = AirClipIdentity.shared.deviceId ?? ""
+        let myId = AirclipIdentity.shared.deviceId ?? ""
         LocalHistoryStore.shared.insert(packet, fromDeviceId: myId, isLocal: true)
         PeerManager.shared.broadcast(packet: packet)
     }
@@ -152,10 +152,7 @@ enum ManualClipboardSender {
             let action = SensitiveClipboardProtectionStore.shared.action(for: finding.category)
             switch SensitiveClipboardPolicy.decide(assessment, intent: .manual, action: action) {
             case .block:
-                showAlert(
-                    title: "Sensitive clipboard blocked",
-                    message: "Your \(finding.category.label.lowercased()) rule keeps this item on this Mac."
-                )
+                AirclipAlertCenter.shared.show("Sensitive item wasn’t shared", kind: .danger)
                 return
             case .requireConfirmation:
                 guard confirmSend(category: finding.category) else { return }
@@ -177,13 +174,6 @@ enum ManualClipboardSender {
         return alert.runModal() == .alertFirstButtonReturn
     }
 
-    private static func showAlert(title: String, message: String) {
-        let alert = NSAlert()
-        alert.messageText = title
-        alert.informativeText = message
-        alert.addButton(withTitle: "OK")
-        alert.runModal()
-    }
 }
 
 // MARK: - PeerCount notification

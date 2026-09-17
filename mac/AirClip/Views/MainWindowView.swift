@@ -8,7 +8,7 @@ private enum MainPage: String, CaseIterable {
     case saved = "Saved"
     case settings = "Settings"
 
-    var icon: AirClipIconName {
+    var icon: AirclipIconName {
         switch self {
         case .home: return .home
         case .devices: return .deviceSync
@@ -43,13 +43,13 @@ private enum MainWindowLayout {
     static let navCornerRadius: CGFloat = 10
     static let rowWidth: CGFloat = 232
     static let rowHeight: CGFloat = 70
-    static let rowIconWidth: CGFloat = 18
+    static let rowIconWidth: CGFloat = 14
     static let actionBarWidth: CGFloat = 154
     static let actionBarHeight: CGFloat = 50
     static let previewTopInset: CGFloat = 32
     static let previewLeadingInset: CGFloat = 32
-    static let previewTrailingInset: CGFloat = 40
-    static let previewBottomInset: CGFloat = 84
+    static let previewTrailingInset: CGFloat = 32
+    static let previewBottomInset: CGFloat = 108
     static let previewActionTrailingInset: CGFloat = 16
     static let previewActionBottomInset: CGFloat = 16
     static let settingsInset: CGFloat = 24
@@ -64,21 +64,21 @@ private enum MainWindowLayout {
     static let deviceOrbitTooltipGap: CGFloat = 8
     static let deviceOrbitTooltipTextGap: CGFloat = 4
     static let deviceOrbitStroke: CGFloat = 1
-    static let textBadgeFill = Color(hex: "#76A57F").opacity(0.12)
-    static let textBadgeForeground = Color(hex: "#76A57F")
-    static let linkBadgeFill = Color(hex: "#695DF3").opacity(0.12)
-    static let linkBadgeForeground = Color(hex: "#695DF3")
-    static let codeBadgeFill = Color(hex: "#E5760E").opacity(0.12)
-    static let codeBadgeForeground = Color(hex: "#E5760E")
-    static let emailBadgeFill = Color(hex: "#70CBFF").opacity(0.12)
-    static let emailBadgeForeground = Color(hex: "#70CBFF")
+    static let textBadgeFill = Color.encryptedGreen.opacity(0.12)
+    static let textBadgeForeground = Color.encryptedGreen
+    static let linkBadgeFill = Color.accent.opacity(0.12)
+    static let linkBadgeForeground = Color.accent
+    static let codeBadgeFill = Color.warningYellow.opacity(0.12)
+    static let codeBadgeForeground = Color.warningYellow
+    static let emailBadgeFill = Color.syncBlue.opacity(0.12)
+    static let emailBadgeForeground = Color.syncBlue
     static let imageBadgeFill = Color(hex: "#DB438A").opacity(0.12)
     static let imageBadgeForeground = Color(hex: "#DB438A")
     static let imagePreviewBadgeFill = Color.white.opacity(0.50)
     static let colorBadgeFill = Color(hex: "#4D4D4D").opacity(0.12)
     static let colorBadgeForeground = Color(hex: "#4D4D4D")
     static let badgeBorder = Color(hex: "#808080").opacity(0.2)
-    static let codeTitleText = Color(hex: "#525F7A")
+    static let codeTitleText = Color.textSubtle
     static let searchBackground = MainWindowPalette.searchIdleFill
     static let searchBorder = MainWindowPalette.searchIdleBorder
     static let sectionHeaderText = MainWindowPalette.sectionHeaderText
@@ -96,10 +96,13 @@ private enum MainWindowPalette {
     static let divider = Color.borderSubtle
     static let activeFill = Color.activeFill
     static let hoverFill = Color.hoverFill
+    static let itemHoverFill = Color.listItemHover
+    static let itemSelectedFill = Color.listItemSelected
+    static let itemSelectedBorder = Color.listItemSelectedBorder
     static let pressedFill = Color.activeFill
     static let searchFill = Color.bgFloating
-    static let focusStroke = Color.accent.opacity(0.44)
-    static let selectionStroke = Color.accent.opacity(0.30)
+    static let focusStroke = Color.accent
+    static let selectionStroke = Color.accent.opacity(0.65)
     static let rowStroke = Color.borderDefault
     static let saved = Color.encryptedGreen
     static let destructive = Color.destructiveRed
@@ -108,9 +111,9 @@ private enum MainWindowPalette {
     static let online = Color.encryptedGreen
     static let offline = Color.textTertiary
     static let sidebarText = Color.textSubtle
-    static let sidebarHoverFill = Color.hoverFill
-    static let sidebarActiveFill = Color.selectionFill
-    static let sidebarActiveBorder = Color.accent.opacity(0.30)
+    static let sidebarHoverFill = Color.sidebarHover
+    static let sidebarActiveFill = Color.sidebarSelected
+    static let sidebarActiveBorder = Color.sidebarSelectedBorder
     static let sidebarItemBorder = Color.borderSubtle
     static let searchIdleFill = Color.bgFloating.opacity(0.40)
     static let searchIdleBorder = Color.borderDefault
@@ -131,8 +134,23 @@ private enum MainWindowMotion {
     static let rowPressScale: CGFloat = 0.992
 }
 
+private struct FilterArrowPressStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(reduceMotion || !configuration.isPressed ? 1 : 0.965)
+            .animation(
+                reduceMotion ? nil : .timingCurve(0.23, 1, 0.32, 1, duration: 0.12),
+                value: configuration.isPressed
+            )
+    }
+}
+
 struct MainWindowView: View {
     @Query private var allItems: [ClipboardItem]
+    @ObservedObject private var alertCenter = AirclipAlertCenter.shared
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var activePage: MainPage = .home
     @State private var isNavigationCollapsed = false
 
@@ -180,6 +198,23 @@ struct MainWindowView: View {
         .frame(width: MainWindowLayout.contentWidth, height: MainWindowLayout.contentHeight, alignment: .topLeading)
         .frame(width: MainWindowLayout.windowWidth, height: MainWindowLayout.windowHeight, alignment: .topLeading)
         .background(MainWindowPalette.shell)
+        .overlay(alignment: .bottom) {
+            if let alert = alertCenter.current {
+                AirclipBottomAlert(
+                    item: alert,
+                    onDismiss: alertCenter.dismiss,
+                    onAction: alertCenter.performAction
+                )
+                .padding(.horizontal, 24)
+                .padding(.bottom, 24)
+                .transition(reduceMotion ? .opacity : .airclipBottomAlert)
+                .zIndex(100)
+            }
+        }
+        .animation(
+            reduceMotion ? .easeInOut(duration: 0.12) : .timingCurve(0.16, 1, 0.3, 1, duration: 0.22),
+            value: alertCenter.current?.id
+        )
         .animation(
             .timingCurve(0.25, 0.46, 0.45, 0.94, duration: MainWindowMotion.sidebarDuration),
             value: isNavigationCollapsed
@@ -265,6 +300,9 @@ struct MainWindowView: View {
                     SettingsPanel()
                 }
             }
+            .id(activePage)
+            .transition(.opacity)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: activePage)
             .frame(width: currentMainCardWidth, height: currentMainCardHeight)
             .background(MainWindowPalette.card)
             .clipShape(RoundedRectangle(cornerRadius: MainWindowLayout.mainCardCornerRadius, style: .continuous))
@@ -327,7 +365,7 @@ private struct SidebarNavItem: View {
 
     private var rowLabel: some View {
         HStack(spacing: 8) {
-            AirClipIcon(page.icon, size: 18, variant: .stroke)
+            AirclipIcon(page.icon, size: 18, variant: .stroke)
                 .foregroundColor(navForegroundColor)
                 .frame(width: 18, height: 18)
             Text(page.rawValue)
@@ -378,7 +416,8 @@ private struct SidebarNavItem: View {
     }
 
     private var navForegroundColor: Color {
-        if isActive || isHovered { return MainWindowPalette.primaryText }
+        if isActive { return Color.accent }
+        if isHovered { return MainWindowPalette.primaryText }
         return MainWindowPalette.sidebarText
     }
 
@@ -404,22 +443,24 @@ private struct SidebarNavItem: View {
 
 private struct SidebarBrandMark: View {
     var body: some View {
-        AirClipLogoMark()
+        AirclipLogoMark()
             .frame(width: 97, height: 24)
-        .accessibilityLabel("AirClip")
+        .accessibilityLabel("Airclip")
     }
 }
 
-struct AirClipLogoMark: View {
+struct AirclipLogoMark: View {
     var body: some View {
-        Image(nsImage: MacSplashSVG.image(from: MacSplashSVG.logoSidebar))
+        Image(nsImage: MacSplashSVG.image(from: MacSplashSVG.logo))
+            .renderingMode(.template)
             .resizable()
             .scaledToFit()
+            .foregroundStyle(Color.accent)
         .frame(width: 97, height: 24, alignment: .leading)
     }
 }
 
-struct AirClipEmptyLogoMark: View {
+struct AirclipEmptyLogoMark: View {
     let size: CGFloat
     let color: Color
 
@@ -436,15 +477,17 @@ struct AirClipEmptyLogoMark: View {
     }
 }
 
-struct AirClipFigmaEmptyState: View {
+struct AirclipFigmaEmptyState: View {
+    var text = "Copy something on either device. It will appear here automatically."
+
     var body: some View {
         VStack(spacing: 12) {
-            AirClipEmptyLogoMark(size: 36, color: Color(hex: "#D9DBE0"))
+            AirclipEmptyLogoMark(size: 36, color: .textTertiary)
 
-            Text("Airclip is ready. Copy on one device, to use it on another.")
+            Text(text)
                 .font(.system(size: 14, weight: .regular))
                 .lineSpacing(7)
-                .foregroundColor(Color(hex: "#A0A6B1"))
+                .foregroundColor(.textSecondary)
                 .multilineTextAlignment(.center)
                 .frame(width: 200)
         }
@@ -485,9 +528,17 @@ private enum ClipTypeFilter: String, CaseIterable {
     }
 }
 
+private struct ClipboardItemGroup: Identifiable {
+    let title: String
+    let items: [ClipboardItem]
+
+    var id: String { title }
+}
+
 private struct ClipboardWorkspace: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.undoManager) private var undoManager
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Query(sort: \ClipboardItem.receivedAt, order: .reverse) private var allItems: [ClipboardItem]
     @ObservedObject private var revealStore = SensitiveContentRevealStore.shared
     @ObservedObject private var syncModeStore = SyncModeStore.shared
@@ -499,6 +550,10 @@ private struct ClipboardWorkspace: View {
     @State private var selectedItem: ClipboardItem?
     @State private var searchQuery = ""
     @State private var selectedTypeFilter: ClipTypeFilter = .all
+    @State private var filtersVisible = false
+    @State private var typeFilterScrollTarget: ClipTypeFilter? = .all
+    @State private var canScrollFiltersLeft = false
+    @State private var canScrollFiltersRight = false
     @State private var hoveredItemID: UUID?
     @FocusState private var searchFocused: Bool
 
@@ -518,6 +573,21 @@ private struct ClipboardWorkspace: View {
                 clipTypeLabel(for: item.clipType).localizedCaseInsensitiveContains(query) ||
                 deviceLabel(for: item).localizedCaseInsensitiveContains(query)
         }
+    }
+
+    private var groupedItems: [ClipboardItemGroup] {
+        let calendar = Calendar.current
+        let today = filteredItems.filter { calendar.isDateInToday($0.receivedAt) }
+        let yesterday = filteredItems.filter { calendar.isDateInYesterday($0.receivedAt) }
+        let earlier = filteredItems.filter {
+            !calendar.isDateInToday($0.receivedAt) && !calendar.isDateInYesterday($0.receivedAt)
+        }
+
+        return [
+            ClipboardItemGroup(title: "Today", items: today),
+            ClipboardItemGroup(title: "Yesterday", items: yesterday),
+            ClipboardItemGroup(title: "Earlier", items: earlier)
+        ].filter { !$0.items.isEmpty }
     }
 
     private var selectedItemIsValid: Bool {
@@ -541,24 +611,37 @@ private struct ClipboardWorkspace: View {
     private var listPane: some View {
         VStack(alignment: .leading, spacing: 0) {
             searchBar
-            typeFilterRow
+            if filtersVisible {
+                typeFilterRow
+                    .transition(reduceMotion ? .opacity : .opacity.combined(with: .offset(y: -4)))
+            }
             if syncModeStore.mode == .manualOnly {
                 manualSendRow
             }
-            sectionHeader
             if filteredItems.isEmpty {
                 emptyListState
+                    .transition(.opacity)
             } else {
                 ScrollView {
-                    LazyVStack(spacing: 4) {
-                        ForEach(filteredItems) { item in
-                            clipRow(item)
+                    LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
+                        ForEach(groupedItems) { group in
+                            Section {
+                                ForEach(group.items) { item in
+                                    clipRow(item)
+                                        .padding(.horizontal, MainWindowLayout.listRowHorizontalInset)
+                                        .transition(reduceMotion ? .opacity : .opacity.combined(with: .offset(y: 4)))
+                                }
+                            } header: {
+                                sectionHeader(group.title)
+                            }
                         }
                     }
-                    .padding(.horizontal, MainWindowLayout.listRowHorizontalInset)
                     .padding(.bottom, 8)
+                    .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: allItems.map(\.id))
                 }
                 .scrollIndicators(.never)
+                .simultaneousGesture(TapGesture().onEnded { searchFocused = false })
+                .transition(.opacity)
             }
         }
         .frame(width: MainWindowLayout.listWidth, height: workspaceHeight)
@@ -568,10 +651,13 @@ private struct ClipboardWorkspace: View {
                 .fill(MainWindowPalette.divider)
                 .frame(width: 1)
         }
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: filtersVisible)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: filteredItems.isEmpty)
     }
 
     private var manualSendRow: some View {
         Button {
+            searchFocused = false
             ManualClipboardSender.sendCurrentClipboard()
         } label: {
             Label("Send Clipboard", systemImage: "paperplane.fill")
@@ -580,7 +666,7 @@ private struct ClipboardWorkspace: View {
                 .frame(height: 28)
         }
         .buttonStyle(.borderedProminent)
-        .tint(.accent)
+        .tint(.accentDeep)
         .padding(.horizontal, MainWindowLayout.listSearchHorizontalInset)
         .padding(.bottom, 8)
     }
@@ -588,8 +674,8 @@ private struct ClipboardWorkspace: View {
     private var searchBar: some View {
         HStack(spacing: 12) {
             HStack(spacing: 8) {
-                AirClipIcon(.search, size: 16)
-                    .foregroundColor(MainWindowPalette.tertiaryText)
+                AirclipIcon(.search, size: 16, variant: .stroke)
+                    .foregroundColor(MainWindowPalette.secondaryText)
                 TextField(
                     "",
                     text: $searchQuery,
@@ -602,27 +688,29 @@ private struct ClipboardWorkspace: View {
                     .focused($searchFocused)
                 searchTrailingControl
             }
-            .padding(.horizontal, 13)
-            .frame(maxWidth: .infinity, minHeight: 34, idealHeight: 34, maxHeight: 34)
+            .padding(.leading, 13)
+            .padding(.trailing, 8)
+            .frame(maxWidth: .infinity, minHeight: 36, idealHeight: 36, maxHeight: 36)
             .background(searchBackground)
             .overlay(searchBorder)
-            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .contentShape(Capsule())
             .onTapGesture {
                 searchFocused = true
             }
+            .animation(.easeOut(duration: 0.12), value: searchFocused)
         }
         .padding(.horizontal, MainWindowLayout.listSearchHorizontalInset)
-        .padding(.vertical, 13)
+        .padding(.vertical, 12)
         .frame(width: MainWindowLayout.listWidth, height: MainWindowLayout.listSearchHeight, alignment: .topLeading)
     }
 
     private var searchBackground: some View {
-        RoundedRectangle(cornerRadius: 8, style: .continuous)
+        Capsule()
             .fill(searchFocused ? MainWindowPalette.card : MainWindowLayout.searchBackground)
     }
 
     private var searchBorder: some View {
-        RoundedRectangle(cornerRadius: 8, style: .continuous)
+        Capsule()
             .strokeBorder(searchFocused ? MainWindowPalette.focusStroke : MainWindowLayout.searchBorder, lineWidth: 1)
     }
 
@@ -633,8 +721,8 @@ private struct ClipboardWorkspace: View {
                 searchQuery = ""
                 searchFocused = true
             } label: {
-                AirClipIcon(.close, size: 10)
-                    .foregroundColor(MainWindowPalette.tertiaryText)
+                AirclipIcon(.close, size: 10)
+                    .foregroundColor(MainWindowPalette.secondaryText)
                     .frame(width: 16, height: 16)
                     .background(
                         Circle()
@@ -644,82 +732,178 @@ private struct ClipboardWorkspace: View {
             .buttonStyle(.plain)
             .help("Clear search")
             .accessibilityLabel("Clear search")
+            .transition(.opacity)
         }
+        Button {
+            searchFocused = false
+            filtersVisible.toggle()
+        } label: {
+            Group {
+                if filtersVisible {
+                    AirclipIcon(.filterActive, size: 18)
+                        .foregroundColor(Color(hex: "#4C575C"))
+                } else {
+                    AirclipIcon(.filter, size: 18)
+                        .foregroundColor(MainWindowPalette.secondaryText)
+                }
+            }
+                .frame(width: 24, height: 24)
+        }
+        .buttonStyle(.plain)
+        .help(filtersVisible ? "Hide filters" : "Show filters")
+        .accessibilityLabel(filtersVisible ? "Hide filters" : "Show filters")
+        .accessibilityValue(selectedTypeFilter == .all ? "All clips" : selectedTypeFilter.title)
+        .animation(.easeOut(duration: 0.10), value: searchQuery.isEmpty)
     }
 
     private var typeFilterRow: some View {
-        HStack(spacing: 4) {
-            ForEach(ClipTypeFilter.allCases, id: \.self) { typeFilter in
-                typeFilterButton(typeFilter)
+        ScrollViewReader { proxy in
+            ZStack {
+                ScrollView(.horizontal) {
+                    HStack(spacing: 8) {
+                        ForEach(ClipTypeFilter.allCases, id: \.self) { typeFilter in
+                            typeFilterButton(typeFilter)
+                                .id(typeFilter)
+                        }
+                    }
+                    .padding(.horizontal, 24)
+                    .scrollTargetLayout()
+                }
+                .scrollIndicators(.never)
+                .scrollPosition(id: $typeFilterScrollTarget, anchor: .center)
+                .onScrollGeometryChange(for: Bool.self) { geometry in
+                    geometry.contentOffset.x > 1
+                } action: { _, canScroll in
+                    canScrollFiltersLeft = canScroll
+                }
+                .onScrollGeometryChange(for: Bool.self) { geometry in
+                    geometry.contentOffset.x + geometry.containerSize.width < geometry.contentSize.width - 1
+                } action: { _, canScroll in
+                    canScrollFiltersRight = canScroll
+                }
+                .simultaneousGesture(TapGesture().onEnded { searchFocused = false })
+
+                HStack(spacing: 0) {
+                    if canScrollFiltersLeft {
+                        filterScrollButton(direction: -1, proxy: proxy)
+                            .transition(.opacity)
+                    }
+                    Spacer()
+                    if canScrollFiltersRight {
+                        filterScrollButton(direction: 1, proxy: proxy)
+                            .transition(.opacity)
+                    }
+                }
+                .animation(.easeOut(duration: 0.12), value: canScrollFiltersLeft)
+                .animation(.easeOut(duration: 0.12), value: canScrollFiltersRight)
             }
         }
+        .frame(height: 24)
         .padding(.horizontal, MainWindowLayout.listSearchHorizontalInset)
-        .padding(.bottom, 8)
+        .padding(.bottom, 16)
+    }
+
+    private func filterScrollButton(direction: Int, proxy: ScrollViewProxy) -> some View {
+        let filters = ClipTypeFilter.allCases
+        let currentIndex = filters.firstIndex(of: typeFilterScrollTarget ?? selectedTypeFilter) ?? 0
+        return Button {
+            searchFocused = false
+            let target = filters[min(max(currentIndex + direction, 0), filters.count - 1)]
+            if reduceMotion {
+                typeFilterScrollTarget = target
+                proxy.scrollTo(target, anchor: .center)
+            } else {
+                withAnimation(.timingCurve(0.77, 0, 0.175, 1, duration: 0.24)) {
+                    typeFilterScrollTarget = target
+                    proxy.scrollTo(target, anchor: .center)
+                }
+            }
+        } label: {
+            Image(systemName: direction < 0 ? "chevron.left" : "chevron.right")
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundColor(MainWindowPalette.secondaryText)
+                .frame(width: 28, height: 24)
+                .background(
+                    LinearGradient(
+                        colors: [MainWindowPalette.card, MainWindowPalette.card.opacity(0)],
+                        startPoint: direction < 0 ? .leading : .trailing,
+                        endPoint: direction < 0 ? .trailing : .leading
+                    )
+                )
+        }
+        .buttonStyle(FilterArrowPressStyle())
+        .accessibilityLabel(direction < 0 ? "Previous filters" : "Next filters")
     }
 
     private func typeFilterButton(_ typeFilter: ClipTypeFilter) -> some View {
         let selected = selectedTypeFilter == typeFilter
         return Button {
+            searchFocused = false
             selectedTypeFilter = typeFilter
+            typeFilterScrollTarget = typeFilter
         } label: {
             Text(typeFilter.title)
-                .font(.system(size: 10, weight: selected ? .medium : .regular))
-                .foregroundColor(selected ? MainWindowPalette.primaryText : MainWindowPalette.tertiaryText)
+                .font(.system(size: 11, weight: selected ? .semibold : .regular))
+                .foregroundColor(selected ? MainWindowPalette.card : MainWindowPalette.secondaryText)
                 .lineLimit(1)
-                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 12)
                 .frame(height: 24)
                 .background(
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(selected ? MainWindowPalette.activeFill : MainWindowPalette.searchFill.opacity(0.55))
+                    Capsule()
+                        .fill(selected ? MainWindowPalette.primaryText : MainWindowPalette.card)
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .strokeBorder(selected ? MainWindowPalette.divider : MainWindowPalette.divider.opacity(0.5), lineWidth: 0.5)
+                    Capsule()
+                        .strokeBorder(selected ? .clear : MainWindowPalette.rowStroke, lineWidth: 1)
                 )
         }
         .buttonStyle(.plain)
+        .animation(.easeOut(duration: 0.12), value: selected)
         .help("Show \(typeFilter.title.lowercased()) clips")
         .accessibilityLabel("Show \(typeFilter.title.lowercased()) clips")
         .accessibilityValue(selected ? "Selected" : "")
     }
 
-    @ViewBuilder
-    private var sectionHeader: some View {
-        if let firstItem = filteredItems.first {
-            Text(sectionTitle(for: firstItem.receivedAt))
-                .font(.system(size: 12, weight: .medium))
-                .foregroundColor(MainWindowLayout.sectionHeaderText)
-                .padding(.horizontal, MainWindowLayout.listHeaderHorizontalInset)
-                .padding(.top, 8)
-                .padding(.bottom, 4)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
+    private func sectionHeader(_ title: String) -> some View {
+        Text(title)
+            .font(.system(size: 12, weight: .medium))
+            .foregroundColor(MainWindowLayout.sectionHeaderText)
+            .padding(.horizontal, MainWindowLayout.listHeaderHorizontalInset)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(MainWindowPalette.card)
+            .contentShape(Rectangle())
+            .onTapGesture { searchFocused = false }
     }
 
     private func clipRow(_ item: ClipboardItem) -> some View {
         let active = selectedItem?.id == item.id
         let hovered = hoveredItemID == item.id
         return Button {
+            searchFocused = false
             selectedItem = item
         } label: {
             HStack(alignment: .top, spacing: 8) {
                 clipTypeBadge(for: item)
                 VStack(alignment: .leading, spacing: 8) {
-                    Text(item.text)
-                        .font(titleFont(for: item))
-                        .foregroundColor(titleColor(for: item))
-                        .underline(item.clipType == .url)
-                        .lineLimit(2)
-                        .truncationMode(.tail)
-                        .blur(radius: shouldRedact(item) ? 4 : 0)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    if item.clipType == .url {
+                        URLClipRowText(item: item, shouldRedact: shouldRedact(item))
+                    } else {
+                        Text(item.text)
+                            .font(titleFont(for: item))
+                            .foregroundColor(titleColor(for: item))
+                            .lineLimit(2)
+                            .truncationMode(.tail)
+                            .blur(radius: shouldRedact(item) ? 4 : 0)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
                     HStack(spacing: 0) {
                         HStack(spacing: 4) {
                             Text(deviceLabel(for: item))
                                 .lineLimit(1)
                                 .truncationMode(.tail)
                             if item.isSaved {
-                                AirClipIcon(.bookmarkCheck, size: 9)
+                                AirclipIcon(.bookmarkCheck, size: 9)
                             }
                         }
                         Spacer(minLength: 4)
@@ -758,7 +942,7 @@ private struct ClipboardWorkspace: View {
                 Label {
                     Text("Copy")
                 } icon: {
-                    AirClipIcon(.copy, size: 13)
+                    AirclipIcon(.copy, size: 13)
                 }
             }
             Button {
@@ -767,7 +951,7 @@ private struct ClipboardWorkspace: View {
                 Label {
                     Text(item.isSaved ? "Saved" : "Save")
                 } icon: {
-                    AirClipIcon(item.isSaved ? .bookmarkCheck : .bookmarkAdd, size: 13)
+                    AirclipIcon(item.isSaved ? .bookmarkCheck : .bookmarkAdd, size: 13)
                 }
             }
             Divider()
@@ -777,32 +961,31 @@ private struct ClipboardWorkspace: View {
                 Label {
                     Text("Delete")
                 } icon: {
-                    AirClipIcon(.delete, size: 13)
+                    AirclipIcon(.delete, size: 13)
                 }
             }
         }
     }
 
     private func rowBackground(active: Bool, hovered: Bool) -> Color {
-        if active { return MainWindowPalette.activeFill }
-        if hovered { return MainWindowPalette.hoverFill }
+        if active { return MainWindowPalette.itemSelectedFill }
+        if hovered { return MainWindowPalette.itemHoverFill }
         return .clear
     }
 
     private func rowStroke(active: Bool, hovered: Bool) -> Color {
-        if active { return MainWindowPalette.selectionStroke }
-        if hovered { return MainWindowPalette.rowStroke }
+        if active { return MainWindowPalette.itemSelectedBorder }
         return .clear
     }
 
     private func rowStrokeWidth(active: Bool, hovered: Bool) -> CGFloat {
-        (active || hovered) ? 0.5 : 0
+        active ? 0.5 : 0
     }
 
     private var emptyListState: some View {
         Group {
             if usesDefaultEmptyState {
-                AirClipFigmaEmptyState()
+                AirclipFigmaEmptyState()
             } else {
                 VStack(spacing: 10) {
                     emptyListIcon
@@ -812,7 +995,7 @@ private struct ClipboardWorkspace: View {
                         .multilineTextAlignment(.center)
                     Text(emptyListSubtitle)
                         .font(.system(size: 11))
-                        .foregroundColor(MainWindowPalette.tertiaryText)
+                        .foregroundColor(MainWindowPalette.secondaryText)
                         .multilineTextAlignment(.center)
                         .lineLimit(2)
                 }
@@ -822,6 +1005,8 @@ private struct ClipboardWorkspace: View {
         .padding(.horizontal, 8)
         .padding(.top, 76)
         .frame(maxHeight: .infinity, alignment: .top)
+        .contentShape(Rectangle())
+        .onTapGesture { searchFocused = false }
     }
 
     private var usesDefaultEmptyState: Bool {
@@ -831,10 +1016,10 @@ private struct ClipboardWorkspace: View {
     @ViewBuilder
     private var emptyListIcon: some View {
         if usesDefaultEmptyState {
-            AirClipEmptyLogoMark(size: 34, color: MainWindowPalette.tertiaryText.opacity(0.72))
+            AirclipEmptyLogoMark(size: 34, color: MainWindowPalette.tertiaryText.opacity(0.72))
         } else {
-            AirClipIcon(filter == .saved ? .bookmark : .clipboard, size: 18)
-                .foregroundColor(MainWindowPalette.tertiaryText)
+            AirclipIcon(filter == .saved ? .bookmark : .clipboard, size: 18)
+                .foregroundColor(MainWindowPalette.secondaryText)
                 .frame(width: 32, height: 32)
                 .background(
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -861,18 +1046,18 @@ private struct ClipboardWorkspace: View {
         switch type {
         case .text:
             clipBadge(background: MainWindowLayout.textBadgeFill) {
-                AirClipIcon(.text, size: MainWindowLayout.rowIconWidth)
+                AirclipIcon(.text, size: MainWindowLayout.rowIconWidth)
                     .foregroundColor(MainWindowLayout.textBadgeForeground)
             }
         case .url:
             clipBadge(background: MainWindowLayout.linkBadgeFill) {
-                AirClipIcon(.arrowUpRight, size: MainWindowLayout.rowIconWidth)
+                AirclipIcon(.arrowUpRight, size: MainWindowLayout.rowIconWidth)
                     .foregroundColor(MainWindowLayout.linkBadgeForeground)
             }
         case .code:
-            clipBadge(background: MainWindowLayout.codeBadgeFill) {
-                AirClipIcon(.code, size: MainWindowLayout.rowIconWidth)
-                    .foregroundColor(MainWindowLayout.codeBadgeForeground)
+            clipBadge(background: MainWindowLayout.textBadgeFill) {
+                AirclipIcon(.text, size: MainWindowLayout.rowIconWidth)
+                    .foregroundColor(MainWindowLayout.textBadgeForeground)
             }
         case .image:
             clipBadge(
@@ -888,14 +1073,14 @@ private struct ClipboardWorkspace: View {
                         .clipped()
                         .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
                 } else {
-                    AirClipIcon(.image, size: MainWindowLayout.rowIconWidth)
+                    AirclipIcon(.image, size: MainWindowLayout.rowIconWidth)
                         .foregroundColor(MainWindowLayout.imageBadgeForeground)
                 }
             }
         case .email:
-            clipBadge(background: MainWindowLayout.emailBadgeFill) {
-                AirClipIcon(.mail, size: MainWindowLayout.rowIconWidth)
-                    .foregroundColor(MainWindowLayout.emailBadgeForeground)
+            clipBadge(background: MainWindowLayout.textBadgeFill) {
+                AirclipIcon(.text, size: MainWindowLayout.rowIconWidth)
+                    .foregroundColor(MainWindowLayout.textBadgeForeground)
             }
         case .color:
             clipBadge(background: MainWindowLayout.colorBadgeFill) {
@@ -963,8 +1148,15 @@ private struct ClipboardWorkspace: View {
                 ScrollView {
                     PreviewContent(
                         item: selectedItem,
+                        sourceLabel: deviceLabel(for: selectedItem),
                         isSensitive: isSensitive(selectedItem),
-                        isRevealed: revealStore.isRevealed(selectedItem.id)
+                        isRevealed: revealStore.isRevealed(selectedItem.id),
+                        minimumHeight: max(
+                            workspaceHeight
+                                - MainWindowLayout.previewTopInset
+                                - MainWindowLayout.previewBottomInset,
+                            0
+                        )
                     )
                         .padding(.top, MainWindowLayout.previewTopInset)
                         .padding(.leading, MainWindowLayout.previewLeadingInset)
@@ -972,7 +1164,9 @@ private struct ClipboardWorkspace: View {
                         .padding(.bottom, MainWindowLayout.previewBottomInset)
                 }
                 .scrollIndicators(.never)
-                .background(previewBackground(for: selectedItem))
+                .id(selectedItem.id)
+                .transition(.opacity)
+                .background(MainWindowPalette.card)
                 .overlay(alignment: .bottom) {
                     LinearGradient(
                         colors: [
@@ -1005,25 +1199,21 @@ private struct ClipboardWorkspace: View {
                 .zIndex(1)
             } else {
                 emptyPreviewState
+                    .transition(.opacity)
             }
         }
         .frame(width: previewWidth, height: workspaceHeight)
         .background(MainWindowPalette.card)
+        .onTapGesture { searchFocused = false }
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: selectedItem?.id)
     }
 
     private var previewWidth: CGFloat {
         max(workspaceWidth - MainWindowLayout.listWidth, MainWindowLayout.previewMinWidth)
     }
 
-    private func previewBackground(for item: ClipboardItem) -> Color {
-        if item.clipType == .color, let color = parsedColor(for: item) {
-            return color.opacity(0.2)
-        }
-        return MainWindowPalette.card
-    }
-
     private var emptyPreviewState: some View {
-        AirClipFigmaEmptyState()
+        AirclipFigmaEmptyState(text: "Select a clip to preview it.")
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
@@ -1036,6 +1226,7 @@ private struct ClipboardWorkspace: View {
     private func copy(_ item: ClipboardItem) {
         ClipboardMonitor.shared.suppressPacket(item.clipboardPacket)
         ClipboardCapture.write(item.clipboardPacket, to: NSPasteboard.general)
+        AirclipAlertCenter.shared.show("Copied to clipboard", kind: .success)
     }
 
     private func openInBrowser(_ item: ClipboardItem) {
@@ -1047,6 +1238,9 @@ private struct ClipboardWorkspace: View {
     private func toggleSaved(_ item: ClipboardItem) {
         item.isSaved.toggle()
         try? modelContext.save()
+        if item.isSaved {
+            AirclipAlertCenter.shared.show("Saved", kind: .success)
+        }
         if filter == .saved && !item.isSaved {
             selectedItem = filteredItems.first { $0.id != item.id }
         }
@@ -1064,6 +1258,9 @@ private struct ClipboardWorkspace: View {
             store.restore(snapshot)
         }
         undoManager?.setActionName("Delete Clipboard Item")
+        AirclipAlertCenter.shared.show("Deleted", actionTitle: "Undo") {
+            LocalHistoryStore.shared.restore(snapshot)
+        }
     }
 
     private func isSensitive(_ item: ClipboardItem) -> Bool {
@@ -1076,10 +1273,10 @@ private struct ClipboardWorkspace: View {
 
     private func deviceLabel(for item: ClipboardItem) -> String {
         if item.isLocal {
-            let name = AirClipIdentity.shared.deviceName
+            let name = AirclipIdentity.shared.deviceName
             return name.isEmpty ? "This Mac" : name
         }
-        return AirClipIdentity.shared.pairedDevices[item.fromDeviceId]?.deviceName ?? "Unknown device"
+        return AirclipIdentity.shared.pairedDevices[item.fromDeviceId]?.deviceName ?? "Unknown device"
     }
 
     private func clipTypeLabel(for type: ClipType) -> String {
@@ -1109,24 +1306,36 @@ private struct ClipboardWorkspace: View {
         return fmt.string(from: date)
     }
 
-    private func sectionTitle(for date: Date) -> String {
-        let calendar = Calendar.current
-        if calendar.isDateInToday(date) { return "Today" }
-        if calendar.isDateInYesterday(date) { return "Yesterday" }
+}
 
-        let startOfToday = calendar.startOfDay(for: Date())
-        let startOfDate = calendar.startOfDay(for: date)
-        let daysAgo = calendar.dateComponents([.day], from: startOfDate, to: startOfToday).day ?? 0
-        if daysAgo > 1 && daysAgo < 7 {
-            let formatter = DateFormatter()
-            formatter.dateFormat = "EEEE"
-            return formatter.string(from: date)
+private struct URLClipRowText: View {
+    let item: ClipboardItem
+    let shouldRedact: Bool
+    @State private var metadata: LinkPreviewMetadata?
+
+    private var url: String {
+        LinkPreviewLoader.urls(in: item.text).first?.absoluteString
+            ?? item.text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(metadata?.title ?? URL(string: url)?.host ?? url)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundColor(MainWindowPalette.primaryText)
+                .lineLimit(1)
+            Text(url)
+                .font(.system(size: 11))
+                .foregroundColor(MainWindowPalette.secondaryText)
+                .lineLimit(1)
+                .truncationMode(.middle)
         }
-        if daysAgo >= 7 && daysAgo < 14 { return "Last week" }
-
-        let formatter = DateFormatter()
-        formatter.dateFormat = calendar.isDate(date, equalTo: Date(), toGranularity: .year) ? "MMM d" : "MMM d, yyyy"
-        return formatter.string(from: date)
+        .blur(radius: shouldRedact ? 4 : 0)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .task(id: item.id) {
+            guard !shouldRedact else { return }
+            metadata = await LinkPreviewLoader.preview(for: url, includeImage: false)
+        }
     }
 }
 
@@ -1141,88 +1350,300 @@ private struct ColorCircleTypeIcon: View {
 }
 
 private struct PreviewContent: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let item: ClipboardItem
+    let sourceLabel: String
     let isSensitive: Bool
     let isRevealed: Bool
+    let minimumHeight: CGFloat
     @State private var isURLHovered = false
+    @State private var linkPreview: LinkPreviewMetadata?
+    @State private var isLoadedPreviewVisible = false
 
     private var type: ClipType { item.clipType }
     private var parsedColor: Color? { Color.parseHex(item.text) }
     private var shouldRedact: Bool { isSensitive && !isRevealed }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: previewSpacing) {
-            if type == .image, let image = previewImage {
-                imagePreview(image)
-            } else if type == .color, let parsedColor {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(parsedColor)
-                    .frame(width: 72, height: 72)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .strokeBorder(MainWindowPalette.divider, lineWidth: 1)
-                    )
-                    .padding(.bottom, 4)
-            }
-
-            if type == .image {
-                EmptyView()
-            } else if type == .url {
-                Button {
-                    openURL()
-                } label: {
-                    redactedPreviewText(
-                        foregroundColor: isURLHovered ? previewColor.opacity(0.84) : previewColor,
-                        underline: true
-                    )
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: previewSpacing) {
+                if type == .image, let image = previewImage {
+                    imagePreview(image)
+                } else if type == .url, let linkPreview {
+                    linkPreviewCard(linkPreview)
+                        .opacity(isLoadedPreviewVisible ? 1 : 0)
+                } else if type == .text, let image = linkPreview?.image {
+                    imagePreview(image)
+                        .opacity(isLoadedPreviewVisible ? 1 : 0)
+                } else if type == .color, let parsedColor {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(parsedColor)
+                        .frame(width: 200, height: 140)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .strokeBorder(Color(hex: "#808080").opacity(0.5), lineWidth: 1)
+                        )
+                        .padding(.bottom, 4)
                 }
-                .buttonStyle(.plain)
-                .textSelection(.enabled)
-                .onHover { hovering in
-                    withAnimation(.easeOut(duration: MainWindowMotion.hoverDuration)) {
-                        isURLHovered = hovering
+
+                if type == .image {
+                    EmptyView()
+                } else if type == .url {
+                    Button {
+                        openURL()
+                    } label: {
+                        redactedPreviewText(
+                            foregroundColor: isURLHovered ? previewColor.opacity(0.84) : previewColor,
+                            underline: false
+                        )
                     }
-                }
-            } else {
-                redactedPreviewText(foregroundColor: previewColor)
+                    .buttonStyle(.plain)
                     .textSelection(.enabled)
-            }
-
-            if shouldRedact {
-                HStack(spacing: 6) {
-                    AirClipIcon(.shield, size: 12)
-                    Text("Sensitive content hidden")
+                    .onHover { hovering in
+                        withAnimation(.easeOut(duration: MainWindowMotion.hoverDuration)) {
+                            isURLHovered = hovering
+                        }
+                    }
+                } else {
+                    redactedPreviewText(foregroundColor: previewColor)
+                        .textSelection(.enabled)
                 }
-                .font(.system(size: 11, weight: .medium))
-                .foregroundColor(MainWindowPalette.tertiaryText)
-                .padding(.top, 10)
+
+                if shouldRedact {
+                    HStack(spacing: 6) {
+                        AirclipIcon(.shield, size: 12)
+                        Text("Sensitive content hidden")
+                    }
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(MainWindowPalette.secondaryText)
+                    .padding(.top, 10)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+
+            Spacer(minLength: 80)
+
+            informationTable
+        }
+        .frame(maxWidth: .infinity, minHeight: minimumHeight, alignment: .topLeading)
+        .task(id: item.id) {
+            linkPreview = nil
+            isLoadedPreviewVisible = false
+            guard !shouldRedact else { return }
+            if type == .url {
+                linkPreview = await LinkPreviewLoader.preview(for: item.text)
+                guard linkPreview != nil else { return }
+                await Task.yield()
+                withAnimation(reduceMotion
+                    ? .easeOut(duration: 0.10)
+                    : .timingCurve(0.23, 1, 0.32, 1, duration: 0.15)) {
+                    isLoadedPreviewVisible = true
+                }
+            } else if type == .text {
+                for url in LinkPreviewLoader.urls(in: item.text) {
+                    guard let preview = await LinkPreviewLoader.preview(for: url.absoluteString), preview.image != nil else { continue }
+                    linkPreview = preview
+                    await Task.yield()
+                    withAnimation(reduceMotion
+                        ? .easeOut(duration: 0.10)
+                        : .timingCurve(0.23, 1, 0.32, 1, duration: 0.15)) {
+                        isLoadedPreviewVisible = true
+                    }
+                    break
+                }
             }
         }
-        .frame(maxWidth: .infinity, alignment: .topLeading)
+    }
+
+    private func linkPreviewCard(_ preview: LinkPreviewMetadata) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if let image = preview.image {
+                imagePreview(image)
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(preview.title)
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundColor(MainWindowPalette.primaryText)
+                    .lineLimit(2)
+                Text(preview.site)
+                    .font(.system(size: 14))
+                    .foregroundColor(MainWindowPalette.secondaryText)
+                    .lineLimit(1)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func imagePreview(_ image: NSImage) -> some View {
-        VStack(spacing: 0) {
-            Image(nsImage: image)
-                .resizable()
-                .aspectRatio(contentMode: .fit)
-                .frame(maxWidth: 420, maxHeight: 320)
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .strokeBorder(MainWindowPalette.divider, lineWidth: 1)
-                )
-                .shadow(color: MainWindowPalette.divider.opacity(0.55), radius: 8, x: 0, y: 4)
-
-            Text(item.text)
-                .font(.system(size: 10, weight: .regular))
-                .foregroundColor(MainWindowPalette.tertiaryText)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .padding(.top, 100)
-                .frame(maxWidth: 420)
-        }
+        Image(nsImage: image)
+            .resizable()
+            .aspectRatio(contentMode: .fit)
+            .frame(maxWidth: 420, maxHeight: 320)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(MainWindowPalette.divider, lineWidth: 1)
+            )
+            .shadow(color: MainWindowPalette.divider.opacity(0.55), radius: 8, x: 0, y: 4)
         .frame(maxWidth: .infinity, alignment: .center)
+    }
+
+    private var informationTable: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Information")
+                .font(.system(size: 10, weight: .medium))
+                .foregroundColor(MainWindowPalette.tertiaryText)
+
+            VStack(spacing: 0) {
+                ForEach(Array(informationRows.enumerated()), id: \.offset) { index, row in
+                    HStack(spacing: 16) {
+                        Text(row.label)
+                            .foregroundColor(MainWindowPalette.secondaryText)
+                        Spacer(minLength: 16)
+                        Text(row.value)
+                            .foregroundColor(MainWindowPalette.primaryText.opacity(0.72))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                    .font(.airClipCaption)
+                    .padding(.horizontal, 12)
+                    .frame(height: 28)
+                    .background(index.isMultiple(of: 2) ? MainWindowPalette.activeFill.opacity(0.5) : .clear)
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                }
+            }
+        }
+        .frame(maxWidth: 360, alignment: .leading)
+        .accessibilityElement(children: .contain)
+    }
+
+    private var informationRows: [(label: String, value: String)] {
+        var rows: [(label: String, value: String)] = [
+            ("Source", sourceLabel),
+            ("Type", typeLabel)
+        ]
+
+        switch type {
+        case .image:
+            if let imageDimensions { rows.append(("Dimensions", imageDimensions)) }
+            if let imageData = item.imageData {
+                rows.append(("Size", ByteCountFormatter.string(fromByteCount: Int64(imageData.count), countStyle: .file)))
+            }
+            if !item.text.isEmpty, !item.text.hasPrefix("Image "), item.text != "Image" {
+                rows.append(("Name", item.text))
+            }
+        case .url:
+            if !shouldRedact,
+               let host = URL(string: item.text.trimmingCharacters(in: .whitespacesAndNewlines))?.host {
+                rows.append(("Domain", host))
+            }
+        case .text, .code:
+            rows.append(("Characters", item.text.count.formatted()))
+        case .color:
+            if let colorComponents {
+                rows.append(("Title", colorComponents.title))
+                rows.append(("Hex", colorComponents.hex))
+                rows.append(("RGB", "\(colorComponents.red), \(colorComponents.green), \(colorComponents.blue)"))
+                rows.append(("CSS", colorComponents.css))
+            }
+        case .email:
+            break
+        }
+
+        rows.append(("Copied", copiedDate))
+        return rows
+    }
+
+    private var typeLabel: String {
+        switch type {
+        case .url: return "Link"
+        case .code: return "Code"
+        case .color: return "Color"
+        case .email: return "Email"
+        case .image: return "Image"
+        case .text: return "Text"
+        }
+    }
+
+    private var imageDimensions: String? {
+        guard let data = item.imageData, let representation = NSBitmapImageRep(data: data) else { return nil }
+        return "\(representation.pixelsWide)×\(representation.pixelsHigh)"
+    }
+
+    private var colorComponents: ColorComponents? {
+        ColorComponents(hex: item.text)
+    }
+
+    private var copiedDate: String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        formatter.doesRelativeDateFormatting = true
+        return formatter.string(from: item.receivedAt)
+    }
+
+    private struct ColorComponents {
+        let red: Int
+        let green: Int
+        let blue: Int
+        let alpha: Int
+        let hex: String
+
+        init?(hex: String) {
+            var digits = hex.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard digits.hasPrefix("#") else { return nil }
+            digits.removeFirst()
+            if digits.count == 3 || digits.count == 4 {
+                digits = digits.map { "\($0)\($0)" }.joined()
+            }
+            guard digits.count == 6 || digits.count == 8,
+                  let value = UInt32(digits, radix: 16) else { return nil }
+
+            red = Int((value >> (digits.count == 8 ? 24 : 16)) & 0xFF)
+            green = Int((value >> (digits.count == 8 ? 16 : 8)) & 0xFF)
+            blue = Int((value >> (digits.count == 8 ? 8 : 0)) & 0xFF)
+            alpha = digits.count == 8 ? Int(value & 0xFF) : 255
+            self.hex = "#\(digits.uppercased())"
+        }
+
+        var css: String {
+            let opacity = alpha == 255 ? "1" : String(format: "%.2f", Double(alpha) / 255)
+            return "rgba(\(red), \(green), \(blue), \(opacity))"
+        }
+
+        var title: String {
+            let r = Double(red) / 255
+            let g = Double(green) / 255
+            let b = Double(blue) / 255
+            let maximum = max(r, g, b)
+            let minimum = min(r, g, b)
+            let difference = maximum - minimum
+
+            if maximum < 0.12 { return "Black" }
+            if difference < 0.12 { return maximum > 0.88 ? "White" : "Gray" }
+
+            let hue: Double
+            if maximum == r {
+                hue = 60 * ((g - b) / difference).truncatingRemainder(dividingBy: 6)
+            } else if maximum == g {
+                hue = 60 * ((b - r) / difference + 2)
+            } else {
+                hue = 60 * ((r - g) / difference + 4)
+            }
+            let normalizedHue = hue < 0 ? hue + 360 : hue
+
+            switch normalizedHue {
+            case 0..<15, 345...: return maximum < 0.6 ? "Maroon" : "Red"
+            case 15..<45: return "Orange"
+            case 45..<70: return "Yellow"
+            case 70..<165: return "Green"
+            case 165..<200: return "Teal"
+            case 200..<255: return "Blue"
+            case 255..<310: return "Purple"
+            default: return "Pink"
+            }
+        }
     }
 
     private func redactedPreviewText(
@@ -1250,7 +1671,7 @@ private struct PreviewContent: View {
         case .code:
             return .system(size: size.clamped(to: 13...13), weight: .regular, design: .monospaced)
         case .url:
-            return .system(size: size.clamped(to: 18...18), weight: .regular)
+            return .system(size: size.clamped(to: 12...12), weight: .regular)
         case .email:
             return .system(size: size.clamped(to: 18...18), weight: .regular, design: .monospaced)
         case .color:
@@ -1267,7 +1688,7 @@ private struct PreviewContent: View {
         case .code:
             return 13
         case .url:
-            return 18
+            return 12
         case .email:
             return 18
         case .color:
@@ -1282,7 +1703,7 @@ private struct PreviewContent: View {
     private var previewColor: Color {
         switch type {
         case .url:
-            return Color.syncBlue
+            return MainWindowPalette.secondaryText
         case .email:
             return Color.syncBlue
         case .color:
@@ -1308,13 +1729,133 @@ private struct PreviewContent: View {
     }
 
     private var previewSpacing: CGFloat {
-        type == .color ? 12 : 0
+        type == .color || type == .url || (type == .text && linkPreview?.image != nil) ? 12 : 0
     }
 
     private func openURL() {
         let trimmed = item.text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let url = URL(string: trimmed) ?? URL(string: "https://\(trimmed)") else { return }
         NSWorkspace.shared.open(url)
+    }
+}
+
+private struct LinkPreviewMetadata {
+    let title: String
+    let site: String
+    let image: NSImage?
+}
+
+private enum LinkPreviewLoader {
+    private static let maxHTMLBytes = 512 * 1024
+    private static let maxImageBytes = 10 * 1024 * 1024
+
+    static func preview(for text: String, includeImage: Bool = true) async -> LinkPreviewMetadata? {
+        guard let pageURL = normalizedURL(from: text), isRemoteURL(pageURL) else { return nil }
+
+        var request = URLRequest(url: pageURL)
+        request.timeoutInterval = 6
+        request.setValue("Airclip/1.0 link preview", forHTTPHeaderField: "User-Agent")
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse,
+                  (200..<300).contains(httpResponse.statusCode),
+                  httpResponse.mimeType?.lowercased() == "text/html" else { return nil }
+
+            let resolvedURL = response.url ?? pageURL
+            let metadata = metadata(in: data.prefix(maxHTMLBytes), baseURL: resolvedURL)
+            let host = resolvedURL.host.map { $0.hasPrefix("www.") ? String($0.dropFirst(4)) : $0 }
+            let title = metadata.title ?? host ?? resolvedURL.absoluteString
+            let site = metadata.site ?? host ?? resolvedURL.absoluteString
+            let image = includeImage ? await loadImage(from: metadata.imageURL) : nil
+            return LinkPreviewMetadata(title: title, site: site, image: image)
+        } catch {
+            return nil
+        }
+    }
+
+    private static func loadImage(from url: URL?) async -> NSImage? {
+        guard let url, isRemoteURL(url) else { return nil }
+        do {
+            let (data, response) = try await URLSession.shared.data(from: url)
+            guard data.count <= maxImageBytes,
+                  response.mimeType?.lowercased().hasPrefix("image/") == true else { return nil }
+            return NSImage(data: data)
+        } catch {
+            return nil
+        }
+    }
+
+    private static func normalizedURL(from text: String) -> URL? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return URL(string: trimmed) ?? URL(string: "https://\(trimmed)")
+    }
+
+    static func urls(in text: String) -> [URL] {
+        guard let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) else { return [] }
+        let range = NSRange(text.startIndex..., in: text)
+        return detector.matches(in: text, range: range).compactMap(\.url).filter(isRemoteURL)
+    }
+
+    private static func isRemoteURL(_ url: URL) -> Bool {
+        guard let host = url.host?.lowercased(),
+              url.scheme == "http" || url.scheme == "https",
+              host != "localhost",
+              !host.hasSuffix(".local") else { return false }
+        if host == "::1" || host.hasPrefix("fe80:") || host.hasPrefix("fc") || host.hasPrefix("fd") { return false }
+        let octets = host.split(separator: ".").compactMap { UInt8($0) }
+        guard octets.count == 4 else { return true }
+        return octets[0] != 0
+            && octets[0] != 10
+            && octets[0] != 127
+            && !(octets[0] == 169 && octets[1] == 254)
+            && !(octets[0] == 172 && (16...31).contains(octets[1]))
+            && !(octets[0] == 192 && octets[1] == 168)
+    }
+
+    private static func metadata(in data: Data.SubSequence, baseURL: URL) -> (title: String?, site: String?, imageURL: URL?) {
+        let html = String(decoding: data, as: UTF8.self)
+        guard let tagRegex = try? NSRegularExpression(pattern: "<meta\\b[^>]*>", options: [.caseInsensitive]) else {
+            return (nil, nil, nil)
+        }
+        let range = NSRange(html.startIndex..., in: html)
+        var title: String?
+        var site: String?
+        var imageURL: URL?
+
+        for match in tagRegex.matches(in: html, range: range) {
+            guard let matchRange = Range(match.range, in: html) else { continue }
+            let tag = String(html[matchRange])
+            let property = attribute(named: "property", in: tag)?.lowercased()
+            guard let value = attribute(named: "content", in: tag)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !value.isEmpty else { continue }
+            switch property {
+            case "og:title" where title == nil:
+                title = value
+            case "og:site_name" where site == nil:
+                site = value
+            case "og:image" where imageURL == nil:
+                imageURL = URL(string: value, relativeTo: baseURL)?.absoluteURL
+            default:
+                break
+            }
+        }
+
+        if title == nil,
+           let titleRegex = try? NSRegularExpression(pattern: "<title[^>]*>(.*?)</title>", options: [.caseInsensitive, .dotMatchesLineSeparators]),
+           let match = titleRegex.firstMatch(in: html, range: range),
+           let titleRange = Range(match.range(at: 1), in: html) {
+            title = String(html[titleRange]).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return (title?.prefix(180).description, site?.prefix(80).description, imageURL)
+    }
+
+    private static func attribute(named name: String, in tag: String) -> String? {
+        let pattern = "\\b\(name)\\s*=\\s*([\"'])(.*?)\\1"
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive, .dotMatchesLineSeparators]),
+              let match = regex.firstMatch(in: tag, range: NSRange(tag.startIndex..., in: tag)),
+              let range = Range(match.range(at: 2), in: tag) else { return nil }
+        return String(tag[range]).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 
@@ -1332,8 +1873,6 @@ private struct FloatingActions: View {
     let onCopy: () -> Void
     let onSave: () -> Void
     let onDelete: () -> Void
-
-    @State private var didCopy = false
 
     var body: some View {
         HStack(spacing: 8) {
@@ -1353,21 +1892,7 @@ private struct FloatingActions: View {
                     action: onToggleSensitiveReveal
                 )
             }
-            ActionIconButton(
-                icon: didCopy ? .checkCircle : .copy,
-                foregroundColor: didCopy ? MainWindowPalette.saved : MainWindowPalette.secondaryText,
-                help: didCopy ? "Copied" : "Copy"
-            ) {
-                onCopy()
-                withAnimation(.easeOut(duration: MainWindowMotion.feedbackDuration)) {
-                    didCopy = true
-                }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) {
-                    withAnimation(.easeOut(duration: MainWindowMotion.feedbackResetDuration)) {
-                        didCopy = false
-                    }
-                }
-            }
+            CopyActionIconButton(action: onCopy)
             .keyboardShortcut("c", modifiers: .command)
             ActionIconButton(
                 icon: isSaved ? .bookmarkCheck : .bookmarkAdd,
@@ -1375,6 +1900,8 @@ private struct FloatingActions: View {
                 help: isSaved ? "Saved" : "Save",
                 action: onSave
             )
+            .contentTransition(.opacity)
+            .animation(.easeOut(duration: 0.12), value: isSaved)
             ActionIconButton(
                 icon: .delete,
                 foregroundColor: MainWindowPalette.secondaryText,
@@ -1406,8 +1933,103 @@ private struct FloatingActions: View {
     }
 }
 
+private struct CopyActionIconButton: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    let action: () -> Void
+
+    @State private var didCopy = false
+    @State private var isHovered = false
+    @State private var isPressed = false
+    @State private var feedbackVersion = 0
+
+    var body: some View {
+        Button {
+            action()
+            feedbackVersion += 1
+            setCopied(true)
+        } label: {
+            ZStack {
+                AirclipIcon(.copy, size: 16)
+                    .foregroundColor(MainWindowPalette.secondaryText)
+                    .opacity(didCopy ? 0 : 1)
+                    .scaleEffect(didCopy ? 0.96 : 1)
+
+                CopyConfirmationCheckmark()
+                    .trim(from: 0, to: didCopy ? 1 : 0)
+                    .stroke(
+                        MainWindowPalette.saved,
+                        style: StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round)
+                    )
+                    .frame(width: 16, height: 16)
+            }
+            .frame(width: 40, height: 32)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(backgroundColor)
+            )
+            .scaleEffect(isPressed ? MainWindowMotion.actionPressScale : 1)
+            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .help(didCopy ? "Copied" : "Copy")
+        .accessibilityLabel(didCopy ? "Copied" : "Copy")
+        .onHover { hovering in
+            withAnimation(.easeOut(duration: MainWindowMotion.hoverDuration)) {
+                isHovered = hovering
+            }
+        }
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { _ in
+                    guard !isPressed else { return }
+                    withAnimation(.easeOut(duration: MainWindowMotion.pressDuration)) {
+                        isPressed = true
+                    }
+                }
+                .onEnded { _ in
+                    withAnimation(.easeOut(duration: MainWindowMotion.releaseDuration)) {
+                        isPressed = false
+                    }
+                }
+        )
+        .task(id: feedbackVersion) {
+            guard feedbackVersion > 0 else { return }
+            try? await Task.sleep(for: .milliseconds(1_400))
+            guard !Task.isCancelled else { return }
+            setCopied(false)
+        }
+    }
+
+    private var backgroundColor: Color {
+        if isPressed { return MainWindowPalette.pressedFill }
+        if isHovered { return MainWindowPalette.hoverFill }
+        return .clear
+    }
+
+    private func setCopied(_ copied: Bool) {
+        guard reduceMotion else {
+            withAnimation(.timingCurve(0.25, 0.46, 0.45, 0.94, duration: copied ? 0.18 : 0.14)) {
+                didCopy = copied
+            }
+            return
+        }
+        didCopy = copied
+    }
+}
+
+private struct CopyConfirmationCheckmark: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX + rect.width * 0.22, y: rect.minY + rect.height * 0.53))
+        path.addLine(to: CGPoint(x: rect.minX + rect.width * 0.43, y: rect.minY + rect.height * 0.74))
+        path.addLine(to: CGPoint(x: rect.minX + rect.width * 0.80, y: rect.minY + rect.height * 0.30))
+        return path
+    }
+}
+
 private struct ActionIconButton: View {
-    let icon: AirClipIconName
+    let icon: AirclipIconName
     var foregroundColor: Color = MainWindowPalette.secondaryText
     var hoverForegroundColor: Color?
     let help: String
@@ -1420,7 +2042,7 @@ private struct ActionIconButton: View {
         Button {
             action()
         } label: {
-            AirClipIcon(icon, size: 16)
+            AirclipIcon(icon, size: 16)
                 .foregroundColor(currentForegroundColor)
                 .frame(width: 40, height: 32)
                 .background(
@@ -1482,17 +2104,53 @@ private struct CodeGridIcon: View {
     }
 }
 
+private struct DeviceEmptyActionButtonStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(reduceMotion || !configuration.isPressed ? 1 : 0.98)
+            .animation(
+                reduceMotion ? nil : .timingCurve(0.25, 0.46, 0.45, 0.94, duration: 0.10),
+                value: configuration.isPressed
+            )
+    }
+}
+
+private struct DeviceMenuButtonStyle: ButtonStyle {
+    let isHovered: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(configuration.isPressed
+                        ? MainWindowPalette.pressedFill
+                        : (isHovered ? MainWindowPalette.hoverFill : .clear))
+            )
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .animation(
+                .timingCurve(0.25, 0.46, 0.45, 0.94, duration: 0.10),
+                value: configuration.isPressed
+            )
+    }
+}
+
 private struct DevicesPanel: View {
-    @ObservedObject private var identity = AirClipIdentity.shared
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ObservedObject private var identity = AirclipIdentity.shared
     @ObservedObject private var peerManager = PeerManager.shared
     @ObservedObject private var syncModeStore = SyncModeStore.shared
     @ObservedObject private var lanDiagnostics = LanRuntimeDiagnostics.shared
     @StateObject private var currentWiFiNetwork = CurrentWiFiNetwork.shared
 
     @State private var hoveredDeviceID: String?
+    @State private var hoveredDeviceMenuID: String?
     @State private var pinnedDeviceID: String?
     @State private var deviceToRemove: PairedDevice?
     @State private var isShowingPairingSheet = false
+    @State private var refreshRotation: Double = 0
     private var devices: [PairedDevice] {
         identity.pairedDevices.values.sorted { lhs, rhs in
             deviceSortKey(lhs) < deviceSortKey(rhs)
@@ -1540,65 +2198,92 @@ private struct DevicesPanel: View {
 
                 Spacer()
 
-                if !devices.isEmpty {
-                    Button {
-                        SyncEngine.shared.reconnect()
-                        currentWiFiNetwork.requestAccessAndRefresh()
-                    } label: {
-                        Label("Reconnect", systemImage: "arrow.clockwise")
-                            .font(.airClipCaptionMed)
-                    }
-                    .buttonStyle(.bordered)
-                    .accessibilityHint("Reconnects nearby paired devices")
-                }
-
                 DeviceAddButton {
                     isShowingPairingSheet = true
                 }
             }
             .frame(height: 30, alignment: .topLeading)
 
-            VStack(spacing: 12) {
+            VStack(spacing: 16) {
                 connectionSummary
 
-                if devices.isEmpty {
-                    VStack(spacing: 12) {
-                        AirClipDeviceIcon(.smartPhone, size: 32, tint: MainWindowPalette.tertiaryText)
-                        Text("No paired devices")
-                            .font(.airClipTitle2)
-                            .foregroundColor(MainWindowPalette.secondaryText)
-                        Text("Add a device to sync clipboard items over your local network.")
-                            .font(.airClipBody)
-                            .foregroundColor(MainWindowPalette.tertiaryText)
-                            .multilineTextAlignment(.center)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .accessibilityElement(children: .combine)
-                } else {
-                    ScrollView {
-                        LazyVStack(spacing: 0) {
-                            ForEach(Array(devices.enumerated()), id: \.element.deviceId) { index, device in
-                                deviceRow(device)
-                                if index < devices.count - 1 {
-                                    Rectangle()
-                                        .fill(MainWindowPalette.divider)
-                                        .frame(height: 0.5)
-                                        .padding(.leading, 58)
+                ZStack {
+                    if devices.isEmpty {
+                        VStack(spacing: 0) {
+                            AirclipIcon(.deviceSync, size: 68)
+                                .foregroundColor(
+                                    colorScheme == .dark
+                                        ? MainWindowPalette.tertiaryText
+                                        : Color(hex: "#D0D3DA")
+                                )
+
+                            Text("Your space is ready. Connect a device to start syncing.")
+                                .font(.system(size: 16))
+                                .foregroundColor(
+                                    colorScheme == .dark
+                                        ? MainWindowPalette.secondaryText
+                                        : Color(hex: "#A0A6B1")
+                                )
+                                .lineSpacing(4)
+                                .multilineTextAlignment(.center)
+                                .frame(width: 308)
+                                .padding(.top, 20)
+
+                            Button {
+                                isShowingPairingSheet = true
+                            } label: {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "qrcode")
+                                        .font(.system(size: 12, weight: .medium))
+                                        .frame(width: 16, height: 16)
+                                    Text("Add a device")
+                                        .font(.system(size: 14, weight: .medium))
+                                }
+                                .foregroundColor(MainWindowPalette.card)
+                                .padding(.horizontal, 16)
+                                .frame(height: 40)
+                                .background(Capsule().fill(MainWindowPalette.primaryText))
+                                .shadow(color: .black.opacity(0.06), radius: 2, y: 4)
+                            }
+                            .buttonStyle(DeviceEmptyActionButtonStyle())
+                            .padding(.top, 24)
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .accessibilityElement(children: .combine)
+                        .transition(.asymmetric(
+                            insertion: .opacity.animation(reduceMotion
+                                ? .easeOut(duration: 0.12)
+                                : .timingCurve(0.23, 1, 0.32, 1, duration: 0.18)),
+                            removal: .opacity.animation(.easeOut(duration: 0.12))
+                        ))
+                    } else {
+                        ScrollView {
+                            LazyVStack(spacing: 0) {
+                                ForEach(Array(devices.enumerated()), id: \.element.deviceId) { index, device in
+                                    deviceRow(device)
+                                        .transition(reduceMotion ? .opacity : .opacity.combined(with: .offset(y: 4)))
+                                    if index < devices.count - 1 {
+                                        Rectangle()
+                                            .fill(MainWindowPalette.divider)
+                                            .frame(height: 1)
+                                    }
                                 }
                             }
+                            .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: devices.map(\.deviceId))
                         }
+                        .transition(.asymmetric(
+                            insertion: .opacity.animation(reduceMotion
+                                ? .easeOut(duration: 0.12)
+                                : .timingCurve(0.23, 1, 0.32, 1, duration: 0.18)),
+                            removal: .opacity.animation(.easeOut(duration: 0.12))
+                        ))
                     }
-                    .background(MainWindowPalette.sectionFill)
-                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .strokeBorder(MainWindowPalette.divider, lineWidth: 0.5)
-                    )
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .padding(.top, 18)
+            .padding(.top, 20)
         }
-        .padding(.top, MainWindowLayout.devicesTopInset)
+        .padding(.top, 16)
         .padding(.horizontal, MainWindowLayout.devicesHorizontalInset)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(MainWindowPalette.card)
@@ -1619,7 +2304,7 @@ private struct DevicesPanel: View {
             }
             Button("Cancel", role: .cancel) { deviceToRemove = nil }
         } message: {
-            Text("This device will no longer sync with your AirClip network.")
+            Text("This device will no longer sync with your Airclip space.")
         }
         .sheet(isPresented: $isShowingPairingSheet) {
             AddDevicePairingSheet()
@@ -1627,104 +2312,150 @@ private struct DevicesPanel: View {
         .onAppear {
             currentWiFiNetwork.requestAccessAndRefresh()
         }
+        .task {
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 30_000_000_000)
+                currentWiFiNetwork.refresh()
+            }
+        }
     }
 
     private var connectionSummary: some View {
-        HStack(spacing: 10) {
-            AirClipIcon(.wifi, size: 16, variant: .stroke)
-                .foregroundColor(syncModeStore.mode == .paused ? MainWindowPalette.offline : Color.accent)
-            VStack(alignment: .leading, spacing: 2) {
+        HStack(spacing: 16) {
+            ZStack {
+                Circle()
+                    .fill(LinearGradient(colors: colorScheme == .dark
+                        ? [Color.bgFloating, Color.bgElevated]
+                        : [.white, Color(hex: "#F5F5F5")], startPoint: .top, endPoint: .bottom))
+                    .overlay(Circle().strokeBorder(colorScheme == .dark ? Color.borderDefault : Color(hex: "#E6E7EB"), lineWidth: 1))
+                Image("Devicewifi").renderingMode(.template).resizable()
+                    .frame(width: 22, height: 15.5)
+                    .foregroundColor(colorScheme == .dark ? Color(hex: "#64D99A") : Color(hex: "#669C6C"))
+            }
+            .frame(width: 48, height: 48)
+
+            VStack(alignment: .leading, spacing: 4) {
                 Text(hubWiFiStatus.displayName)
-                    .font(.airClipBodyMedium)
-                    .foregroundColor(MainWindowPalette.primaryText)
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundColor(colorScheme == .dark ? MainWindowPalette.primaryText : Color(hex: "#232E43"))
+                    .lineLimit(1)
+                    .contentTransition(.opacity)
                 Text(connectionSummaryText)
-                    .font(.airClipCaption)
-                    .foregroundColor(MainWindowPalette.secondaryText)
+                    .font(.airClipBody)
+                    .foregroundColor(colorScheme == .dark ? MainWindowPalette.secondaryText : Color(hex: "#232E43").opacity(0.5))
+                    .lineLimit(1)
+                    .contentTransition(.opacity)
             }
             Spacer()
+            Button {
+                SyncEngine.shared.reconnect()
+                currentWiFiNetwork.requestAccessAndRefresh()
+                guard !reduceMotion else { return }
+                withAnimation(.interpolatingSpring(stiffness: 220, damping: 18)) {
+                    refreshRotation += 360
+                }
+            } label: {
+                Image("Devicereconnect").renderingMode(.template).resizable()
+                    .frame(width: 13.667, height: 15.667)
+                    .foregroundColor(MainWindowPalette.primaryText)
+                    .rotationEffect(.degrees(refreshRotation))
+                    .frame(width: 40, height: 28)
+                    .background(Capsule().fill(colorScheme == .dark ? Color.bgFloating : .white))
+                    .shadow(color: .black.opacity(0.08), radius: 2, y: 1)
+            }
+            .buttonStyle(IconButtonStyle())
+            .help("Reconnect devices")
+            .accessibilityLabel("Reconnect devices")
         }
-        .padding(.horizontal, 14)
-        .frame(minHeight: 52)
-        .background(MainWindowPalette.sectionFill)
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(MainWindowPalette.divider, lineWidth: 0.5)
-        )
-        .accessibilityElement(children: .combine)
+        .padding(.leading, 16)
+        .padding(.trailing, 24)
+        .frame(maxWidth: .infinity, minHeight: 80, maxHeight: 80, alignment: .leading)
+        .background(alignment: .topLeading) {
+            Image("Devicerings").resizable().frame(width: 1032, height: 1032)
+                .offset(x: -476, y: -476)
+                .opacity(colorScheme == .dark ? 0.15 : 1)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
+        .background(colorScheme == .dark ? MainWindowPalette.sectionFill : Color(hex: "#F7F7F7"))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: hubWiFiStatus.displayName)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: connectionSummaryText)
     }
 
     private var connectionSummaryText: String {
         if syncModeStore.mode == .paused { return "Sync paused" }
         if let helper = hubWiFiStatus.helperText { return helper }
         switch lanDiagnostics.diagnostic.issue {
-        case .serverFailed: return "Listener unavailable — reconnect or check network access"
-        case .discoveryFailed: return "Discovery unavailable — reconnect or check network access"
-        case .none: return DeviceConnectionStatusText.onlineRemoteDevices(remoteOnlineCount)
+        case .serverFailed: return "Can't listen for nearby devices — check network access"
+        case .discoveryFailed: return "Can't find nearby devices — check network access"
+        case .none: return identity.spaceName.isEmpty ? "My Space" : identity.spaceName
         }
     }
 
     private func deviceRow(_ device: PairedDevice) -> some View {
         let isOnline = peerManager.connectedDeviceIds.contains(device.deviceId)
-        return HStack(spacing: 12) {
-            AirClipDeviceIcon(deviceIcon(for: device), size: 28, tint: isOnline ? Color.accent : MainWindowPalette.tertiaryText)
-                .frame(width: 32, height: 32)
+        return HStack(spacing: 16) {
+            Image(deviceIcon(for: device) == .laptop ? "Devicelaptop" : "Devicephone")
+                .resizable().scaledToFit()
+                .frame(width: deviceIcon(for: device) == .laptop ? 25.083 : 18.083, height: 25.083)
+                .frame(width: 28, height: 28)
+                .opacity(isOnline ? 1 : 0.5)
 
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(device.deviceName)
-                    .font(.airClipBodyMedium)
+                    .font(.system(size: 16, weight: .medium))
                     .foregroundColor(MainWindowPalette.primaryText)
                     .lineLimit(1)
-                Text(deviceDetail(device, isOnline: isOnline))
-                    .font(.airClipCaption)
+                Text(deviceStatusText(device, isOnline: isOnline))
+                    .font(.system(size: 14))
                     .foregroundColor(MainWindowPalette.secondaryText)
                     .lineLimit(1)
+                    .contentTransition(.opacity)
             }
 
             Spacer()
 
-            HStack(spacing: 6) {
-                Circle()
-                    .fill(isOnline ? MainWindowPalette.online : MainWindowPalette.offline)
-                    .frame(width: 6, height: 6)
-                    .accessibilityHidden(true)
-                Text(isOnline ? "Online" : lastSeenText(device))
-                    .font(.airClipCaption)
-                    .foregroundColor(MainWindowPalette.secondaryText)
-            }
-
             Menu {
-                if !isOnline {
-                    Button("Reconnect") { SyncEngine.shared.reconnect() }
-                }
+                Button("Reconnect") { SyncEngine.shared.reconnect() }
                 Button("Remove device", role: .destructive) { deviceToRemove = device }
             } label: {
-                AirClipIcon(.moreHorizontal, size: 14)
+                Image("Devicemore").renderingMode(.template).resizable()
+                    .frame(width: 2.104, height: 12.083)
                     .foregroundColor(MainWindowPalette.secondaryText)
                     .frame(width: 28, height: 28)
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
+            .buttonStyle(DeviceMenuButtonStyle(isHovered: hoveredDeviceMenuID == device.deviceId))
+            .onHover { isHovered in
+                hoveredDeviceMenuID = isHovered ? device.deviceId : nil
+            }
             .accessibilityLabel("Actions for \(device.deviceName)")
         }
-        .padding(.horizontal, 14)
-        .frame(minHeight: 58)
+        .padding(12)
+        .frame(minHeight: 68)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: isOnline)
         .accessibilityElement(children: .contain)
     }
 
-    private func deviceDetail(_ device: PairedDevice, isOnline: Bool) -> String {
-        let platform = device.platform.isEmpty ? "Device" : device.platform.capitalized
-        guard let network = device.wifiNetwork, !network.isEmpty else { return platform }
-        return "\(platform) · \(network)"
+    private func deviceDetail(_ device: PairedDevice) -> String {
+        device.platform.isEmpty ? "Device" : device.platform.capitalized
     }
 
     private func lastSeenText(_ device: PairedDevice) -> String {
-        guard device.lastSeenMs > 0 else { return "Offline" }
+        guard device.lastSeenMs > 0 else { return "" }
         let date = Date(timeIntervalSince1970: TimeInterval(device.lastSeenMs) / 1_000)
         return RelativeDateTimeFormatter().localizedString(for: date, relativeTo: Date())
     }
 
-    private func deviceIcon(for device: PairedDevice) -> AirClipDeviceIconName {
+    private func deviceStatusText(_ device: PairedDevice, isOnline: Bool) -> String {
+        guard !isOnline else { return "Online" }
+        let lastSeen = lastSeenText(device)
+        return DeviceConnectionStatusText.offlineDevice(lastSeen: lastSeen.isEmpty ? nil : lastSeen)
+    }
+
+    private func deviceIcon(for device: PairedDevice) -> AirclipDeviceIconName {
         let value = "\(device.platform) \(device.deviceModel ?? "") \(device.deviceName)".lowercased()
         if value.contains("mac") || value.contains("laptop") { return .laptop }
         if value.contains("desktop") || value.contains("windows") || value.contains("linux") { return .tv }
@@ -1938,12 +2669,12 @@ private struct NetworkHubView: View {
                             RoundedRectangle(cornerRadius: 16, style: .continuous)
                                 .strokeBorder(MainWindowPalette.divider.opacity(0.72), lineWidth: 0.5)
                         )
-                    AirClipIcon(.wifi, size: 28, variant: .stroke)
+                    AirclipIcon(.wifi, size: 28, variant: .stroke)
                         .foregroundColor(Color(hex: "#669C6C"))
                         .opacity(isHoveringIcon ? 0 : 1)
                         .scaleEffect(isHoveringIcon ? 0.92 : 1)
-                    AirClipIcon(.refresh, size: 24)
-                        .foregroundColor(Color(hex: "#7D64B5"))
+                    AirclipIcon(.refresh, size: 24)
+                        .foregroundColor(.accent)
                         .rotationEffect(.degrees(refreshRotation))
                         .opacity(isHoveringIcon ? 1 : 0)
                         .scaleEffect(isHoveringIcon ? 1 : 0.92)
@@ -1966,7 +2697,7 @@ private struct NetworkHubView: View {
                     .lineLimit(1)
                 Text(statusText)
                     .font(.system(size: 11))
-                    .foregroundColor(MainWindowPalette.tertiaryText)
+                    .foregroundColor(MainWindowPalette.secondaryText)
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
             }
@@ -1990,11 +2721,11 @@ private struct NetworkHubView: View {
             return "Waiting for the device to pair."
         }
         if isPaused {
-            return "Sync paused · resume to reconnect"
+            return "Sync paused · resume to sync"
         }
         switch diagnostic.issue {
         case .serverFailed:
-            return "Listener blocked · restart AirClip"
+            return "Listener blocked · restart Airclip"
         case .discoveryFailed:
             return "Discovery blocked · check network access"
         case .none:
@@ -2013,13 +2744,15 @@ private struct DeviceAddButton: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 6) {
-                AirClipIcon(.plus, size: 14)
+                Image("Deviceadd").renderingMode(.template).resizable()
+                    .frame(width: 14.334, height: 14.334)
+                    .frame(width: 16, height: 16)
                 Text("Add Device")
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: 14, weight: .medium))
             }
             .foregroundColor(MainWindowPalette.primaryText)
-            .padding(.horizontal, 12)
-            .frame(height: 28)
+            .padding(.horizontal, 8.5)
+            .frame(height: 30)
             .background(
                 Capsule()
                     .fill(buttonFill)
@@ -2064,6 +2797,7 @@ private struct AddDevicePairingSheet: View {
     @ObservedObject private var pairing = PairingSession.shared
     @StateObject private var pairingSheet = AddDevicePairingSheetController()
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(spacing: 0) {
@@ -2071,7 +2805,7 @@ private struct AddDevicePairingSheet: View {
                 ZStack {
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .fill(MainWindowPalette.searchFill)
-                    AirClipIcon(.deviceSync, size: 22)
+                    AirclipIcon(.deviceSync, size: 22)
                         .foregroundColor(MainWindowPalette.secondaryText)
                 }
                 .frame(width: 44, height: 44)
@@ -2080,12 +2814,22 @@ private struct AddDevicePairingSheet: View {
                     Text(pairingSheet.didPairDevice ? "Device added" : "Add a device")
                         .font(.system(size: 20, weight: .semibold))
                         .foregroundColor(MainWindowPalette.primaryText)
+                        .contentTransition(.opacity)
+                        .animation(reduceMotion
+                            ? .easeOut(duration: 0.12)
+                            : .timingCurve(0.23, 1, 0.32, 1, duration: 0.20),
+                            value: pairingSheet.didPairDevice)
 
-                    Text(pairingSheet.didPairDevice ? "The new device is now part of this AirClip network." : "Scan the QR code or enter the numeric code on the device you want to add.")
+                    Text(pairingSheet.didPairDevice ? "Anything you copy will now appear on both devices." : "On your other device, open Airclip → Devices → Scan QR code.")
                         .font(.system(size: 12))
                         .foregroundColor(MainWindowPalette.secondaryText)
                         .lineSpacing(3)
                         .fixedSize(horizontal: false, vertical: true)
+                        .contentTransition(.opacity)
+                        .animation(reduceMotion
+                            ? .easeOut(duration: 0.12)
+                            : .timingCurve(0.23, 1, 0.32, 1, duration: 0.20),
+                            value: pairingSheet.didPairDevice)
                 }
 
                 Spacer()
@@ -2093,7 +2837,7 @@ private struct AddDevicePairingSheet: View {
                 Button {
                     dismiss()
                 } label: {
-                    AirClipIcon(.remove, size: 14)
+                    AirclipIcon(.remove, size: 14)
                         .foregroundColor(MainWindowPalette.secondaryText)
                         .frame(width: 28, height: 28)
                         .background(
@@ -2118,11 +2862,17 @@ private struct AddDevicePairingSheet: View {
                         .resizable()
                         .interpolation(.none)
                         .frame(width: 204, height: 204)
+                        .transition(.opacity)
                 } else {
                     ProgressView()
                         .scaleEffect(0.8)
+                        .transition(.opacity)
                 }
             }
+            .animation(reduceMotion
+                ? .easeOut(duration: 0.12)
+                : .timingCurve(0.23, 1, 0.32, 1, duration: 0.18),
+                value: pairing.qrImage != nil)
             .frame(width: 224, height: 224)
             .padding(.bottom, 18)
 
@@ -2130,7 +2880,7 @@ private struct AddDevicePairingSheet: View {
                 VStack(spacing: 6) {
                     Text("Numeric code")
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(MainWindowPalette.tertiaryText)
+                        .foregroundColor(MainWindowPalette.secondaryText)
                         .textCase(.uppercase)
 
                     Text(formattedCode(code))
@@ -2300,7 +3050,7 @@ private struct OrbitDeviceTooltip: View {
             .frame(maxWidth: .infinity, alignment: .leading)
 
             Button(action: onRemove) {
-                AirClipIcon(.close, size: 16)
+                AirclipIcon(.close, size: 16)
                     .foregroundColor(MainWindowPalette.secondaryText.opacity(0.72))
                     .frame(width: 16, height: 16)
                     .contentShape(Rectangle())
@@ -2327,12 +3077,12 @@ private struct OrbitDeviceArtwork: View {
     let isOnline: Bool
 
     var body: some View {
-        AirClipDeviceIcon(deviceIcon, size: MainWindowLayout.deviceOrbitNodeSize, tint: tint)
+        AirclipDeviceIcon(deviceIcon, size: MainWindowLayout.deviceOrbitNodeSize, tint: tint)
         .frame(width: MainWindowLayout.deviceOrbitNodeSize, height: MainWindowLayout.deviceOrbitNodeSize)
         .opacity(isOnline ? 1 : 0.50)
     }
 
-    private var deviceIcon: AirClipDeviceIconName {
+    private var deviceIcon: AirclipDeviceIconName {
         switch visual {
         case .iphone15Pro, .genericPhone, .samsungS25Plus, .onePlus6:
             return .smartPhone
@@ -2618,10 +3368,12 @@ private struct MonitorArtwork: View {
 }
 
 private struct SettingsPanel: View {
-    @ObservedObject private var identity = AirClipIdentity.shared
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ObservedObject private var identity = AirclipIdentity.shared
     @ObservedObject private var appearanceStore = AppAppearanceStore.shared
     @ObservedObject private var syncModeStore = SyncModeStore.shared
     @ObservedObject private var sensitiveProtection = SensitiveClipboardProtectionStore.shared
+    @ObservedObject private var pasteShortcutStore = PasteShortcutStore.shared
 
     @State private var historyDepth: Int = HistoryRetentionPolicy.selectedIndex()
     @State private var showResetAlert = false
@@ -2641,7 +3393,7 @@ private struct SettingsPanel: View {
                 settingsSection("Appearance") {
                     settingsGroup {
                         settingsRow(
-                            icon: .eye,
+                            icon: .sun,
                             iconTint: MainWindowPalette.secondaryText,
                             iconFill: MainWindowPalette.activeFill,
                             title: "Theme"
@@ -2676,7 +3428,7 @@ private struct SettingsPanel: View {
 
                 settingsSection("Keyboard Shortcuts") {
                     settingsGroup {
-                        shortcutRow("Open AirClip", keys: ["⌘", "⇧", "V"])
+                        pasteLatestShortcutRow
                         settingsDivider
                         shortcutRow("Copy item", keys: ["⌘", "C"])
                         settingsDivider
@@ -2686,34 +3438,36 @@ private struct SettingsPanel: View {
 
                 settingsSection("About") {
                     settingsGroup {
-                        infoRow("Version", value: bundleValue("CFBundleShortVersionString"))
-                        settingsDivider
-                        infoRow("Build", value: bundleValue("CFBundleVersion"))
+                        infoRow(
+                            "Version",
+                            value: "\(bundleValue("CFBundleShortVersionString")) (\(bundleValue("CFBundleVersion")))"
+                        )
                     }
                 }
 
-                SettingsActionRow(
-                    icon: .delete,
-                    title: "Clear History",
-                    subtitle: "Permanently removes every local clip, including saved clips.",
-                    tint: MainWindowPalette.destructive,
-                    hoverFill: MainWindowPalette.dangerHoverFill
-                ) {
-                    showClearHistoryAlert = true
+                settingsSection("Data & Space") {
+                    settingsGroup {
+                        SettingsActionRow(
+                            icon: .delete,
+                            title: "Clear History",
+                            subtitle: "Removes all local clips, including saved items.",
+                            tint: MainWindowPalette.destructive,
+                            hoverFill: MainWindowPalette.hoverFill
+                        ) {
+                            showClearHistoryAlert = true
+                        }
+                        settingsDivider
+                        SettingsActionRow(
+                            icon: .logout,
+                            title: "Leave Space",
+                            subtitle: "Disconnects this Mac and clears Airclip data.",
+                            tint: MainWindowPalette.destructive,
+                            hoverFill: MainWindowPalette.hoverFill
+                        ) {
+                            showResetAlert = true
+                        }
+                    }
                 }
-                .background(cardBackground(cornerRadius: 16))
-                .padding(.bottom, 12)
-
-                SettingsActionRow(
-                    icon: .undo,
-                    title: "Leave Network",
-                    subtitle: "Removes this device from AirClip. Other devices stay connected.",
-                    tint: MainWindowPalette.destructive,
-                    hoverFill: MainWindowPalette.dangerHoverFill
-                ) {
-                    showResetAlert = true
-                }
-                .background(cardBackground(cornerRadius: 16))
             }
             .padding(MainWindowLayout.settingsInset)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -2721,17 +3475,31 @@ private struct SettingsPanel: View {
         .scrollIndicators(.never)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(MainWindowPalette.card)
-        .alert("Leave Network?", isPresented: $showResetAlert) {
-            Button("Leave", role: .destructive) { identity.leaveNetwork() }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This removes this device from AirClip and clears local pairing data. Other devices stay connected.")
+        .sheet(isPresented: $showResetAlert) {
+            SettingsDestructiveConfirmationSheet(
+                icon: .logout,
+                title: "Leave this space?",
+                message: "This Mac will disconnect and its history, pairing data, settings, and encryption keys will be removed. Other devices stay connected.",
+                actionTitle: "Leave Space",
+                onCancel: { showResetAlert = false },
+                onConfirm: {
+                    showResetAlert = false
+                    identity.leaveNetwork()
+                }
+            )
         }
-        .alert("Clear local history?", isPresented: $showClearHistoryAlert) {
-            Button("Clear History", role: .destructive) { LocalHistoryStore.shared.clearAll() }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This permanently removes every clipboard item stored on this Mac, including saved clips.")
+        .sheet(isPresented: $showClearHistoryAlert) {
+            SettingsDestructiveConfirmationSheet(
+                icon: .delete,
+                title: "Clear history?",
+                message: "This permanently removes all clipboard history and saved items stored on this Mac.",
+                actionTitle: "Clear History",
+                onCancel: { showClearHistoryAlert = false },
+                onConfirm: {
+                    showClearHistoryAlert = false
+                    LocalHistoryStore.shared.clearAll()
+                }
+            )
         }
     }
 
@@ -2754,7 +3522,7 @@ private struct SettingsPanel: View {
                             .strokeBorder(MainWindowPalette.divider.opacity(0.8), lineWidth: 1)
                     )
                     .frame(width: 58, height: 58)
-                AirClipLogoMark()
+                AirclipLogoMark()
                     .foregroundColor(MainWindowPalette.primaryText)
                     .scaleEffect(1.55)
             }
@@ -2774,7 +3542,7 @@ private struct SettingsPanel: View {
                                 .fill(MainWindowPalette.saved.opacity(0.12))
                         )
                 }
-                Text("Tune AirClip for this Mac, keep the UI readable, and keep the behavior predictable.")
+                Text("Tune Airclip for this Mac, keep the UI readable, and keep the behavior predictable.")
                     .font(.system(size: 12))
                     .foregroundColor(MainWindowPalette.secondaryText)
                     .lineLimit(2)
@@ -2838,10 +3606,10 @@ private struct SettingsPanel: View {
             )
     }
 
-    private func metricCard(icon: AirClipIconName, value: String, label: String, tint: Color) -> some View {
+    private func metricCard(icon: AirclipIconName, value: String, label: String, tint: Color) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                AirClipIcon(icon, size: 13)
+                AirclipIcon(icon, size: 13)
                     .foregroundColor(tint)
                 Spacer()
             }
@@ -2860,7 +3628,7 @@ private struct SettingsPanel: View {
 
     private func settingsPanelCard<Content: View>(
         title: String,
-        icon: AirClipIconName,
+        icon: AirclipIconName,
         subtitle: String,
         @ViewBuilder content: () -> Content
     ) -> some View {
@@ -2873,7 +3641,7 @@ private struct SettingsPanel: View {
                             RoundedRectangle(cornerRadius: 8, style: .continuous)
                                 .strokeBorder(MainWindowPalette.divider.opacity(0.8), lineWidth: 0.5)
                         )
-                    AirClipIcon(icon, size: 14)
+                    AirclipIcon(icon, size: 14)
                         .foregroundColor(MainWindowPalette.secondaryText)
                 }
                 .frame(width: 28, height: 28)
@@ -2899,10 +3667,10 @@ private struct SettingsPanel: View {
 
     private func cardBackground(cornerRadius: CGFloat) -> some View {
         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-            .fill(MainWindowPalette.sectionFill.opacity(0.96))
+            .fill(Color.bgElevated)
             .overlay(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .strokeBorder(MainWindowPalette.divider.opacity(0.9), lineWidth: 0.5)
+                    .strokeBorder(Color.borderSubtle, lineWidth: 0.5)
             )
     }
 
@@ -2926,10 +3694,11 @@ private struct SettingsPanel: View {
             content()
         }
         .background(cardBackground(cornerRadius: 14))
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
     private func settingsRow<Accessory: View>(
-        icon: AirClipIconName,
+        icon: AirclipIconName,
         iconTint: Color,
         iconFill: Color,
         title: String,
@@ -2954,16 +3723,16 @@ private struct SettingsPanel: View {
             Spacer(minLength: 12)
             accessory()
         }
-        .padding(.horizontal, 14)
-        .frame(minHeight: 62)
+        .padding(.horizontal, 16)
+        .frame(minHeight: 60)
     }
 
-    private func settingsIcon(_ icon: AirClipIconName, tint: Color, fill: Color) -> some View {
+    private func settingsIcon(_ icon: AirclipIconName, tint: Color, fill: Color) -> some View {
         RoundedRectangle(cornerRadius: 10, style: .continuous)
             .fill(fill)
             .frame(width: 34, height: 34)
             .overlay(
-                AirClipIcon(icon, size: 16)
+                AirclipIcon(icon, size: 16)
                     .foregroundColor(tint)
             )
     }
@@ -2981,7 +3750,7 @@ private struct SettingsPanel: View {
                         .frame(height: 26)
                         .background(
                             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .fill(appearanceStore.rawValue == option.rawValue ? MainWindowPalette.card : .clear)
+                                .fill(appearanceStore.rawValue == option.rawValue ? Color.segmentSelected : .clear)
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 8, style: .continuous)
                                         .strokeBorder(appearanceStore.rawValue == option.rawValue ? MainWindowPalette.divider : .clear, lineWidth: 0.5)
@@ -2991,15 +3760,16 @@ private struct SettingsPanel: View {
                 .buttonStyle(.plain)
             }
         }
-        .padding(4)
+        .padding(3)
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(MainWindowPalette.searchFill)
+                .fill(Color.clear)
                 .overlay(
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .strokeBorder(MainWindowPalette.divider.opacity(0.8), lineWidth: 0.5)
+                        .strokeBorder(Color.borderDefault, lineWidth: 0.5)
                 )
         )
+        .animation(.easeOut(duration: 0.12), value: appearanceStore.rawValue)
     }
 
     private var syncModeChooser: some View {
@@ -3015,7 +3785,7 @@ private struct SettingsPanel: View {
                         .frame(height: 26)
                         .background(
                             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .fill(syncModeStore.mode == mode ? MainWindowPalette.card : .clear)
+                                .fill(syncModeStore.mode == mode ? Color.segmentSelected : .clear)
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 8, style: .continuous)
                                         .strokeBorder(syncModeStore.mode == mode ? MainWindowPalette.divider : .clear, lineWidth: 0.5)
@@ -3025,20 +3795,21 @@ private struct SettingsPanel: View {
                 .buttonStyle(.plain)
             }
         }
-        .padding(4)
+        .padding(3)
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(MainWindowPalette.searchFill)
+                .fill(Color.clear)
                 .overlay(
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .strokeBorder(MainWindowPalette.divider.opacity(0.8), lineWidth: 0.5)
+                        .strokeBorder(Color.borderDefault, lineWidth: 0.5)
                 )
         )
+        .animation(.easeOut(duration: 0.12), value: syncModeStore.mode)
     }
 
     private var encryptionRow: some View {
         settingsRow(
-            icon: .shield,
+            icon: .encryption,
             iconTint: MainWindowPalette.saved,
             iconFill: MainWindowPalette.saved.opacity(0.12),
             title: "End-to-end encrypted",
@@ -3049,7 +3820,7 @@ private struct SettingsPanel: View {
                 .foregroundColor(MainWindowPalette.saved)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
-                .background(Capsule(style: .continuous).fill(MainWindowPalette.saved.opacity(0.12)))
+                .background(Capsule(style: .continuous).fill(MainWindowPalette.saved.opacity(0.08)))
         }
     }
 
@@ -3059,7 +3830,7 @@ private struct SettingsPanel: View {
             iconTint: Color(hex: "#669C6C"),
             iconFill: Color(hex: "#669C6C").opacity(0.12),
             title: "Wi-Fi network name",
-            subtitle: "Allow Location Services so AirClip can show your current Wi-Fi."
+            subtitle: "Allow Location Services so Airclip can show your current Wi-Fi."
         ) {
             Button("Open Settings") {
                 openLocationServicesSettings()
@@ -3071,10 +3842,10 @@ private struct SettingsPanel: View {
             .frame(height: 28)
             .background(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(MainWindowPalette.searchFill)
+                    .fill(Color.clear)
                     .overlay(
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .strokeBorder(MainWindowPalette.divider.opacity(0.8), lineWidth: 0.5)
+                            .strokeBorder(Color.borderDefault, lineWidth: 0.5)
                     )
             )
         }
@@ -3109,44 +3880,57 @@ private struct SettingsPanel: View {
                 }
                 .labelsHidden()
                 .pickerStyle(.menu)
+                .controlSize(.small)
                 .frame(width: 92)
             }
             .padding(.horizontal, 14)
             .frame(minHeight: 62)
 
             if sensitiveProtection.masterAction != .allow {
-                settingsDivider
+                VStack(spacing: 0) {
+                    settingsDivider
 
-                ForEach(Array(SensitiveCategory.allCases.enumerated()), id: \.element.rawValue) {
-                    index,
-                    category in
-                    HStack {
-                        Text(category.label)
-                            .font(.system(size: 12))
-                            .foregroundColor(MainWindowPalette.primaryText)
-                        Spacer()
-                        Picker(
-                            category.label,
-                            selection: Binding(
-                                get: { sensitiveProtection.action(for: category) },
-                                set: { sensitiveProtection.setAction($0, for: category) }
-                            )
-                        ) {
-                            ForEach(SensitiveRuleAction.allCases, id: \.rawValue) { action in
-                                Text(action.label).tag(action)
+                    ForEach(Array(SensitiveCategory.allCases.enumerated()), id: \.element.rawValue) {
+                        index,
+                        category in
+                        HStack {
+                            Text(category.label)
+                                .font(.system(size: 12))
+                                .foregroundColor(MainWindowPalette.primaryText)
+                            Spacer()
+                            Picker(
+                                category.label,
+                                selection: Binding(
+                                    get: { sensitiveProtection.action(for: category) },
+                                    set: { sensitiveProtection.setAction($0, for: category) }
+                                )
+                            ) {
+                                ForEach(SensitiveRuleAction.allCases, id: \.rawValue) { action in
+                                    Text(action.label).tag(action)
+                                }
                             }
+                            .labelsHidden()
+                            .pickerStyle(.menu)
+                            .controlSize(.small)
+                            .frame(width: 92)
                         }
-                        .labelsHidden()
-                        .pickerStyle(.menu)
-                        .frame(width: 92)
-                    }
-                    .padding(.horizontal, 14)
-                    .frame(height: 38)
+                        .padding(.horizontal, 14)
+                        .frame(height: 38)
 
-                    if index < SensitiveCategory.allCases.count - 1 {
-                        settingsDivider
+                        if index < SensitiveCategory.allCases.count - 1 {
+                            settingsDivider
+                        }
                     }
                 }
+                .transition(.asymmetric(
+                    insertion: (reduceMotion
+                        ? AnyTransition.opacity
+                        : AnyTransition.offset(y: -4).combined(with: .opacity))
+                        .animation(reduceMotion
+                            ? .easeOut(duration: 0.12)
+                            : .timingCurve(0.23, 1, 0.32, 1, duration: 0.20)),
+                    removal: .opacity.animation(.easeOut(duration: reduceMotion ? 0.12 : 0.14))
+                ))
             }
 
             Text("Ask stops automatic sync for matching clips until you approve them.")
@@ -3213,9 +3997,8 @@ private struct SettingsPanel: View {
                     Text(historyOptions[historyDepth])
                         .font(.system(size: 13))
                         .foregroundColor(MainWindowPalette.secondaryText)
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundColor(MainWindowPalette.tertiaryText)
+                    AirclipIcon(.chevronDown, size: 12)
+                        .foregroundColor(MainWindowPalette.secondaryText)
                 }
                 .frame(width: 140, alignment: .trailing)
             }
@@ -3253,9 +4036,28 @@ private struct SettingsPanel: View {
 
     private var settingsDivider: some View {
         Rectangle()
-            .fill(MainWindowPalette.divider)
-            .frame(height: 1)
-            .padding(.leading, 14)
+            .fill(Color.borderSubtle)
+            .frame(height: 0.5)
+            .padding(.horizontal, 16)
+    }
+
+    private var pasteLatestShortcutRow: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Paste latest item")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(MainWindowPalette.primaryText)
+                Text("Click and press a 2–3 key shortcut.")
+                    .font(.system(size: 11))
+                    .foregroundColor(MainWindowPalette.secondaryText)
+            }
+
+            Spacer(minLength: 12)
+
+            PasteShortcutRecorder(store: pasteShortcutStore)
+        }
+        .padding(.horizontal, 16)
+        .frame(minHeight: 60)
     }
 
     private func shortcutRow(_ label: String, keys: [String]) -> some View {
@@ -3282,8 +4084,8 @@ private struct SettingsPanel: View {
                 }
             }
         }
-        .padding(.horizontal, 14)
-        .frame(height: 40)
+        .padding(.horizontal, 16)
+        .frame(height: 44)
     }
 
     private func infoRow(_ label: String, value: String) -> some View {
@@ -3294,15 +4096,239 @@ private struct SettingsPanel: View {
             Spacer()
             Text(value)
                 .font(.system(size: 13))
-                .foregroundColor(MainWindowPalette.tertiaryText)
+                .foregroundColor(MainWindowPalette.secondaryText)
         }
-        .padding(.horizontal, 14)
-        .frame(height: 40)
+        .padding(.horizontal, 16)
+        .frame(height: 44)
+    }
+}
+
+private struct SettingsDestructiveConfirmationSheet: View {
+    let icon: AirclipIconName
+    let title: String
+    let message: String
+    let actionTitle: String
+    let onCancel: () -> Void
+    let onConfirm: () -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ZStack {
+                Circle()
+                    .fill(Color.destructiveRed.opacity(0.10))
+                    .frame(width: 60, height: 60)
+                AirclipIcon(icon, size: 26, variant: .stroke)
+                    .foregroundColor(.destructiveRed)
+            }
+            .padding(.bottom, 20)
+
+            Text(title)
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundColor(.textPrimary)
+                .padding(.bottom, 8)
+
+            Text(message)
+                .font(.system(size: 14))
+                .foregroundColor(.textSecondary)
+                .multilineTextAlignment(.center)
+                .lineSpacing(3)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 8)
+                .padding(.bottom, 24)
+
+            VStack(spacing: 8) {
+                SettingsConfirmationButton(
+                    title: actionTitle,
+                    fill: .destructiveRed,
+                    hoverFill: Color.destructiveRed.opacity(0.86),
+                    foreground: Color.white.opacity(0.96),
+                    action: onConfirm
+                )
+
+                SettingsConfirmationButton(
+                    title: "Cancel",
+                    fill: .activeFill,
+                    hoverFill: Color.textPrimary.opacity(0.10),
+                    foreground: .textSecondary,
+                    action: onCancel
+                )
+                .keyboardShortcut(.cancelAction)
+            }
+        }
+        .padding(.horizontal, 28)
+        .padding(.top, 28)
+        .padding(.bottom, 20)
+        .frame(width: 400)
+        .background(Color.bgFloating)
+    }
+}
+
+private struct SettingsConfirmationButton: View {
+    let title: String
+    let fill: Color
+    let hoverFill: Color
+    let foreground: Color
+    let action: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(title, action: action)
+            .buttonStyle(SettingsConfirmationButtonStyle(
+                fill: isHovered ? hoverFill : fill,
+                foreground: foreground
+            ))
+            .onHover { isHovered = $0 }
+    }
+}
+
+private struct SettingsConfirmationButtonStyle: ButtonStyle {
+    let fill: Color
+    let foreground: Color
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 15, weight: .medium))
+            .foregroundColor(foreground)
+            .frame(maxWidth: .infinity)
+            .frame(height: 44)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(fill)
+            )
+            .brightness(configuration.isPressed ? -0.08 : 0)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+            .animation(.easeOut(duration: 0.12), value: fill)
+    }
+}
+
+private struct PasteShortcutRecorder: View {
+    @ObservedObject var store: PasteShortcutStore
+    @State private var isRecording = false
+
+    var body: some View {
+        HStack(spacing: 6) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(isRecording ? Color.selectionFill : Color.clear)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .strokeBorder(
+                                isRecording ? Color.accent : MainWindowPalette.divider,
+                                lineWidth: isRecording ? 1 : 0.5
+                            )
+                    )
+
+                if isRecording {
+                    Text("Press 2–3 keys")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(MainWindowPalette.primaryText)
+                } else if let shortcut = store.shortcut {
+                    HStack(spacing: 3) {
+                        ForEach(shortcut.displayKeys, id: \.self) { key in
+                            Text(key)
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundColor(MainWindowPalette.secondaryText)
+                        }
+                    }
+                } else {
+                    Text("Set shortcut")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(MainWindowPalette.secondaryText)
+                }
+
+                ShortcutCaptureView(isRecording: $isRecording) { keyCode, modifiers, label in
+                    store.set(keyCode: keyCode, modifiers: modifiers, keyLabel: label)
+                }
+            }
+            .frame(width: 128, height: 28)
+            .animation(.easeOut(duration: 0.12), value: isRecording)
+
+            if store.shortcut != nil {
+                Button { store.clear() } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundColor(MainWindowPalette.secondaryText)
+                        .frame(width: 20, height: 20)
+                }
+                .buttonStyle(.plain)
+                .help("Clear shortcut")
+                .accessibilityLabel("Clear paste shortcut")
+                .transition(.opacity)
+            }
+        }
+        .animation(.easeOut(duration: 0.10), value: store.shortcut != nil)
+    }
+}
+
+private struct ShortcutCaptureView: NSViewRepresentable {
+    @Binding var isRecording: Bool
+    let onCapture: (UInt16, NSEvent.ModifierFlags, String) -> Bool
+
+    func makeNSView(context: Context) -> CaptureView {
+        let view = CaptureView()
+        view.onRecordingChange = { isRecording = $0 }
+        view.onCapture = onCapture
+        return view
+    }
+
+    func updateNSView(_ view: CaptureView, context: Context) {
+        view.onRecordingChange = { isRecording = $0 }
+        view.onCapture = onCapture
+        view.isRecording = isRecording
+    }
+
+    final class CaptureView: NSView {
+        var isRecording = false
+        var onRecordingChange: ((Bool) -> Void)?
+        var onCapture: ((UInt16, NSEvent.ModifierFlags, String) -> Bool)?
+
+        override var acceptsFirstResponder: Bool { true }
+
+        override func mouseDown(with event: NSEvent) {
+            window?.makeFirstResponder(self)
+            isRecording = true
+            onRecordingChange?(true)
+        }
+
+        override func keyDown(with event: NSEvent) {
+            guard event.keyCode != 53 else {
+                isRecording = false
+                onRecordingChange?(false)
+                return
+            }
+            guard let label = Self.label(for: event) else {
+                NSSound.beep()
+                return
+            }
+            if onCapture?(event.keyCode, event.modifierFlags, label) == true {
+                isRecording = false
+                onRecordingChange?(false)
+            } else {
+                NSSound.beep()
+            }
+        }
+
+        override func resignFirstResponder() -> Bool {
+            isRecording = false
+            onRecordingChange?(false)
+            return true
+        }
+
+        private static func label(for event: NSEvent) -> String? {
+            guard let character = event.charactersIgnoringModifiers, !character.isEmpty else { return nil }
+            switch character {
+            case " ": return "Space"
+            case "\t": return "⇥"
+            case "\r": return "↩"
+            case "\u{7F}": return "⌫"
+            default: return character.uppercased()
+            }
+        }
     }
 }
 
 private struct SettingsActionRow: View {
-    let icon: AirClipIconName
+    let icon: AirclipIconName
     let title: String
     let subtitle: String
     let tint: Color
@@ -3315,7 +4341,7 @@ private struct SettingsActionRow: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 10) {
-                AirClipIcon(icon, size: 14)
+                AirclipIcon(icon, size: 14)
                     .foregroundColor(tint)
                     .frame(width: 16)
                 VStack(alignment: .leading, spacing: 2) {
@@ -3328,14 +4354,13 @@ private struct SettingsActionRow: View {
                 }
                 Spacer()
             }
-            .padding(.horizontal, 14)
-            .frame(height: 54)
+            .padding(.horizontal, 16)
+            .frame(height: 60)
             .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                Rectangle()
                     .fill(isHovered || isPressed ? hoverFill : .clear)
             )
-            .scaleEffect(isPressed ? MainWindowMotion.rowPressScale : 1)
-            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { hovering in

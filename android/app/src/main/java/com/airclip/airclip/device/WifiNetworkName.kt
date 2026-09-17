@@ -65,3 +65,15 @@ object WifiNetworkName {
         }.getOrNull()
     }
 }
+
+object WifiMismatchGuidance {
+    fun message(currentNetwork: String?, peerNetworks: List<String>, allDevicesOffline: Boolean): String? {
+        if (!allDevicesOffline) return null
+        val current = currentNetwork?.trim().orEmpty()
+        val peers = peerNetworks.map(String::trim).filter(String::isNotEmpty).toSet()
+        if (current.isEmpty() || peers.size != 1 || peers.single() == current) {
+            return "Check that all devices are on the same Wi-Fi."
+        }
+        return "This device is on “$current”. Other devices were last seen on “${peers.single()}”."
+    }
+}

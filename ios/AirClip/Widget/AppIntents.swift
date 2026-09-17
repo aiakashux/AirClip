@@ -22,7 +22,7 @@ struct PasteClipIntent: AppIntent {
 /// This intent writes a send-request flag; the app processes it on next foreground.
 struct SendClipIntent: AppIntent {
     static var title: LocalizedStringResource = "Send Clipboard"
-    static var description = IntentDescription("Send the current clipboard to AirClip peers.")
+    static var description = IntentDescription("Send the current clipboard to Airclip peers.")
 
     @MainActor
     func perform() async throws -> some IntentResult {

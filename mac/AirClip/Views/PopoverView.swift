@@ -9,6 +9,7 @@ import AppKit
 private enum PopoverMetrics {
     static let width: CGFloat = 324
     static let outerPadding: CGFloat = 24
+    static let topPadding: CGFloat = 8
     static let cardSpacing: CGFloat = 8
     static let cardRadius: CGFloat = 16
     static let cardPadding: CGFloat = 12.5
@@ -18,7 +19,7 @@ private enum PopoverMetrics {
     static let toastTopPadding: CGFloat = 8
     static let dismissDelay: Double = 0.24
     static let copyExitDelay: Double = 0.65
-    static let copyCloseDelay: Double = 0.70
+    static let copyCloseDelay: Double = 0.82
 }
 
 struct PopoverView: View {
@@ -32,11 +33,12 @@ struct PopoverView: View {
     @State private var isContentVisible = false
     @State private var animationSession = 0
     @State private var copyFlowSession = 0
+    @State private var keyboardSelection = 0
+    @FocusState private var isKeyboardFocused: Bool
 
-    @State private var seeAllHovered = false
+    @State private var openAirclipHovered = false
 
     private var recentItems: [ClipboardItem] { Array(allItems.prefix(5)) }
-    private var footerLabel: String { allItems.count > 5 ? "See All" : "Open App" }
     private var contentIsVisible: Bool { isContentVisible && !isExiting }
 
     var body: some View {
@@ -45,7 +47,9 @@ struct PopoverView: View {
                 cardSection
                 footerBar
             }
-            .padding(PopoverMetrics.outerPadding)
+            .padding(.horizontal, PopoverMetrics.outerPadding)
+            .padding(.bottom, PopoverMetrics.outerPadding)
+            .padding(.top, PopoverMetrics.topPadding)
             .offset(y: contentIsVisible ? 0 : -12)
             .scaleEffect(contentIsVisible ? 1 : 0.965, anchor: .top)
             .opacity(contentIsVisible ? 1 : 0)
@@ -58,13 +62,33 @@ struct PopoverView: View {
         }
         .frame(width: PopoverMetrics.width)
         .background(Color.clear)
+        .focusable()
+        .focused($isKeyboardFocused)
+        .focusEffectDisabled()
+        .onKeyPress(.downArrow) {
+            guard !recentItems.isEmpty else { return .ignored }
+            keyboardSelection = min(keyboardSelection + 1, recentItems.count - 1)
+            return .handled
+        }
+        .onKeyPress(.upArrow) {
+            guard !recentItems.isEmpty else { return .ignored }
+            keyboardSelection = max(keyboardSelection - 1, 0)
+            return .handled
+        }
+        .onKeyPress(.return) {
+            guard recentItems.indices.contains(keyboardSelection) else { return .ignored }
+            handleCardTap(item: recentItems[keyboardSelection])
+            return .handled
+        }
         .onReceive(NotificationCenter.default.publisher(for: .panelWillOpen)) { _ in
             copyFlowSession &+= 1
             isExiting = false
             isContentVisible = false
             showToast = false
+            keyboardSelection = 0
             animationSession &+= 1
             DispatchQueue.main.async {
+                isKeyboardFocused = true
                 withAnimation(contentAnimation) {
                     isContentVisible = true
                 }
@@ -90,7 +114,8 @@ struct PopoverView: View {
             } else {
                 ForEach(Array(recentItems.enumerated()), id: \.element.id) { index, item in
                     ClipCard(
-                        item: item
+                        item: item,
+                        isKeyboardSelected: keyboardSelection == index
                     ) {
                         handleCardTap(item: item)
                     }
@@ -108,7 +133,7 @@ struct PopoverView: View {
     // MARK: - Empty State
 
     private var emptyState: some View {
-        AirClipFigmaEmptyState()
+        AirclipFigmaEmptyState(text: "Your recent clips will appear here. Copy something on this Mac or a connected device.")
         .frame(maxWidth: .infinity)
         .frame(height: PopoverMetrics.emptyHeight)
         .background(
@@ -134,7 +159,7 @@ struct PopoverView: View {
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
                         .frame(height: PopoverMetrics.footerHeight)
-                        .background(Color.accent)
+                        .background(Color.accentDeep)
                         .clipShape(Capsule())
                 }
                 .buttonStyle(FooterPressStyle())
@@ -145,18 +170,14 @@ struct PopoverView: View {
                     NotificationCenter.default.post(name: .openMainWindow, object: nil)
                 }
             } label: {
-                Text(footerLabel)
+                Text("Open Airclip")
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(seeAllHovered ? Color.textPrimary : Color.textSubtle)
                     .frame(maxWidth: .infinity)
                     .frame(height: PopoverMetrics.footerHeight)
-                    .background(footerButtonBg)
-                    .clipShape(Capsule())
-                    .animation(.easeOut(duration: 0.12), value: seeAllHovered)
             }
-            .buttonStyle(FooterPressStyle())
+            .buttonStyle(OpenAirclipFooterButtonStyle(isHovered: openAirclipHovered))
             .onHover { h in
-                seeAllHovered = h
+                openAirclipHovered = h
                 if h { NSCursor.pointingHand.set() } else { NSCursor.arrow.set() }
             }
         }
@@ -168,12 +189,6 @@ struct PopoverView: View {
         )
     }
 
-    private var footerButtonBg: some View {
-        Capsule()
-            .fill(seeAllHovered ? Color.activeFill : Color.bgFloating)
-            .overlay(Capsule().strokeBorder(seeAllHovered ? Color.borderFocus : Color.borderDefault, lineWidth: 0.5))
-    }
-
     private var emptyCardFill: Color {
         Color.bgElevated
     }
@@ -181,32 +196,25 @@ struct PopoverView: View {
     // MARK: - Toast
 
     private var toastView: some View {
-        HStack(spacing: 6) {
-            ZStack {
-                Circle()
-                    .fill(Color.encryptedGreen)
-                    .frame(width: 14, height: 14)
-                AirClipIcon(.checkCircle, size: 8)
-                    .foregroundColor(.textPrimary)
-            }
+        HStack(spacing: 5) {
+            AirclipIcon(.tick, size: 11)
+                .foregroundColor(.encryptedGreen)
             Text("Copied to clipboard")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundColor(.textPrimary)
+                .font(.airClipCaption)
+                .foregroundColor(.textSecondary)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
         .background(
             Capsule()
                 .fill(Color.bgFloating)
-                .overlay(Capsule().strokeBorder(Color.borderDefault, lineWidth: 0.5))
+                .overlay(Capsule().strokeBorder(Color.borderSubtle, lineWidth: 0.5))
         )
+        .shadow(color: .black.opacity(0.10), radius: 6, x: 0, y: 2)
+        .allowsHitTesting(false)
         .transition(.asymmetric(
-            insertion: .offset(y: -10)
-                .combined(with: .opacity)
-                .combined(with: .scale(scale: 0.94, anchor: .top)),
-            removal: .offset(y: -6)
-                .combined(with: .opacity)
-                .combined(with: .scale(scale: 0.96, anchor: .top))
+            insertion: .offset(y: -4).combined(with: .opacity),
+            removal: .opacity
         ))
     }
 
@@ -226,18 +234,31 @@ struct PopoverView: View {
     }
 
     private func handleCardTap(item: ClipboardItem) {
+        if item.clipType == .url {
+            guard let url = URL(string: item.text.trimmingCharacters(in: .whitespacesAndNewlines)) else { return }
+            dismissWithAnimation { NSWorkspace.shared.open(url) }
+            return
+        }
+
         copyFlowSession &+= 1
         let activeCopyFlow = copyFlowSession
 
         ClipboardMonitor.shared.suppressPacket(item.clipboardPacket)
         ClipboardCapture.write(item.clipboardPacket, to: NSPasteboard.general)
 
-        withAnimation(reduceMotion ? .easeOut(duration: 0.01) : .airClipDefault) {
+        withAnimation(
+            reduceMotion
+                ? .easeOut(duration: 0.01)
+                : .timingCurve(0.25, 0.46, 0.45, 0.94, duration: Duration.micro)
+        ) {
             showToast = true
         }
 
         DispatchQueue.main.asyncAfter(deadline: .now() + (reduceMotion ? 0.01 : PopoverMetrics.copyExitDelay)) {
             guard activeCopyFlow == copyFlowSession else { return }
+            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.12)) {
+                showToast = false
+            }
             withAnimation(contentAnimation) {
                 isContentVisible = false
                 isExiting = true
@@ -312,10 +333,44 @@ private struct FooterPressStyle: ButtonStyle {
     }
 }
 
+private struct OpenAirclipFooterButtonStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    let isHovered: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundColor(isHovered || configuration.isPressed ? Color.accent : Color.textPrimary)
+            .background(
+                Capsule()
+                    .fill(Color.bgElevated)
+                    .overlay(
+                        Capsule().fill(
+                            configuration.isPressed
+                                ? Color.accent.opacity(0.14)
+                                : isHovered ? Color.accent.opacity(0.08) : .clear
+                        )
+                    )
+            )
+            .overlay(
+                Capsule().strokeBorder(
+                    isHovered || configuration.isPressed
+                        ? Color.accent.opacity(0.24)
+                        : Color.borderSubtle,
+                    lineWidth: 0.5
+                )
+            )
+            .scaleEffect(reduceMotion || !configuration.isPressed ? 1 : 0.98)
+            .animation(.airClipInstant(0.12), value: isHovered)
+            .animation(.airClipInstant(0.10), value: configuration.isPressed)
+    }
+}
+
 // MARK: - Clip Card
 
 private struct ClipCard: View {
     let item: ClipboardItem
+    let isKeyboardSelected: Bool
     let onTap: () -> Void
 
     @ObservedObject private var revealStore = SensitiveContentRevealStore.shared
@@ -331,13 +386,15 @@ private struct ClipCard: View {
     var body: some View {
         Button(action: onTap) {
             contentView
+                .blur(radius: isHovered ? 6 : 0)
                 .padding(PopoverMetrics.cardPadding)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background {
                     RoundedRectangle(cornerRadius: PopoverMetrics.cardRadius)
-                        .fill(isHovered ? Color.hoverFill : Color.bgElevated)
+                        .fill(Color.bgElevated)
                 }
                 .clipShape(RoundedRectangle(cornerRadius: PopoverMetrics.cardRadius))
+                .shadow(color: .black.opacity(0.08), radius: 4, x: 0, y: 2)
                 .overlay(
                     RoundedRectangle(cornerRadius: PopoverMetrics.cardRadius)
                         .strokeBorder(
@@ -346,11 +403,16 @@ private struct ClipCard: View {
                         )
                         .animation(.easeOut(duration: 0.12), value: isHovered)
                 )
+                .overlay {
+                    if isHovered {
+                        actionOverlay
+                    }
+                }
                 .animation(.easeOut(duration: 0.16), value: isHovered)
         }
         .buttonStyle(CardPressStyle())
-        .accessibilityLabel("Copy \(type.rawValue) from \(deviceName)")
-        .accessibilityHint("Copies this item and closes AirClip")
+        .accessibilityLabel(type == .url ? "Open link from \(deviceName)" : "Copy \(type.rawValue) from \(deviceName)")
+        .accessibilityHint(type == .url ? "Opens this link in your browser" : "Copies this item and closes Airclip")
         .onHover { hovering in
             isHovered = hovering
             if hovering { NSCursor.pointingHand.set() } else { NSCursor.arrow.set() }
@@ -358,7 +420,26 @@ private struct ClipCard: View {
     }
 
     private var cardBorderColor: Color {
-        isHovered ? Color.accent.opacity(0.30) : Color.borderSubtle
+        isKeyboardSelected ? Color.borderFocus : Color.borderSubtle
+    }
+
+    private var actionOverlay: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: PopoverMetrics.cardRadius, style: .continuous)
+                .fill(Color.bgElevated.opacity(0.75))
+            HStack(spacing: 8) {
+                AirclipIcon(type == .url ? .openBrowser : .copy, size: type == .url ? 20 : 16)
+                Text(type == .url ? "Open in browser" : "Click to Copy")
+            }
+            .font(.system(size: 12, weight: .medium))
+            .foregroundColor(.accent)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: PopoverMetrics.cardRadius, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: PopoverMetrics.cardRadius, style: .continuous)
+                .strokeBorder(Color.borderDefault, lineWidth: 0.5)
+        )
+        .transition(.opacity)
     }
 
     private var primaryTextColor: Color {
@@ -391,7 +472,7 @@ private struct ClipCard: View {
         case .url:
             HStack(alignment: .top, spacing: 12) {
                 typeBadge(background: Color.accent.opacity(0.16)) {
-                    AirClipIcon(.arrowUpRight, size: 14)
+                    AirclipIcon(.arrowUpRight, size: 14)
                         .foregroundColor(linkTextColor)
                 }
                 VStack(alignment: .leading, spacing: 8) {
@@ -412,9 +493,9 @@ private struct ClipCard: View {
 
         case .code:
             HStack(alignment: .top, spacing: 12) {
-                typeBadge(background: Color(hex: "#E5760E").opacity(0.16)) {
-                    AirClipIcon(.code, size: 14)
-                        .foregroundColor(Color(hex: "#E5760E"))
+                typeBadge(background: Color.warningYellow.opacity(0.16)) {
+                    AirclipIcon(.text, size: 14)
+                        .foregroundColor(Color.warningYellow)
                 }
                 VStack(alignment: .leading, spacing: 8) {
                     Text(item.text)
@@ -473,9 +554,9 @@ private struct ClipCard: View {
 
         case .email:
             HStack(alignment: .top, spacing: 12) {
-                typeBadge(background: Color(hex: "#70CBFF").opacity(0.16)) {
-                    AirClipIcon(.mail, size: 14)
-                        .foregroundColor(Color(hex: "#70CBFF"))
+                typeBadge(background: Color.syncBlue.opacity(0.16)) {
+                    AirclipIcon(.text, size: 14)
+                        .foregroundColor(Color.syncBlue)
                 }
                 VStack(alignment: .leading, spacing: 8) {
                     Text(item.text)
@@ -494,9 +575,9 @@ private struct ClipCard: View {
 
         case .text:
             HStack(alignment: .top, spacing: 12) {
-                typeBadge(background: Color(hex: "#78A57F").opacity(0.16)) {
-                    AirClipIcon(.text, size: 14)
-                        .foregroundColor(Color(hex: "#78A57F"))
+                typeBadge(background: Color.encryptedGreen.opacity(0.10)) {
+                    AirclipIcon(.text, size: 14)
+                        .foregroundColor(Color.encryptedGreen)
                 }
                 VStack(alignment: .leading, spacing: 8) {
                     Text(item.text)
@@ -595,7 +676,7 @@ private struct ClipCard: View {
     private var deviceName: String {
         item.isLocal
             ? "This Mac"
-            : (AirClipIdentity.shared.pairedDevices[item.fromDeviceId]?.deviceName ?? "Remote device")
+            : (AirclipIdentity.shared.pairedDevices[item.fromDeviceId]?.deviceName ?? "Remote device")
     }
 
     private var relativeTime: String {

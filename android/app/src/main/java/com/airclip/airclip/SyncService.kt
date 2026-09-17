@@ -10,6 +10,14 @@ import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import com.airclip.airclip.crypto.KeyManager
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import okhttp3.OkHttpClient
+import java.util.concurrent.TimeUnit
 
 private const val TAG             = "SyncService"
 private const val CHANNEL_ID      = "airclip_sync"
@@ -22,6 +30,7 @@ private const val NOTIFICATION_ID = 1
  * The foreground notification tells the OS not to kill this process.
  */
 class SyncService : Service() {
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun onCreate() {
         super.onCreate()
@@ -32,20 +41,30 @@ class SyncService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startForeground(NOTIFICATION_ID, buildNotification())
         Prefs.init(applicationContext)
-        if (!SyncRuntimePolicy.shouldRunLanService(AirClipIdentity.isPaired, Prefs.syncMode)) {
-            SyncEngine.disconnect()
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf(startId)
-            Log.d(TAG, "SyncService start rejected — unpaired or paused")
-            return START_NOT_STICKY
-        }
+        scope.launch {
+            AirclipIdentity.loadFromDisk(applicationContext)
+            if (!SyncRuntimePolicy.shouldRunLanService(AirclipIdentity.isPaired, Prefs.syncMode)) {
+                SyncEngine.disconnect()
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelfResult(startId)
+                Log.d(TAG, "SyncService start rejected — unpaired or paused")
+                return@launch
+            }
 
-        SyncEngine.connect()
-        Log.d(TAG, "SyncService started — LAN sync active")
-        return START_NOT_STICKY
+            val keyManager = KeyManager(application).also { it.loadFromDisk() }
+            val client = OkHttpClient.Builder()
+                .connectTimeout(10, TimeUnit.SECONDS)
+                .readTimeout(15, TimeUnit.SECONDS)
+                .build()
+            SyncEngine.init(applicationContext, keyManager, client)
+            SyncEngine.connect()
+            Log.d(TAG, "SyncService started — LAN sync active")
+        }
+        return START_STICKY
     }
 
     override fun onDestroy() {
+        scope.cancel()
         SyncEngine.disconnect()
         Log.d(TAG, "SyncService destroyed")
         super.onDestroy()
@@ -57,7 +76,7 @@ class SyncService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "AirClip Sync",
+                "Airclip Sync",
                 NotificationManager.IMPORTANCE_LOW
             ).apply { description = "LAN clipboard sync is active" }
             val nm = getSystemService(NotificationManager::class.java)
@@ -66,7 +85,7 @@ class SyncService : Service() {
     }
 
     private fun buildNotification() = NotificationCompat.Builder(this, CHANNEL_ID)
-        .setContentTitle("AirClip is syncing")
+        .setContentTitle("Airclip is syncing")
         .setContentText("Clipboard sync is active on your local network")
         .setSmallIcon(android.R.drawable.ic_menu_share)
         .setOngoing(true)
@@ -82,7 +101,7 @@ class SyncService : Service() {
     companion object {
         fun start(context: Context) {
             Prefs.init(context.applicationContext)
-            if (!SyncRuntimePolicy.shouldRunLanService(AirClipIdentity.isPaired, Prefs.syncMode)) {
+            if (!SyncRuntimePolicy.shouldRunLanService(AirclipIdentity.isPaired, Prefs.syncMode)) {
                 stop(context)
                 return
             }

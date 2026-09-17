@@ -10,7 +10,7 @@
 		57232E7C2F82524000626D59 /* Clibsodium in Frameworks */ = {isa = PBXBuildFile; productRef = 57232E7B2F82524000626D59 /* Clibsodium */; };
 		57232E7E2F82524000626D59 /* Sodium in Frameworks */ = {isa = PBXBuildFile; productRef = 57232E7D2F82524000626D59 /* Sodium */; };
 		AA0200000000000000000023 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000023 /* Assets.xcassets */; };
-		AA0200000000000000000001 /* AirClipApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000001 /* AirClipApp.swift */; };
+		AA0200000000000000000001 /* AirclipApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000001 /* AirclipApp.swift */; };
 		AA0200000000000000000002 /* AppConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000002 /* AppConfig.swift */; };
 		AA0200000000000000000003 /* StatusBarController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000003 /* StatusBarController.swift */; };
 		AA0200000000000000000004 /* PopoverView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000004 /* PopoverView.swift */; };
@@ -25,12 +25,12 @@
 		AA0200000000000000000011 /* SharedComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000011 /* SharedComponents.swift */; };
 		AA0200000000000000000012 /* ClipTypeDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000012 /* ClipTypeDetector.swift */; };
 		AA0200000000000000000013 /* MainWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000013 /* MainWindowView.swift */; };
-		AA020000000000000000001D /* AirClipIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA010000000000000000001D /* AirClipIcon.swift */; };
+		AA020000000000000000001D /* AirclipIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA010000000000000000001D /* AirclipIcon.swift */; };
 		AA0200000000000000000014 /* PeerConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000014 /* PeerConnection.swift */; };
 		AA0200000000000000000015 /* PeerManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000015 /* PeerManager.swift */; };
 		AA0200000000000000000016 /* LanServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000016 /* LanServer.swift */; };
 		AA0200000000000000000017 /* LanBrowser.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000017 /* LanBrowser.swift */; };
-		AA020000000000000000001A /* AirClipIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA010000000000000000001A /* AirClipIdentity.swift */; };
+		AA020000000000000000001A /* AirclipIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA010000000000000000001A /* AirclipIdentity.swift */; };
 		AA020000000000000000001B /* PairingSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA010000000000000000001B /* PairingSession.swift */; };
 		AA020000000000000000001C /* PairingClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA010000000000000000001C /* PairingClient.swift */; };
 		AA020000000000000000001E /* AppAppearanceStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA010000000000000000001E /* AppAppearanceStore.swift */; };
@@ -45,11 +45,11 @@
 		AA0200000000000000000034 /* DeviceRemovalNotice.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000034 /* DeviceRemovalNotice.swift */; };
 		AA0200000000000000000035 /* DeviceDisplayText.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000035 /* DeviceDisplayText.swift */; };
 		AA0200000000000000000036 /* SensitiveContentRevealStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000036 /* SensitiveContentRevealStore.swift */; };
-		AA0200000000000000000037 /* AirClipDeviceIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000037 /* AirClipDeviceIcon.swift */; };
+		AA0200000000000000000037 /* AirclipDeviceIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000037 /* AirclipDeviceIcon.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		AA0100000000000000000001 /* AirClipApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AirClipApp.swift; sourceTree = "<group>"; };
+		AA0100000000000000000001 /* AirclipApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AirclipApp.swift; sourceTree = "<group>"; };
 		AA0100000000000000000002 /* AppConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfig.swift; sourceTree = "<group>"; };
 		AA0100000000000000000003 /* StatusBarController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusBarController.swift; sourceTree = "<group>"; };
 		AA0100000000000000000004 /* PopoverView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PopoverView.swift; sourceTree = "<group>"; };
@@ -61,19 +61,19 @@
 		AA010000000000000000000B /* AuthManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthManager.swift; sourceTree = "<group>"; };
 		AA010000000000000000000C /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
 		AA010000000000000000000D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		AA010000000000000000000E /* AirClip.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AirClip.entitlements; sourceTree = "<group>"; };
-		AA010000000000000000000F /* AirClip.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AirClip.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		AA010000000000000000000E /* Airclip.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Airclip.entitlements; sourceTree = "<group>"; };
+		AA010000000000000000000F /* Airclip.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Airclip.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA0100000000000000000023 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		AA0100000000000000000010 /* DesignTokens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignTokens.swift; sourceTree = "<group>"; };
 		AA0100000000000000000011 /* SharedComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedComponents.swift; sourceTree = "<group>"; };
 		AA0100000000000000000012 /* ClipTypeDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipTypeDetector.swift; sourceTree = "<group>"; };
 		AA0100000000000000000013 /* MainWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainWindowView.swift; sourceTree = "<group>"; };
-		AA010000000000000000001D /* AirClipIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AirClipIcon.swift; sourceTree = "<group>"; };
+		AA010000000000000000001D /* AirclipIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AirclipIcon.swift; sourceTree = "<group>"; };
 		AA0100000000000000000014 /* PeerConnection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeerConnection.swift; sourceTree = "<group>"; };
 		AA0100000000000000000015 /* PeerManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeerManager.swift; sourceTree = "<group>"; };
 		AA0100000000000000000016 /* LanServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LanServer.swift; sourceTree = "<group>"; };
 		AA0100000000000000000017 /* LanBrowser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LanBrowser.swift; sourceTree = "<group>"; };
-		AA010000000000000000001A /* AirClipIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AirClipIdentity.swift; sourceTree = "<group>"; };
+		AA010000000000000000001A /* AirclipIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AirclipIdentity.swift; sourceTree = "<group>"; };
 		AA010000000000000000001B /* PairingSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingSession.swift; sourceTree = "<group>"; };
 		AA010000000000000000001C /* PairingClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingClient.swift; sourceTree = "<group>"; };
 		AA010000000000000000001E /* AppAppearanceStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppAppearanceStore.swift; sourceTree = "<group>"; };
@@ -88,7 +88,7 @@
 		AA0100000000000000000034 /* DeviceRemovalNotice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceRemovalNotice.swift; sourceTree = "<group>"; };
 		AA0100000000000000000035 /* DeviceDisplayText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceDisplayText.swift; sourceTree = "<group>"; };
 		AA0100000000000000000036 /* SensitiveContentRevealStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SensitiveContentRevealStore.swift; sourceTree = "<group>"; };
-		AA0100000000000000000037 /* AirClipDeviceIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AirClipDeviceIcon.swift; sourceTree = "<group>"; };
+		AA0100000000000000000037 /* AirclipDeviceIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AirclipDeviceIcon.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -107,25 +107,25 @@
 		AA0300000000000000000001 = {
 			isa = PBXGroup;
 			children = (
-				AA0300000000000000000002 /* AirClip */,
+				AA0300000000000000000002 /* Airclip */,
 				AA0300000000000000000007 /* Products */,
 			);
 			sourceTree = "<group>";
 		};
-		AA0300000000000000000002 /* AirClip */ = {
+		AA0300000000000000000002 /* Airclip */ = {
 			isa = PBXGroup;
 			children = (
-				AA0100000000000000000001 /* AirClipApp.swift */,
+				AA0100000000000000000001 /* AirclipApp.swift */,
 				AA0100000000000000000002 /* AppConfig.swift */,
 				AA0100000000000000000010 /* DesignTokens.swift */,
-				AA010000000000000000000E /* AirClip.entitlements */,
+				AA010000000000000000000E /* Airclip.entitlements */,
 				AA0100000000000000000023 /* Assets.xcassets */,
 				AA0300000000000000000003 /* MenuBar */,
 				AA0300000000000000000004 /* Views */,
 				AA0300000000000000000005 /* Core */,
 				AA0300000000000000000006 /* Resources */,
 			);
-			path = AirClip;
+			path = Airclip;
 			sourceTree = "<group>";
 		};
 		AA0300000000000000000003 /* MenuBar */ = {
@@ -142,8 +142,8 @@
 				AA0100000000000000000004 /* PopoverView.swift */,
 				AA0100000000000000000006 /* OnboardingView.swift */,
 				AA0100000000000000000011 /* SharedComponents.swift */,
-				AA010000000000000000001D /* AirClipIcon.swift */,
-				AA0100000000000000000037 /* AirClipDeviceIcon.swift */,
+				AA010000000000000000001D /* AirclipIcon.swift */,
+				AA0100000000000000000037 /* AirclipDeviceIcon.swift */,
 				AA0100000000000000000012 /* ClipTypeDetector.swift */,
 				AA0100000000000000000013 /* MainWindowView.swift */,
 			);
@@ -175,7 +175,7 @@
 				AA0100000000000000000015 /* PeerManager.swift */,
 				AA0100000000000000000016 /* LanServer.swift */,
 				AA0100000000000000000017 /* LanBrowser.swift */,
-				AA010000000000000000001A /* AirClipIdentity.swift */,
+				AA010000000000000000001A /* AirclipIdentity.swift */,
 				AA010000000000000000001B /* PairingSession.swift */,
 				AA010000000000000000001C /* PairingClient.swift */,
 			);
@@ -193,7 +193,7 @@
 		AA0300000000000000000007 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				AA010000000000000000000F /* AirClip.app */,
+				AA010000000000000000000F /* Airclip.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -201,9 +201,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		AA0600000000000000000001 /* AirClip */ = {
+		AA0600000000000000000001 /* Airclip */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = AA0500000000000000000006 /* Build configuration list for PBXNativeTarget "AirClip" */;
+			buildConfigurationList = AA0500000000000000000006 /* Build configuration list for PBXNativeTarget "Airclip" */;
 			buildPhases = (
 				AA0400000000000000000001 /* Sources */,
 				AA0400000000000000000002 /* Frameworks */,
@@ -213,9 +213,9 @@
 			);
 			dependencies = (
 			);
-			name = AirClip;
-			productName = AirClip;
-			productReference = AA010000000000000000000F /* AirClip.app */;
+			name = Airclip;
+			productName = Airclip;
+			productReference = AA010000000000000000000F /* Airclip.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -233,7 +233,7 @@
 					};
 				};
 			};
-			buildConfigurationList = AA0500000000000000000005 /* Build configuration list for PBXProject "AirClip" */;
+			buildConfigurationList = AA0500000000000000000005 /* Build configuration list for PBXProject "Airclip" */;
 			compatibilityVersion = "Xcode 14.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
@@ -249,7 +249,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				AA0600000000000000000001 /* AirClip */,
+				AA0600000000000000000001 /* Airclip */,
 			);
 		};
 /* End PBXProject section */
@@ -270,7 +270,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				AA0200000000000000000001 /* AirClipApp.swift in Sources */,
+				AA0200000000000000000001 /* AirclipApp.swift in Sources */,
 				AA0200000000000000000002 /* AppConfig.swift in Sources */,
 				AA0200000000000000000003 /* StatusBarController.swift in Sources */,
 				AA0200000000000000000004 /* PopoverView.swift in Sources */,
@@ -283,15 +283,15 @@
 				AA020000000000000000000C /* APIClient.swift in Sources */,
 				AA0200000000000000000010 /* DesignTokens.swift in Sources */,
 				AA0200000000000000000011 /* SharedComponents.swift in Sources */,
-				AA020000000000000000001D /* AirClipIcon.swift in Sources */,
-				AA0200000000000000000037 /* AirClipDeviceIcon.swift in Sources */,
+				AA020000000000000000001D /* AirclipIcon.swift in Sources */,
+				AA0200000000000000000037 /* AirclipDeviceIcon.swift in Sources */,
 				AA0200000000000000000012 /* ClipTypeDetector.swift in Sources */,
 				AA0200000000000000000013 /* MainWindowView.swift in Sources */,
 				AA0200000000000000000014 /* PeerConnection.swift in Sources */,
 				AA0200000000000000000015 /* PeerManager.swift in Sources */,
 				AA0200000000000000000016 /* LanServer.swift in Sources */,
 				AA0200000000000000000017 /* LanBrowser.swift in Sources */,
-				AA020000000000000000001A /* AirClipIdentity.swift in Sources */,
+				AA020000000000000000001A /* AirclipIdentity.swift in Sources */,
 				AA020000000000000000001B /* PairingSession.swift in Sources */,
 				AA020000000000000000001C /* PairingClient.swift in Sources */,
 				AA020000000000000000001E /* AppAppearanceStore.swift in Sources */,
@@ -434,13 +434,13 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_ENTITLEMENTS = AirClip/AirClip.entitlements;
+				CODE_SIGN_ENTITLEMENTS = Airclip/Airclip.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				DEAD_CODE_STRIPPING = YES;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
-				INFOPLIST_FILE = AirClip/Resources/Info.plist;
+				INFOPLIST_FILE = Airclip/Resources/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -457,13 +457,13 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_ENTITLEMENTS = AirClip/AirClip.entitlements;
+				CODE_SIGN_ENTITLEMENTS = Airclip/Airclip.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				DEAD_CODE_STRIPPING = YES;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
-				INFOPLIST_FILE = AirClip/Resources/Info.plist;
+				INFOPLIST_FILE = Airclip/Resources/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -479,7 +479,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		AA0500000000000000000005 /* Build configuration list for PBXProject "AirClip" */ = {
+		AA0500000000000000000005 /* Build configuration list for PBXProject "Airclip" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				AA0500000000000000000001 /* Debug */,
@@ -488,7 +488,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		AA0500000000000000000006 /* Build configuration list for PBXNativeTarget "AirClip" */ = {
+		AA0500000000000000000006 /* Build configuration list for PBXNativeTarget "Airclip" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				AA0500000000000000000003 /* Debug */,

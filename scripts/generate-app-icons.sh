@@ -2,7 +2,7 @@
 set -eu
 
 ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
-SOURCE="${1:-$ROOT_DIR/docs/app-icon/AirClipAppIcon.png}"
+SOURCE="${1:-$ROOT_DIR/docs/app-icon/AirclipAppIcon.png}"
 
 if [ ! -f "$SOURCE" ]; then
   echo "Missing source icon: $SOURCE" >&2
@@ -38,7 +38,7 @@ write_ios_catalog() {
 {
   "images" : [
     {
-      "filename" : "AirClipAppIcon-1024.png",
+      "filename" : "AirclipAppIcon-1024.png",
       "idiom" : "ios-marketing",
       "platform" : "ios",
       "size" : "1024x1024"
@@ -50,7 +50,7 @@ write_ios_catalog() {
   }
 }
 JSON
-  make_png 1024 "$catalog/AirClipAppIcon-1024.png"
+  make_png 1024 "$catalog/AirclipAppIcon-1024.png"
 }
 
 write_mac_catalog() {
@@ -61,61 +61,61 @@ write_mac_catalog() {
 {
   "images" : [
     {
-      "filename" : "AirClipAppIcon-16.png",
+      "filename" : "AirclipAppIcon-16.png",
       "idiom" : "mac",
       "scale" : "1x",
       "size" : "16x16"
     },
     {
-      "filename" : "AirClipAppIcon-32.png",
+      "filename" : "AirclipAppIcon-32.png",
       "idiom" : "mac",
       "scale" : "2x",
       "size" : "16x16"
     },
     {
-      "filename" : "AirClipAppIcon-32.png",
+      "filename" : "AirclipAppIcon-32.png",
       "idiom" : "mac",
       "scale" : "1x",
       "size" : "32x32"
     },
     {
-      "filename" : "AirClipAppIcon-64.png",
+      "filename" : "AirclipAppIcon-64.png",
       "idiom" : "mac",
       "scale" : "2x",
       "size" : "32x32"
     },
     {
-      "filename" : "AirClipAppIcon-128.png",
+      "filename" : "AirclipAppIcon-128.png",
       "idiom" : "mac",
       "scale" : "1x",
       "size" : "128x128"
     },
     {
-      "filename" : "AirClipAppIcon-256.png",
+      "filename" : "AirclipAppIcon-256.png",
       "idiom" : "mac",
       "scale" : "2x",
       "size" : "128x128"
     },
     {
-      "filename" : "AirClipAppIcon-256.png",
+      "filename" : "AirclipAppIcon-256.png",
       "idiom" : "mac",
       "scale" : "1x",
       "size" : "256x256"
     },
     {
-      "filename" : "AirClipAppIcon-512.png",
+      "filename" : "AirclipAppIcon-512.png",
       "idiom" : "mac",
       "scale" : "2x",
       "size" : "256x256"
     },
     {
-      "filename" : "AirClipAppIcon-512.png",
+      "filename" : "AirclipAppIcon-512.png",
       "idiom" : "mac",
       "scale" : "1x",
       "size" : "512x512"
     },
     {
-      "filename" : "AirClipAppIcon-1024.png",
+      "filename" : "AirclipAppIcon-1024.png",
       "idiom" : "mac",
       "scale" : "2x",
       "size" : "512x512"
@@ -127,19 +127,19 @@ write_mac_catalog() {
   }
 }
 JSON
-  make_png 16 "$catalog/AirClipAppIcon-16.png"
-  make_png 32 "$catalog/AirClipAppIcon-32.png"
-  make_png 64 "$catalog/AirClipAppIcon-64.png"
-  make_png 128 "$catalog/AirClipAppIcon-128.png"
-  make_png 256 "$catalog/AirClipAppIcon-256.png"
-  make_png 512 "$catalog/AirClipAppIcon-512.png"
-  make_png 1024 "$catalog/AirClipAppIcon-1024.png"
+  make_png 16 "$catalog/AirclipAppIcon-16.png"
+  make_png 32 "$catalog/AirclipAppIcon-32.png"
+  make_png 64 "$catalog/AirclipAppIcon-64.png"
+  make_png 128 "$catalog/AirclipAppIcon-128.png"
+  make_png 256 "$catalog/AirclipAppIcon-256.png"
+  make_png 512 "$catalog/AirclipAppIcon-512.png"
+  make_png 1024 "$catalog/AirclipAppIcon-1024.png"
 }
 
-write_mac_catalog "$ROOT_DIR/mac/AirClip/Assets.xcassets/AppIcon.appiconset"
-write_ios_catalog "$ROOT_DIR/ios/AirClip/Assets.xcassets/AppIcon.appiconset"
+write_mac_catalog "$ROOT_DIR/mac/Airclip/Assets.xcassets/AppIcon.appiconset"
+write_ios_catalog "$ROOT_DIR/ios/Airclip/Assets.xcassets/AppIcon.appiconset"
 
-MAC_ICONSET="$ROOT_DIR/mac/AirClip/Resources/AirClip.iconset"
+MAC_ICONSET="$ROOT_DIR/mac/Airclip/Resources/Airclip.iconset"
 mkdir -p "$MAC_ICONSET"
 make_png 16 "$MAC_ICONSET/icon_16x16.png"
 make_png 32 "$MAC_ICONSET/icon_16x16@2x.png"
@@ -151,7 +151,7 @@ make_png 256 "$MAC_ICONSET/icon_256x256.png"
 make_png 512 "$MAC_ICONSET/icon_256x256@2x.png"
 make_png 512 "$MAC_ICONSET/icon_512x512.png"
 make_png 1024 "$MAC_ICONSET/icon_512x512@2x.png"
-iconutil -c icns "$MAC_ICONSET" -o "$ROOT_DIR/mac/AirClip/Resources/AirClip.icns"
+iconutil -c icns "$MAC_ICONSET" -o "$ROOT_DIR/mac/Airclip/Resources/Airclip.icns"
 
 python3 - "$SOURCE" "$ROOT_DIR/android/app/src/main/res" <<'PY'
 import os

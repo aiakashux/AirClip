@@ -16,7 +16,7 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:label="@string/app_name"
         android:networkSecurityConfig="@xml/network_security_config"
-        android:theme="@style/Theme.AirClip">
+        android:theme="@style/Theme.Airclip">
 
         <activity
             android:name=".MainActivity"
@@ -30,7 +30,7 @@
         </activity>
 
         <activity
-            android:name=".pairing.AirClipCaptureActivity"
+            android:name=".pairing.AirclipCaptureActivity"
             android:clearTaskOnLaunch="true"
             android:exported="false"
             android:screenOrientation="portrait"
@@ -39,7 +39,7 @@
             android:windowSoftInputMode="stateAlwaysHidden" />
 
         <activity
-            android:name=".share.AirClipShareActivity"
+            android:name=".share.AirclipShareActivity"
             android:excludeFromRecents="true"
             android:exported="true"
             android:noHistory="true"
@@ -87,7 +87,7 @@
         </provider>
 
         <!-- Home-screen widget -->
-        <receiver android:name=".widget.AirClipWidget" android:exported="true">
+        <receiver android:name=".widget.AirclipWidget" android:exported="true">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
                 <action android:name="com.airclip.airclip.WIDGET_PASTE" />

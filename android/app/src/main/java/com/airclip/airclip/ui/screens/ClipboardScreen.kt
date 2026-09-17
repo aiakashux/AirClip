@@ -7,7 +7,18 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
 import android.util.LruCache
+import androidx.annotation.DrawableRes
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.foundation.Image
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -45,6 +56,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
@@ -52,23 +64,25 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import com.airclip.airclip.R
-import com.airclip.airclip.AirClipIdentity
+import com.airclip.airclip.AirclipIdentity
 import com.airclip.airclip.ClipItemRecord
 import com.airclip.airclip.ClipKind
 import com.airclip.airclip.ImageClipboard
@@ -77,7 +91,11 @@ import com.airclip.airclip.SyncMode
 import com.airclip.airclip.parseClipboardColor
 import com.airclip.airclip.ui.theme.*
 import coil.compose.AsyncImage
+import coil.compose.AsyncImagePainter
+import coil.compose.rememberAsyncImagePainter
+import coil.request.ImageRequest
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
@@ -103,16 +121,19 @@ fun ClipboardScreen(
     uiState: ClipboardTabUiState,
     listState: LazyListState,
 ) {
-    val c = LocalAirClipColors.current
-    val snackbarHostState = remember { SnackbarHostState() }
+    val c = LocalAirclipColors.current
+    val alertHostState = LocalAirclipAlertHostState.current
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     var searchQuery by remember { mutableStateOf("") }
     var selectedKind by remember { mutableStateOf<ClipKind?>(null) }
     var savedOnly by remember { mutableStateOf(false) }
     var searchExpanded by remember { mutableStateOf(false) }
+    var filtersVisible by remember { mutableStateOf(false) }
     var previewRecord by remember { mutableStateOf<ClipItemRecord?>(null) }
-    val collapseRangePx = with(LocalDensity.current) { 112.dp.toPx() }
+    val collapseRangePx = with(LocalDensity.current) {
+        (if (filtersVisible) 116.dp else 56.dp).toPx()
+    }
     val topAppBarState = rememberTopAppBarState(initialHeightOffsetLimit = -collapseRangePx)
     val topAppBarScrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior(
         state = topAppBarState,
@@ -125,12 +146,6 @@ fun ClipboardScreen(
 
     LaunchedEffect(searchExpanded) {
         if (searchExpanded) topAppBarState.heightOffset = 0f
-    }
-
-    val copyRecord: (ClipItemRecord) -> Unit = { record ->
-        viewModel.onHistoryItemCopyStarted(record)
-        copyRecordToClipboard(context, record)
-        scope.launch { snackbarHostState.showSnackbar("Copied", duration = SnackbarDuration.Short) }
     }
 
     val groupedItems = remember(uiState.clipHistory, selectedKind, savedOnly, searchQuery) {
@@ -166,7 +181,6 @@ fun ClipboardScreen(
     }
 
     Scaffold(
-        snackbarHost = { SnackbarHost(snackbarHostState) },
         containerColor = c.bgBase,
         contentWindowInsets = WindowInsets(0.dp),
     ) { padding ->
@@ -180,6 +194,7 @@ fun ClipboardScreen(
                 syncMode = uiState.syncMode,
                 collapseFraction = if (searchExpanded) 0f else topAppBarState.collapsedFraction,
                 searchExpanded = searchExpanded,
+                filtersVisible = filtersVisible,
                 onSearchExpandedChange = { expanded ->
                     searchExpanded = expanded
                     if (!expanded) {
@@ -188,6 +203,7 @@ fun ClipboardScreen(
                         savedOnly = false
                     }
                 },
+                onFiltersVisibleChange = { filtersVisible = !filtersVisible },
                 searchQuery = searchQuery,
                 onSearchQueryChange = { searchQuery = it },
                 selectedKind = selectedKind,
@@ -197,30 +213,33 @@ fun ClipboardScreen(
                 onCaptureClipboard = { viewModel.onCaptureClipboard() },
             )
 
-            Box(modifier = Modifier.weight(1f)) {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    state = listState,
-                    contentPadding = PaddingValues(bottom = 24.dp),
-                ) {
-                    if (groupedItems.all.isNotEmpty()) {
+            AnimatedContent(
+                targetState = groupedItems.all.isEmpty(),
+                modifier = Modifier.weight(1f),
+                transitionSpec = { fadeIn(tween(150)) togetherWith fadeOut(tween(120)) },
+                label = "clipboard results",
+            ) { isEmpty ->
+                if (!isEmpty) {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        state = listState,
+                        contentPadding = PaddingValues(bottom = 24.dp),
+                    ) {
                         val openRecord: (ClipItemRecord) -> Unit = { previewRecord = it }
                         feedSection("Today", groupedItems.today, openRecord)
                         feedSection("Yesterday", groupedItems.yesterday, openRecord)
                         feedSection("This Week", groupedItems.thisWeek, openRecord)
                         feedSection("Earlier", groupedItems.earlier, openRecord)
                     }
-                }
-
-                if (groupedItems.all.isEmpty()) {
-                    AirClipEmptyState(
+                } else {
+                    AirclipEmptyState(
                         iconRes = R.drawable.ic_home_empty_state,
                         text = if (savedOnly) {
                             "No saved clips"
                         } else if (searchQuery.isNotBlank() || selectedKind != null) {
                             "No results"
                         } else {
-                            "Airclip is ready. Copy on one device, to use it on another."
+                            "Copy something on either device. It will appear here automatically."
                         },
                     )
                 }
@@ -232,7 +251,10 @@ fun ClipboardScreen(
         ClipPreviewSheet(
             record = record,
             onDismiss = { previewRecord = null },
-            onCopy = { copyRecord(record) },
+            onCopy = {
+                viewModel.onHistoryItemCopyStarted(record)
+                copyRecordToClipboard(context, record)
+            },
             onOpenLink = { openRecordLink(context, record) },
             onSave = {
                 viewModel.onToggleSaved(record)
@@ -243,12 +265,11 @@ fun ClipboardScreen(
                 previewRecord = null
                 viewModel.onDeleteClip(record) {
                     scope.launch {
-                        val result = snackbarHostState.showSnackbar(
+                        alertHostState.show(
                             message = "Deleted",
                             actionLabel = "Undo",
-                            duration = SnackbarDuration.Long,
+                            action = { viewModel.onRestoreClip(restorable) },
                         )
-                        if (result == SnackbarResult.ActionPerformed) viewModel.onRestoreClip(restorable)
                     }
                 }
             },
@@ -261,7 +282,9 @@ private fun HomePageHeader(
     syncMode: SyncMode,
     collapseFraction: Float,
     searchExpanded: Boolean,
+    filtersVisible: Boolean,
     onSearchExpandedChange: (Boolean) -> Unit,
+    onFiltersVisibleChange: () -> Unit,
     searchQuery: String,
     onSearchQueryChange: (String) -> Unit,
     selectedKind: ClipKind?,
@@ -271,7 +294,7 @@ private fun HomePageHeader(
     onCaptureClipboard: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val c = LocalAirClipColors.current
+    val c = LocalAirclipColors.current
     val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val progress = collapseFraction.coerceIn(0f, 1f)
     Column(
@@ -283,21 +306,22 @@ private fun HomePageHeader(
         BoxWithConstraints(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(lerp(200.dp, 88.dp, progress))
+                .height(lerp(if (filtersVisible) 196.dp else 136.dp, 80.dp, progress))
                 .clipToBounds(),
         ) {
             Text(
                 "Airclip",
-                fontSize = (36f - 4f * progress).sp,
-                lineHeight = 44.sp,
+                fontSize = 36.sp,
+                lineHeight = 40.sp,
                 fontFamily = BearyFontFamily,
                 fontWeight = FontWeight.Normal,
                 color = c.textPrimary,
-                letterSpacing = 0.sp,
+                letterSpacing = (-0.6).sp,
                 modifier = Modifier
-                    .offset(x = 24.dp)
-                    .height(88.dp)
-                    .wrapContentHeight(Alignment.CenterVertically),
+                    .offset(x = 20.dp)
+                    .height(80.dp)
+                    .wrapContentHeight(Alignment.CenterVertically)
+                    .semantics { heading() },
             )
 
             if (syncMode == SyncMode.MANUAL_ONLY && !searchExpanded) {
@@ -305,11 +329,11 @@ private fun HomePageHeader(
                     onClick = onCaptureClipboard,
                     modifier = Modifier
                         .align(Alignment.TopEnd)
-                        .padding(top = 16.dp, end = 72.dp)
+                        .padding(top = 16.dp, end = 68.dp)
                         .graphicsLayer { alpha = 1f - progress },
                 ) {
                     Icon(
-                        painter = painterResource(R.drawable.ic_home_clipboard_sync),
+                        painter = painterResource(R.drawable.ic_settings_database_sync),
                         contentDescription = "Sync clipboard",
                         tint = c.textSecondary,
                         modifier = Modifier.size(24.dp),
@@ -317,41 +341,52 @@ private fun HomePageHeader(
                 }
             }
 
-            val searchWidth = lerp(maxWidth - 48.dp, 56.dp, progress)
-            val searchX = lerp(24.dp, maxWidth - 72.dp, progress)
-            val searchY = lerp(88.dp, 16.dp, progress)
+            val searchWidth = lerp(maxWidth - 40.dp, 56.dp, progress)
+            val searchX = lerp(20.dp, maxWidth - 76.dp, progress)
+            val searchY = lerp(80.dp, 12.dp, progress)
             Box(
                 modifier = Modifier
                     .offset(x = searchX, y = searchY)
                     .width(searchWidth)
                     .height(56.dp),
             ) {
-                if (searchExpanded) {
-                    FeedSearchBar(
-                        value = searchQuery,
-                        onValueChange = onSearchQueryChange,
-                        onClose = { onSearchExpandedChange(false) },
-                    )
-                } else {
-                    HomeSearchPrompt(
-                        collapseFraction = progress,
-                        onOpen = { onSearchExpandedChange(true) },
-                        onFilter = { onSearchExpandedChange(true) },
-                    )
+                Crossfade(targetState = searchExpanded, animationSpec = tween(120), label = "search handoff") { expanded ->
+                    if (expanded) {
+                        FeedSearchBar(
+                            value = searchQuery,
+                            onValueChange = onSearchQueryChange,
+                            onClose = { onSearchExpandedChange(false) },
+                            filtersVisible = filtersVisible,
+                            onFilter = onFiltersVisibleChange,
+                        )
+                    } else {
+                        HomeSearchPrompt(
+                            collapseFraction = progress,
+                            onOpen = { onSearchExpandedChange(true) },
+                            filtersVisible = filtersVisible,
+                            onFilter = onFiltersVisibleChange,
+                        )
+                    }
                 }
             }
 
-            FeedFilterRow(
-                selectedKind = selectedKind,
-                onSelectedKind = onSelectedKind,
-                savedOnly = savedOnly,
-                onSavedOnly = onSavedOnly,
-                modifier = Modifier
-                    .offset(y = 144.dp)
-                    .height(56.dp)
-                    .fillMaxWidth()
-                    .graphicsLayer { alpha = (1f - progress / 0.55f).coerceIn(0f, 1f) },
-            )
+            androidx.compose.animation.AnimatedVisibility(
+                visible = filtersVisible,
+                enter = fadeIn(tween(180)) + expandVertically(tween(180)),
+                exit = fadeOut(tween(120)) + shrinkVertically(tween(140)),
+            ) {
+                FeedFilterRow(
+                    selectedKind = selectedKind,
+                    onSelectedKind = onSelectedKind,
+                    savedOnly = savedOnly,
+                    onSavedOnly = onSavedOnly,
+                    modifier = Modifier
+                        .offset(y = 136.dp)
+                        .height(60.dp)
+                        .fillMaxWidth()
+                        .graphicsLayer { alpha = (1f - progress / 0.55f).coerceIn(0f, 1f) },
+                )
+            }
         }
     }
 }
@@ -360,17 +395,25 @@ private fun HomePageHeader(
 private fun HomeSearchPrompt(
     collapseFraction: Float,
     onOpen: () -> Unit,
+    filtersVisible: Boolean,
     onFilter: () -> Unit,
 ) {
-    val c = LocalAirClipColors.current
+    val c = LocalAirclipColors.current
     val detailAlpha = (1f - collapseFraction / 0.65f).coerceIn(0f, 1f)
+    val searchBackground = if (c.isDark) c.bgElevated else Color(0xFFE3E5E8).copy(alpha = 0.2f)
+    val searchBorder = if (c.isDark) c.borderSubtle else Color(0xFFE9EAEC)
+    val placeholderColor = if (c.isDark) c.textTertiary else Color(0xFF9D95A8)
 
     Row(
         modifier = Modifier
             .fillMaxSize()
             .clip(RoundedCornerShape(28.dp))
-            .background(c.bgElevated.copy(alpha = 1f - collapseFraction))
-            .border(1.dp, c.borderSubtle.copy(alpha = 1f - collapseFraction), RoundedCornerShape(28.dp))
+            .background(searchBackground.copy(alpha = searchBackground.alpha * (1f - collapseFraction)))
+            .border(
+                1.dp,
+                searchBorder.copy(alpha = searchBorder.alpha * (1f - collapseFraction)),
+                RoundedCornerShape(28.dp),
+            )
             .clickable(role = Role.Button, onClick = onOpen)
             .padding(4.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -385,7 +428,7 @@ private fun HomeSearchPrompt(
         }
         Text(
             "Search words or type",
-            color = c.textTertiary,
+            color = placeholderColor,
             fontSize = 16.sp,
             lineHeight = 24.sp,
             maxLines = 1,
@@ -400,9 +443,9 @@ private fun HomeSearchPrompt(
             modifier = Modifier.graphicsLayer { alpha = detailAlpha },
         ) {
             Icon(
-                painter = painterResource(R.drawable.ic_home_filter),
+                painter = painterResource(if (filtersVisible) R.drawable.ic_home_filter_active else R.drawable.ic_home_filter),
                 contentDescription = "Show filters",
-                tint = c.textSecondary,
+                tint = if (filtersVisible) Color.Unspecified else c.textSecondary,
                 modifier = Modifier.size(24.dp),
             )
         }
@@ -431,7 +474,7 @@ private fun LazyListScope.feedSection(
 
 @Composable
 private fun FeedSectionHeader(title: String) {
-    val c = LocalAirClipColors.current
+    val c = LocalAirclipColors.current
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -446,7 +489,7 @@ private fun FeedSectionHeader(title: String) {
             color = c.textSecondary,
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 24.dp, vertical = 12.dp),
+                .padding(start = 24.dp, end = 24.dp, bottom = 12.dp),
         )
         HorizontalDivider(thickness = 1.dp, color = c.borderSubtle)
     }
@@ -459,9 +502,10 @@ private fun FeedSearchBar(
     value: String,
     onValueChange: (String) -> Unit,
     onClose: () -> Unit,
-    modifier: Modifier = Modifier,
+    filtersVisible: Boolean,
+    onFilter: () -> Unit,
 ) {
-    val c = LocalAirClipColors.current
+    val c = LocalAirclipColors.current
     val focusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
 
@@ -471,7 +515,7 @@ private fun FeedSearchBar(
     }
 
     Row(
-        modifier = modifier
+        modifier = Modifier
             .fillMaxWidth()
             .height(56.dp)
             .clip(RoundedCornerShape(28.dp))
@@ -522,14 +566,11 @@ private fun FeedSearchBar(
             },
         )
 
-        Box(
-            modifier = Modifier.size(40.dp),
-            contentAlignment = Alignment.Center,
-        ) {
+        IconButton(onClick = onFilter, modifier = Modifier.size(48.dp)) {
             Icon(
-                painter = painterResource(R.drawable.ic_home_filter_active),
-                contentDescription = null,
-                tint = Color.Unspecified,
+                painter = painterResource(if (filtersVisible) R.drawable.ic_home_filter_active else R.drawable.ic_home_filter),
+                contentDescription = "Show filters",
+                tint = if (filtersVisible) Color.Unspecified else c.textSecondary,
                 modifier = Modifier.size(24.dp),
             )
         }
@@ -549,7 +590,7 @@ private fun FeedFilterRow(
     LazyRow(
         modifier = modifier,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
-        contentPadding = PaddingValues(horizontal = 24.dp, vertical = 9.dp),
+        contentPadding = PaddingValues(horizontal = 24.dp, vertical = 14.dp),
     ) {
         item {
             FeedChip("All", selectedKind == null && !savedOnly) {
@@ -567,7 +608,7 @@ private fun FeedFilterRow(
 
 @Composable
 private fun FeedChip(label: String, selected: Boolean, onClick: () -> Unit) {
-    val c = LocalAirClipColors.current
+    val c = LocalAirclipColors.current
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
@@ -576,15 +617,16 @@ private fun FeedChip(label: String, selected: Boolean, onClick: () -> Unit) {
         label = "ChipScale",
     )
     val bg by animateColorAsState(
-        if (selected) c.blue.copy(alpha = 0.08f) else Color.Transparent,
+        if (selected) c.accent.copy(alpha = 0.08f) else Color.Transparent,
         tween(150),
         "ChipBg",
     )
-    val stroke by animateColorAsState(if (selected) c.blue else c.borderDefault, tween(150), "ChipStroke")
-    val tc by animateColorAsState(if (selected) c.blue else c.textSecondary, tween(150), "ChipTc")
+    val stroke by animateColorAsState(if (selected) c.accent else c.borderDefault, tween(150), "ChipStroke")
+    val tc by animateColorAsState(if (selected) c.accent else c.textSecondary, tween(150), "ChipTc")
 
     Box(
         modifier = Modifier
+            .height(32.dp)
             .graphicsLayer { scaleX = scale; scaleY = scale }
             .clip(RoundedCornerShape(20.dp))
             .background(color = bg)
@@ -599,12 +641,13 @@ private fun FeedChip(label: String, selected: Boolean, onClick: () -> Unit) {
                 role = Role.Button,
                 onClick = onClick,
             )
-            .padding(horizontal = 13.dp, vertical = 7.dp),
+            .padding(horizontal = 13.dp),
+        contentAlignment = Alignment.Center,
     ) {
         Text(
             label,
             fontSize = 14.sp,
-            lineHeight = 16.sp,
+            lineHeight = 20.sp,
             fontWeight = FontWeight.Normal,
             letterSpacing = 0.125.sp,
             color = tc,
@@ -620,6 +663,7 @@ private fun FeedClipItem(
     record: ClipItemRecord,
     onOpen: () -> Unit,
     onLongPress: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val kind = recordKind(record)
     val timeStr = remember(record.timestampMs) { formatTime(record.timestampMs) }
@@ -634,7 +678,7 @@ private fun FeedClipItem(
     )
 
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .graphicsLayer { this.alpha = alpha }
             .combinedClickable(
@@ -662,22 +706,44 @@ private fun FeedClipItem(
 
 @Composable
 private fun TextFeedItem(record: ClipItemRecord, sourceName: String, timeStr: String) {
-    val c = LocalAirClipColors.current
+    val c = LocalAirclipColors.current
     Column {
-        Column(Modifier.padding(vertical = 20.dp)) {
-            Text(
-                record.displayText,
-                fontSize = 18.sp,
-                lineHeight = 27.sp,
-                letterSpacing = 0.15.sp,
-                color = c.textPrimary,
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Spacer(Modifier.height(8.dp))
-            ItemMeta(sourceName, timeStr)
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.padding(vertical = 20.dp),
+        ) {
+            FeedTypeBadge(R.drawable.ic_clip_type_text, c.green)
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    record.displayText,
+                    fontSize = 18.sp,
+                    lineHeight = 27.sp,
+                    letterSpacing = 0.15.sp,
+                    color = c.textPrimary,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.height(8.dp))
+                ItemMeta(sourceName, timeStr)
+            }
         }
         HorizontalDivider(thickness = 1.dp, color = c.borderSubtle)
+    }
+}
+
+@Composable
+private fun FeedTypeBadge(@DrawableRes iconRes: Int, tint: Color) {
+    val c = LocalAirclipColors.current
+    val shape = RoundedCornerShape(6.dp)
+    Box(
+        modifier = Modifier
+            .size(28.dp)
+            .clip(shape)
+            .background(tint.copy(alpha = 0.12f))
+            .border(0.5.dp, c.borderDefault, shape),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(painterResource(iconRes), contentDescription = null, tint = tint, modifier = Modifier.size(18.dp))
     }
 }
 
@@ -687,7 +753,7 @@ private data class LinkPreviewData(val url: String, val title: String, val site:
 private fun rememberLinkPreview(record: ClipItemRecord): LinkPreviewData {
     val lines = remember(record.displayText) { record.displayText.lines().map(String::trim).filter(String::isNotBlank) }
     val url = remember(lines, record.displayText) {
-        lines.firstOrNull { it.startsWith("http://") || it.startsWith("https://") } ?: record.displayText
+        UrlMetadataLoader.urlsIn(record.displayText).firstOrNull() ?: record.displayText
     }
     val fallbackTitle = remember(lines, url) {
         lines.firstOrNull { it != url } ?: url.removePrefix("https://").removePrefix("http://")
@@ -704,54 +770,101 @@ private fun rememberLinkPreview(record: ClipItemRecord): LinkPreviewData {
 }
 
 @Composable
+private fun rememberEmbeddedLinkPreview(text: String): LinkPreviewData? {
+    return produceState<LinkPreviewData?>(initialValue = null, key1 = text) {
+        val (url, metadata) = UrlMetadataLoader.firstPreviewWithImage(text) ?: return@produceState
+        value = LinkPreviewData(url, metadata.title, metadata.site, metadata.imageUrl)
+    }.value
+}
+
+@Composable
+private fun LinkPreviewImage(preview: LinkPreviewData, modifier: Modifier = Modifier) {
+    val c = LocalAirclipColors.current
+    val shape = RoundedCornerShape(12.dp)
+    val painter = rememberAsyncImagePainter(
+        model = ImageRequest.Builder(LocalContext.current)
+            .data(preview.imageUrl).size(1200).build(),
+    )
+    val drawable = (painter.state as? AsyncImagePainter.State.Success)?.result?.drawable
+    val ready = drawable != null && drawable.intrinsicWidth > 0 && drawable.intrinsicHeight > 0
+    AnimatedVisibility(
+        visible = ready,
+        enter = expandVertically(animationSpec = tween(240, easing = CubicBezierEasing(0.23f, 1f, 0.32f, 1f))) + fadeIn(tween(180)),
+        exit = shrinkVertically(tween(160)) + fadeOut(tween(120)),
+        modifier = modifier,
+    ) {
+        if (drawable != null) {
+            Image(
+                painter = painter,
+                contentDescription = "Preview image from ${preview.site}",
+                contentScale = ContentScale.FillWidth,
+                modifier = Modifier.fillMaxWidth()
+                    .padding(bottom = 16.dp)
+                    .aspectRatio(drawable.intrinsicWidth.toFloat() / drawable.intrinsicHeight.coerceAtLeast(1))
+                    .clip(shape)
+                    .background(if (c.isDark) c.bgElevated else Color(0xFFF5F5F5)),
+            )
+        }
+    }
+}
+
+@Composable
 private fun LinkPreview(preview: LinkPreviewData, modifier: Modifier = Modifier) {
-    val c = LocalAirClipColors.current
-    Row(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Box(
-            modifier = Modifier
-                .size(96.dp)
-                .clip(RoundedCornerShape(10.dp))
-                .background(c.bgElevated)
-                .border(0.5.dp, c.borderSubtle, RoundedCornerShape(10.dp)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(Icons.Outlined.Link, null, tint = c.textTertiary, modifier = Modifier.size(28.dp))
-            preview.imageUrl?.let {
-                AsyncImage(
-                    model = it,
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.matchParentSize(),
-                )
-            }
+    val c = LocalAirclipColors.current
+
+    Column(modifier = modifier) {
+        if (preview.imageUrl != null) {
+            LinkPreviewImage(preview)
         }
         Column(
-            modifier = Modifier.weight(1f).align(Alignment.CenterVertically),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Text(
                 preview.title,
-                fontSize = 18.sp,
-                lineHeight = 27.sp,
+                fontSize = 20.sp,
+                lineHeight = 28.sp,
                 fontWeight = FontWeight.Medium,
                 color = c.textPrimary,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
             Text(preview.site, fontSize = 14.sp, lineHeight = 20.sp, color = c.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(preview.url, fontSize = 13.sp, lineHeight = 18.sp, color = c.textSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
     }
 }
 
 @Composable
 private fun UrlFeedItem(record: ClipItemRecord, sourceName: String, timeStr: String) {
-    val c = LocalAirClipColors.current
+    val c = LocalAirclipColors.current
     val preview = rememberLinkPreview(record)
     Column {
-        Column(Modifier.padding(vertical = 20.dp)) {
-            LinkPreview(preview, Modifier.fillMaxWidth())
-            Spacer(Modifier.height(8.dp))
-            ItemMeta(sourceName, timeStr)
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.padding(vertical = 20.dp),
+        ) {
+            FeedTypeBadge(R.drawable.ic_clip_type_link, c.accent)
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    preview.title,
+                    fontSize = 18.sp,
+                    lineHeight = 27.sp,
+                    letterSpacing = 0.15.sp,
+                    color = c.textPrimary,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    preview.url,
+                    fontSize = 13.sp,
+                    lineHeight = 18.sp,
+                    color = c.textSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.height(6.dp))
+                ItemMeta(sourceName, timeStr)
+            }
         }
         HorizontalDivider(thickness = 1.dp, color = c.borderSubtle)
     }
@@ -759,7 +872,7 @@ private fun UrlFeedItem(record: ClipItemRecord, sourceName: String, timeStr: Str
 
 @Composable
 private fun ImageFeedItem(record: ClipItemRecord, sourceName: String, timeStr: String) {
-    val c = LocalAirClipColors.current
+    val c = LocalAirclipColors.current
     val bitmap = rememberPreviewBitmap(record)
     val name = record.imageFileName ?: record.displayText.takeIf { !it.startsWith("Image ") } ?: "Image"
     Column {
@@ -813,7 +926,7 @@ private fun ImagePreviewBox(
     contentScale: ContentScale = ContentScale.Crop,
     modifier: Modifier = Modifier,
 ) {
-    val c = LocalAirClipColors.current
+    val c = LocalAirclipColors.current
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(10.dp))
@@ -841,7 +954,7 @@ private fun ImagePreviewBox(
 
 @Composable
 private fun ColorFeedItem(record: ClipItemRecord, sourceName: String, timeStr: String) {
-    val c = LocalAirClipColors.current
+    val c = LocalAirclipColors.current
     val parsedColor = parseClipboardColor(record.displayText)?.let(::Color) ?: Color(0xFF808080)
 
     Column {
@@ -877,7 +990,7 @@ private fun ColorFeedItem(record: ClipItemRecord, sourceName: String, timeStr: S
 
 @Composable
 private fun ItemMeta(sourceName: String, timeStr: String) {
-    val c = LocalAirClipColors.current
+    val c = LocalAirclipColors.current
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -915,24 +1028,49 @@ private fun ClipPreviewSheet(
     onSave: () -> Unit,
     onDelete: () -> Unit,
 ) {
-    val c = LocalAirClipColors.current
+    val c = LocalAirclipColors.current
     val kind = recordKind(record)
     val bitmap = if (kind == ClipKind.IMAGE) rememberPreviewBitmap(record) else null
     val linkPreview = if (kind == ClipKind.URL) rememberLinkPreview(record) else null
+    val embeddedLinkPreview = if (kind == ClipKind.TEXT) rememberEmbeddedLinkPreview(record.displayText) else null
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var copied by remember(record.messageId) { mutableStateOf(false) }
+    var copyFeedbackVersion by remember(record.messageId) { mutableIntStateOf(0) }
+    val copyButtonColor by animateColorAsState(
+        targetValue = if (copied) Color(0xFF246144) else c.textPrimary,
+        animationSpec = tween(150),
+        label = "copy button feedback",
+    )
+    val copyButtonContentColor by animateColorAsState(
+        targetValue = if (copied) Color.White else c.bgBase,
+        animationSpec = tween(150),
+        label = "copy button content feedback",
+    )
+    val copyMorphProgress by animateFloatAsState(
+        targetValue = if (copied) 1f else 0f,
+        animationSpec = tween(180),
+        label = "copy icon confirmation",
+    )
+
+    LaunchedEffect(copyFeedbackVersion) {
+        if (copyFeedbackVersion == 0) return@LaunchedEffect
+        delay(1_400)
+        copied = false
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        containerColor = c.bgFloating,
+        containerColor = if (c.isDark) c.bgFloating else Color.White,
+        tonalElevation = 0.dp,
         contentColor = c.textPrimary,
+        dragHandle = { AirclipSheetHandle() },
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .fillMaxHeight(0.86f)
-                .navigationBarsPadding()
-                .padding(horizontal = 24.dp, vertical = 20.dp),
+                .padding(horizontal = 24.dp)
+                .padding(bottom = 20.dp),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -946,7 +1084,8 @@ private fun ClipPreviewSheet(
 
             Spacer(Modifier.height(20.dp))
 
-            Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+            Box(modifier = Modifier.fillMaxWidth().weight(1f, fill = false)
+                .verticalScroll(rememberScrollState())) {
                 when (kind) {
                     ClipKind.URL -> linkPreview?.let { LinkPreview(it, Modifier.fillMaxWidth()) }
                     ClipKind.IMAGE -> Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -969,16 +1108,21 @@ private fun ClipPreviewSheet(
                         }
                     }
                     else -> SelectionContainer {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(max = 440.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(c.bgElevated)
-                                .verticalScroll(rememberScrollState())
-                                .padding(16.dp),
-                        ) {
-                            Text(record.displayText, fontSize = 18.sp, lineHeight = 28.sp, color = c.textPrimary)
+                        Column {
+                            embeddedLinkPreview?.let {
+                                LinkPreviewImage(it)
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(max = 440.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(if (c.isDark) c.bgElevated else Color(0xFFF5F5F5))
+                                    .verticalScroll(rememberScrollState())
+                                    .padding(16.dp),
+                            ) {
+                                Text(record.displayText, fontSize = 18.sp, lineHeight = 28.sp, color = c.textPrimary)
+                            }
                         }
                     }
                 }
@@ -991,43 +1135,103 @@ private fun ClipPreviewSheet(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Button(
-                    onClick = onCopy,
+                    onClick = {
+                        onCopy()
+                        copied = true
+                        copyFeedbackVersion++
+                    },
                     modifier = Modifier
                         .weight(1f)
                         .height(52.dp),
                     shape = RoundedCornerShape(12.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = c.textPrimary,
-                        contentColor = c.bgBase,
+                        containerColor = copyButtonColor,
+                        contentColor = copyButtonContentColor,
                     ),
                 ) {
-                    Icon(Icons.Outlined.ContentCopy, contentDescription = null, modifier = Modifier.size(20.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Copy")
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CopyConfirmationIcon(
+                            progress = copyMorphProgress,
+                            tint = copyButtonContentColor,
+                            modifier = Modifier.size(22.dp),
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Crossfade(targetState = copied, animationSpec = tween(150), label = "copy confirmation") { isCopied ->
+                            Text(if (isCopied) "Copied" else "Copy")
+                        }
+                    }
                 }
                 if (kind == ClipKind.URL) {
-                    PreviewIconButton(Icons.AutoMirrored.Outlined.OpenInNew, "Visit link", onOpenLink)
+                    PreviewResourceIconButton(
+                        R.drawable.ic_clip_open_external,
+                        "Visit link",
+                        onOpenLink,
+                        c.textSecondary,
+                        iconSize = 22.dp,
+                    )
                 }
-                PreviewIconButton(
-                    icon = if (record.isSaved) Icons.Outlined.Bookmark else Icons.Outlined.BookmarkBorder,
-                    description = if (record.isSaved) "Remove from saved" else "Save",
-                    onClick = onSave,
-                    tint = if (record.isSaved) c.blue else c.textSecondary,
-                )
-                PreviewIconButton(Icons.Outlined.Delete, "Delete", onDelete, c.destructive)
+                Crossfade(targetState = record.isSaved, animationSpec = tween(120), label = "preview save") { saved ->
+                    PreviewResourceIconButton(
+                        iconRes = if (saved) R.drawable.ic_clip_unsave else R.drawable.ic_clip_save,
+                        description = if (saved) "Remove from saved" else "Save",
+                        onClick = onSave,
+                        tint = if (saved) c.accent else c.textSecondary,
+                    )
+                }
+                PreviewResourceIconButton(R.drawable.ic_clip_delete, "Delete", onDelete, c.destructive)
             }
         }
     }
 }
 
 @Composable
-private fun PreviewIconButton(
-    icon: ImageVector,
+private fun CopyConfirmationIcon(
+    progress: Float,
+    tint: Color,
+    modifier: Modifier = Modifier,
+) {
+    Box(modifier = modifier, contentAlignment = Alignment.Center) {
+        Icon(
+            painter = painterResource(R.drawable.ic_clip_copy),
+            contentDescription = null,
+            tint = tint,
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    alpha = 1f - progress
+                    scaleX = 1f - (0.04f * progress)
+                    scaleY = 1f - (0.04f * progress)
+                },
+        )
+        Canvas(Modifier.fillMaxSize()) {
+            val start = Offset(size.width * 0.22f, size.height * 0.53f)
+            val corner = Offset(size.width * 0.43f, size.height * 0.74f)
+            val end = Offset(size.width * 0.80f, size.height * 0.30f)
+            val stroke = Stroke(width = 1.9.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
+            fun between(from: Offset, to: Offset, fraction: Float) = Offset(
+                from.x + ((to.x - from.x) * fraction),
+                from.y + ((to.y - from.y) * fraction),
+            )
+
+            if (progress > 0f && progress <= 0.38f) {
+                drawLine(tint, start, between(start, corner, progress / 0.38f), stroke.width, StrokeCap.Round)
+            } else if (progress > 0f) {
+                drawLine(tint, start, corner, stroke.width, StrokeCap.Round)
+                drawLine(tint, corner, between(corner, end, (progress - 0.38f) / 0.62f), stroke.width, StrokeCap.Round)
+            }
+        }
+    }
+}
+
+@Composable
+private fun PreviewResourceIconButton(
+    @DrawableRes iconRes: Int,
     description: String,
     onClick: () -> Unit,
     tint: Color = Color.Unspecified,
+    iconSize: Dp = 24.dp,
 ) {
-    val c = LocalAirClipColors.current
+    val c = LocalAirclipColors.current
     IconButton(
         onClick = onClick,
         modifier = Modifier
@@ -1035,10 +1239,10 @@ private fun PreviewIconButton(
             .border(1.dp, c.borderDefault, RoundedCornerShape(12.dp)),
     ) {
         Icon(
-            icon,
+            painter = painterResource(iconRes),
             contentDescription = description,
             tint = if (tint == Color.Unspecified) c.textSecondary else tint,
-            modifier = Modifier.size(22.dp),
+            modifier = Modifier.size(iconSize),
         )
     }
 }
@@ -1048,7 +1252,7 @@ private fun PreviewIconButton(
 private fun copyRecordToClipboard(context: Context, record: ClipItemRecord) {
     if (runCatching { ImageClipboard.copy(context, record) }.getOrDefault(false)) return
     val mgr = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-    mgr.setPrimaryClip(ClipData.newPlainText("AirClip", record.displayText))
+    mgr.setPrimaryClip(ClipData.newPlainText("Airclip", record.displayText))
 }
 
 private fun isToday(timestampMs: Long, now: Long): Boolean {
@@ -1117,10 +1321,10 @@ private fun recordMatchesSearch(record: ClipItemRecord, query: String): Boolean 
 }
 
 private fun sourceNameFor(deviceId: String): String =
-    if (deviceId == AirClipIdentity.deviceId) {
+    if (deviceId == AirclipIdentity.deviceId) {
         "This device"
     } else {
-        AirClipIdentity.deviceNameFor(deviceId) ?: "Remote"
+        AirclipIdentity.deviceNameFor(deviceId) ?: "Remote"
     }
 
 private fun recordKind(record: ClipItemRecord): ClipKind =

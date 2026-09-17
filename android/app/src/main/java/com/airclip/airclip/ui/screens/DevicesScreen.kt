@@ -1,21 +1,39 @@
 package com.airclip.airclip.ui.screens
 
 import android.Manifest
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -23,13 +41,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -45,9 +68,27 @@ import com.airclip.airclip.SyncMode
 import com.airclip.airclip.device.WifiNetworkName
 import com.airclip.airclip.lan.LanRuntimeIssue
 import com.airclip.airclip.lan.PeerManager
-import com.airclip.airclip.pairing.AirClipCaptureActivity
+import com.airclip.airclip.pairing.AirclipCaptureActivity
 import com.airclip.airclip.ui.theme.*
 import kotlinx.coroutines.delay
+import coil.compose.AsyncImage
+import coil.decode.SvgDecoder
+import coil.request.ImageRequest
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.layout.ContentScale
+
+@Composable
+private fun DeviceArtwork(name: String, modifier: Modifier, description: String? = null, tint: Color? = null) {
+    AsyncImage(
+        model = ImageRequest.Builder(LocalContext.current)
+            .data("file:///android_asset/devices/$name.svg")
+            .decoderFactory(SvgDecoder.Factory()).build(),
+        contentDescription = description,
+        colorFilter = tint?.let { ColorFilter.tint(it) },
+        contentScale = ContentScale.FillBounds,
+        modifier = modifier,
+    )
+}
 
 private val BearyFontFamily = FontFamily(Font(R.font.beary))
 
@@ -56,12 +97,19 @@ fun DevicesScreen(
     viewModel: MainViewModel,
     uiState: DevicesTabUiState,
     listState: LazyListState,
+    showCodeInput: Boolean,
+    onCodeInputChanged: (Boolean) -> Unit,
 ) {
-    val c = LocalAirClipColors.current
+    val c = LocalAirclipColors.current
     val context = LocalContext.current
+    val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    val headerHeight = statusBarTop + 80.dp
+    val codeScreenOffset = with(LocalDensity.current) { 16.dp.roundToPx() }
+    val easeOut = CubicBezierEasing(0.23f, 1f, 0.32f, 1f)
     var wifiNetwork by remember { mutableStateOf(WifiNetworkName.current(context)) }
     var statusClockMs by remember { mutableStateOf(System.currentTimeMillis()) }
     var showLocationExplanation by remember { mutableStateOf(false) }
+    var pairedDeviceCountBeforeCodeInput by remember { mutableIntStateOf(0) }
     fun refreshWifiNetworkName() {
         wifiNetwork = WifiNetworkName.current(context)
     }
@@ -80,94 +128,171 @@ fun DevicesScreen(
         while (true) {
             delay(30_000L)
             statusClockMs = System.currentTimeMillis()
+            refreshWifiNetworkName()
         }
     }
 
     val scanLauncher = rememberLauncherForActivityResult(ScanContract()) { result ->
-        result.contents?.let { viewModel.onQrScanned(it) }
+        if (result.originalIntent?.getBooleanExtra(
+                AirclipCaptureActivity.EXTRA_CODE_CONNECT_REQUESTED,
+                false,
+            ) == true
+        ) {
+            pairedDeviceCountBeforeCodeInput = uiState.pairedDevices.size
+            viewModel.onPairingCodeEntryOpened()
+            onCodeInputChanged(true)
+        } else {
+            result.contents?.let { viewModel.onQrScanned(it) }
+        }
     }
 
     fun launchPairingScanner() {
         val opts = ScanOptions().apply {
             setPrompt("Scan a new device's QR code to pair it")
             setBeepEnabled(false)
-            setCaptureActivity(AirClipCaptureActivity::class.java)
+            setCaptureActivity(AirclipCaptureActivity::class.java)
             setOrientationLocked(true)
+            addExtra(AirclipCaptureActivity.EXTRA_SHOW_CODE_CONNECT, true)
         }
         scanLauncher.launch(opts)
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(color = c.bgBase),
-    ) {
+    LaunchedEffect(uiState.pairedDevices.size, showCodeInput) {
+        if (showCodeInput && uiState.pairedDevices.size > pairedDeviceCountBeforeCodeInput) {
+            onCodeInputChanged(false)
+        }
+    }
+
+    AnimatedContent(
+        targetState = showCodeInput,
+        transitionSpec = {
+            if (targetState) {
+                (fadeIn(tween(220, easing = easeOut)) +
+                    slideInHorizontally(tween(220, easing = easeOut)) { codeScreenOffset }) togetherWith
+                    fadeOut(tween(140))
+            } else {
+                fadeIn(tween(220, easing = easeOut)) togetherWith
+                    (fadeOut(tween(140)) +
+                        slideOutHorizontally(tween(140, easing = easeOut)) { codeScreenOffset })
+            }
+        },
+        label = "devices code entry",
+    ) { showingCodeInput ->
+        if (showingCodeInput) {
+            DeviceCodeInputScreen(
+                error = uiState.pairingError,
+                onBack = { onCodeInputChanged(false) },
+                onEnterCode = viewModel::onPairingCodeEntered,
+            )
+        } else Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(color = c.bgBase),
+        ) {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             state = listState,
             contentPadding = PaddingValues(
+                top = headerHeight + 28.dp,
                 bottom = if (uiState.pairedDevices.isEmpty()) 112.dp else 32.dp,
             ),
         ) {
-            item(key = "devices-header") {
-                DevicesPageHeader(
+            item(key = "network-status") {
+                NetworkStatusCard(
+                    spaceName = uiState.spaceName,
                     network = wifiNetwork,
-                    connectedCount = uiState.connectedPeerCount,
-                    onPairClick = { launchPairingScanner() },
+                    onRefresh = {
+                        refreshWifiNetworkName()
+                        viewModel.onRefreshDevices()
+                    },
                     onPermissionRequest = { showLocationExplanation = true },
+                    modifier = Modifier.padding(horizontal = 20.dp),
                 )
+                Spacer(Modifier.height(24.dp))
             }
 
             // ── Diagnostic banner ─────────────────────────────────────────────────
-            val diagnostic = if (uiState.pairedDevices.isEmpty()) null else deviceDiagnostic(uiState)
-            if (diagnostic != null) {
-                item {
-                    DiagnosticBanner(diagnostic, modifier = Modifier.padding(horizontal = 16.dp))
-                    Spacer(Modifier.height(8.dp))
+            val diagnostic = if (uiState.pairedDevices.isEmpty()) null else deviceDiagnostic(uiState, c)
+            item(key = "diagnostic") {
+                AnimatedVisibility(
+                    visible = diagnostic != null,
+                    enter = fadeIn(tween(180, easing = easeOut)),
+                    exit = fadeOut(tween(120)),
+                ) {
+                    if (diagnostic != null) {
+                        Column {
+                            DiagnosticBanner(diagnostic, modifier = Modifier.padding(horizontal = 16.dp))
+                            Spacer(Modifier.height(8.dp))
+                        }
+                    }
                 }
             }
 
             // ── Device list ───────────────────────────────────────────────────────
-            if (uiState.pairedDevices.isNotEmpty()) {
-                itemsIndexed(uiState.pairedDevices, key = { _, d -> d.deviceId }) { index, device ->
-                    val isReachable = PeerManager.hasPeer(device.deviceId)
-                    val isLast = index == uiState.pairedDevices.lastIndex
-                    DeviceFeedRow(
-                        device = device,
-                        isReachable = isReachable,
-                        nowMs = statusClockMs,
-                        isLast = isLast,
-                        onRefresh = viewModel::onReconnectDevice,
-                        onRemove = { viewModel.onRemoveDevice(device.deviceId) },
-                    )
+            item(key = "device-list") {
+                AnimatedVisibility(
+                    visible = uiState.pairedDevices.isNotEmpty(),
+                    enter = fadeIn(tween(180, easing = easeOut)),
+                    exit = fadeOut(tween(120)),
+                ) {
+                    Column(
+                        modifier = Modifier.animateContentSize(tween(180, easing = easeOut)),
+                    ) {
+                        uiState.pairedDevices.forEachIndexed { index, device ->
+                            val isReachable = PeerManager.hasPeer(device.deviceId)
+                            val isLast = index == uiState.pairedDevices.lastIndex
+                            DeviceFeedRow(
+                                device = device,
+                                isReachable = isReachable,
+                                nowMs = statusClockMs,
+                                isLast = isLast,
+                                onRefresh = viewModel::onReconnectDevice,
+                                onRemove = { viewModel.onRemoveDevice(device.deviceId) },
+                            )
+                        }
+                    }
                 }
             }
         }
 
-        if (uiState.pairedDevices.isEmpty()) {
-            AirClipEmptyState(
-                iconRes = R.drawable.ic_devices_empty_state,
-                text = "Connect another device to start copying and pasting across devices.",
-            )
+        AnimatedVisibility(
+            visible = uiState.pairedDevices.isEmpty(),
+            modifier = Modifier.fillMaxSize(),
+            enter = fadeIn(tween(180, easing = easeOut)),
+            exit = fadeOut(tween(120)),
+        ) {
+            Box(Modifier.fillMaxSize()) {
+                AirclipEmptyState(
+                    iconRes = R.drawable.ic_devices_empty_state,
+                    text = "Your space is ready. Connect a device to start syncing.",
+                )
 
-            AddNewDeviceButton(
-                onClick = { launchPairingScanner() },
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .offset(y = 170.dp),
-            )
+                AddNewDeviceButton(
+                    label = "Add a device",
+                    onClick = { launchPairingScanner() },
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .offset(y = 170.dp),
+                )
+            }
         }
 
+        DevicesPageHeader(
+            onPairClick = { launchPairingScanner() },
+            modifier = Modifier.align(Alignment.TopCenter),
+        )
+
+        }
     }
 
     if (showLocationExplanation) {
         AlertDialog(
             onDismissRequest = { showLocationExplanation = false },
-            icon = { Icon(Icons.Outlined.LocationOn, contentDescription = null, tint = c.blue) },
+            icon = { Icon(Icons.Outlined.LocationOn, contentDescription = null, tint = c.accent) },
             title = { Text("Show Wi-Fi name?", color = c.textPrimary) },
             text = {
                 Text(
-                    "Android requires Location permission to read the connected Wi-Fi name. AirClip uses it only to help identify your local network.",
+                    "Android requires Location permission to read the connected Wi-Fi name. Airclip uses it only to help identify your local network.",
                     color = c.textSecondary,
                 )
             },
@@ -182,7 +307,7 @@ fun DevicesScreen(
                             ),
                         )
                     },
-                ) { Text("Continue", color = c.blue) }
+                ) { Text("Continue", color = c.accent) }
             },
             dismissButton = {
                 TextButton(onClick = { showLocationExplanation = false }) {
@@ -195,65 +320,122 @@ fun DevicesScreen(
 }
 
 @Composable
-private fun DevicesPageHeader(
-    network: WifiNetworkName.Result,
-    connectedCount: Int,
-    onPairClick: () -> Unit,
-    onPermissionRequest: () -> Unit,
-    modifier: Modifier = Modifier,
+private fun DeviceCodeInputScreen(
+    error: String?,
+    onBack: () -> Unit,
+    onEnterCode: (String) -> Unit,
 ) {
-    val c = LocalAirClipColors.current
-    val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .background(c.bgBase)
-            .padding(top = statusBarTop + 24.dp, bottom = 24.dp),
+    val c = LocalAirclipColors.current
+    BackHandler(onBack = onBack)
+
+    BoxWithConstraints(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(c.bgBase),
     ) {
-        Row(
+        val scale = (maxWidth.value / 412f).coerceIn(0.82f, 1f)
+        Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .height(48.dp)
-                .padding(horizontal = 20.dp),
-            verticalAlignment = Alignment.CenterVertically,
+                .fillMaxSize()
+                .statusBarsPadding()
+                .imePadding(),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Text(
-                "Devices",
-                fontSize = 36.sp,
-                lineHeight = 40.sp,
-                fontFamily = BearyFontFamily,
-                fontWeight = FontWeight.Normal,
-                color = c.textPrimary,
-                letterSpacing = (-0.6).sp,
-            )
-            Spacer(Modifier.weight(1f))
             Box(
                 modifier = Modifier
-                    .size(48.dp)
-                    .clip(CircleShape)
-                    .background(c.bgBase.copy(alpha = 0.8f))
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = LocalIndication.current,
-                        role = Role.Button,
-                    ) { onPairClick() },
-                contentAlignment = Alignment.Center,
+                    .fillMaxWidth()
+                    .height(56.dp),
             ) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_pair_qr),
-                    contentDescription = "Pair new device",
-                    tint = c.textPrimary,
-                    modifier = Modifier.size(28.dp),
+                IconButton(
+                    onClick = onBack,
+                    modifier = Modifier
+                        .align(Alignment.CenterStart)
+                        .padding(start = 8.dp),
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Outlined.ArrowBack,
+                        contentDescription = "Back",
+                        tint = c.textPrimary,
+                    )
+                }
+            }
+            Text(
+                "Enter the code",
+                fontFamily = BearyFontFamily,
+                fontSize = 32.sp,
+                lineHeight = 40.sp,
+                color = c.textPrimary,
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "Enter the 6-digit code shown on another Airclip device.",
+                modifier = Modifier.padding(horizontal = 28.dp),
+                fontSize = 16.sp,
+                lineHeight = 22.sp,
+                color = c.textSecondary,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+            ) {
+                CodeInputTabContent(
+                    onEnterCode = onEnterCode,
+                    error = error,
+                    scale = scale,
                 )
             }
         }
-        Spacer(Modifier.height(32.dp))
-        NetworkStatusCard(
-            network = network,
-            connectedCount = connectedCount,
-            onPermissionRequest = onPermissionRequest,
-            modifier = Modifier.padding(horizontal = 20.dp),
+    }
+}
+
+@Composable
+private fun DevicesPageHeader(
+    onPairClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val c = LocalAirclipColors.current
+    val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(c.bgBase)
+            .padding(top = statusBarTop)
+            .height(80.dp)
+            .padding(horizontal = 20.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            "Devices",
+            fontSize = 36.sp,
+            lineHeight = 40.sp,
+            fontFamily = BearyFontFamily,
+            fontWeight = FontWeight.Normal,
+            color = c.textPrimary,
+            letterSpacing = (-0.6).sp,
+            modifier = Modifier.semantics { heading() },
         )
+        Spacer(Modifier.weight(1f))
+        Box(
+            modifier = Modifier
+                .size(48.dp)
+                .clip(CircleShape)
+                .background(c.bgBase.copy(alpha = 0.8f))
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = LocalIndication.current,
+                    role = Role.Button,
+                ) { onPairClick() },
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                painter = painterResource(R.drawable.ic_pair_qr),
+                contentDescription = "Pair new device",
+                tint = c.textPrimary,
+                modifier = Modifier.size(28.dp),
+            )
+        }
     }
 }
 
@@ -261,12 +443,22 @@ private fun DevicesPageHeader(
 
 @Composable
 private fun NetworkStatusCard(
+    spaceName: String,
     network: WifiNetworkName.Result,
-    connectedCount: Int,
+    onRefresh: () -> Unit,
     onPermissionRequest: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val c = LocalAirClipColors.current
+    val c = LocalAirclipColors.current
+    var refreshRotationTarget by remember { mutableStateOf(0f) }
+    val refreshRotation by animateFloatAsState(
+        targetValue = refreshRotationTarget,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMediumLow,
+        ),
+        label = "network refresh rotation",
+    )
     val needsPermission = network.unavailableReason == WifiNetworkName.UnavailableReason.PermissionRequired
     val networkName = network.name ?: "Wi-Fi name unavailable"
     val subtitle = network.unavailableReason?.let { reason ->
@@ -278,19 +470,20 @@ private fun NetworkStatusCard(
             WifiNetworkName.UnavailableReason.Unknown ->
                 "Wi-Fi network name could not be read."
         }
-    } ?: when {
-        connectedCount == 0 -> "No devices"
-        connectedCount == 1 -> "1 device"
-        else -> "$connectedCount devices"
-    }
+    } ?: spaceName.ifBlank { "My Space" }
 
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(80.dp)
-            .clip(RoundedCornerShape(24.dp))
-            .background(c.bgElevated)
-            .border(1.dp, c.borderSubtle, RoundedCornerShape(24.dp))
+            .height(84.dp)
+            .shadow(
+                elevation = 1.dp,
+                shape = RoundedCornerShape(16.dp),
+                ambientColor = Color.Black.copy(alpha = 0.08f),
+                spotColor = Color.Black.copy(alpha = 0.08f),
+            )
+            .clip(RoundedCornerShape(16.dp))
+            .background(if (c.isDark) c.bgElevated else Color(0xFFF7F7F7))
             .then(
                 if (needsPermission) {
                     Modifier.clickable(role = Role.Button, onClick = onPermissionRequest)
@@ -300,67 +493,78 @@ private fun NetworkStatusCard(
             )
             .clipToBounds(),
     ) {
-        val ringColor = c.borderSubtle
-        Canvas(modifier = Modifier.matchParentSize()) {
-            val strokeWidth = 1.dp.toPx()
-            val rings = listOf(
-                Triple(-16f, -24f, 128f),
-                Triple(-56f, -64f, 208f),
-                Triple(-96f, -104f, 288f),
-                Triple(-136f, -144f, 368f),
-                Triple(-176f, -184f, 448f),
-            )
-            val ringAlphas = listOf(1f, 0.7f, 0.5f, 0.4f, 0.3f)
-            rings.forEachIndexed { index, (x, y, size) ->
-                drawOval(
-                    color = ringColor.copy(alpha = ringAlphas[index]),
-                    topLeft = androidx.compose.ui.geometry.Offset(x.dp.toPx(), y.dp.toPx()),
-                    size = androidx.compose.ui.geometry.Size(size.dp.toPx(), size.dp.toPx()),
-                    style = Stroke(width = strokeWidth),
+        DeviceArtwork("rings", Modifier
+            .wrapContentSize(Alignment.TopStart, unbounded = true)
+            .size(1032.dp).offset(x = (-476).dp, y = (-476).dp)
+            .graphicsLayer { alpha = if (c.isDark) 0.15f else 1f })
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(84.dp)
+                .padding(start = 16.dp, end = 24.dp, top = 14.dp, bottom = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .shadow(1.dp, CircleShape)
+                    .clip(CircleShape)
+                    .background(
+                        Brush.verticalGradient(
+                            if (c.isDark) listOf(c.bgFloating, c.bgElevated)
+                            else listOf(Color.White, Color(0xFFF2F2F2)),
+                        ),
+                    )
+                    .border(1.dp, if (c.isDark) c.borderDefault else Color(0xFFE6E7EB), CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                DeviceArtwork(
+                    "wifi",
+                    Modifier.size(width = 22.dp, height = 15.5.dp),
+                    tint = if (c.isDark) Color(0xFF64D99A) else Color(0xFF669C6C),
                 )
             }
-        }
 
-        Box(
-            modifier = Modifier
-                .offset(x = 24.dp, y = 16.dp)
-                .size(48.dp)
-                .clip(CircleShape)
-                .background(c.bgFloating)
-                .border(1.dp, c.borderSubtle, CircleShape),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = Icons.Outlined.Wifi,
-                contentDescription = null,
-                tint = c.green,
-                modifier = Modifier.size(24.dp),
-            )
-        }
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(0.dp)) {
+                Crossfade(targetState = networkName, animationSpec = tween(140), label = "network name") { name -> Text(
+                    name,
+                    fontSize = 18.sp,
+                    lineHeight = 25.sp,
+                    color = if (c.isDark) c.textPrimary else Color(0xFF232E43),
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                ) }
+                Crossfade(targetState = subtitle, animationSpec = tween(140), label = "network subtitle") { text -> Text(
+                    text,
+                    fontSize = 13.sp,
+                    lineHeight = 18.sp,
+                    color = if (c.isDark) c.textSecondary else Color(0x80232E43),
+                    fontWeight = FontWeight.Normal,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                ) }
+            }
 
-        Column(
-            modifier = Modifier
-                .offset(x = 88.dp, y = 16.5f.dp)
-                .width(186.dp),
-        ) {
-            Text(
-                networkName,
-                fontSize = 18.sp,
-                lineHeight = 25.sp,
-                color = c.textPrimary,
-                fontWeight = FontWeight.Medium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                subtitle,
-                fontSize = 14.sp,
-                lineHeight = 20.sp,
-                color = c.textSecondary,
-                fontWeight = FontWeight.Normal,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Box(
+                modifier = Modifier
+                    .size(width = 40.dp, height = 28.dp)
+                    .shadow(1.dp, CircleShape)
+                    .clip(CircleShape)
+                    .background(if (c.isDark) c.bgFloating else Color.White)
+                    .clickable(role = Role.Button) {
+                        refreshRotationTarget += 360f
+                        onRefresh()
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                DeviceArtwork("reconnect", Modifier
+                    .size(13.667.dp, 15.667.dp)
+                    .graphicsLayer { rotationZ = refreshRotation },
+                    description = "Reconnect devices", tint = c.textPrimary)
+            }
         }
     }
 }
@@ -403,7 +607,7 @@ private fun DiagnosticBanner(diagnostic: DeviceDiagnostic, modifier: Modifier = 
             Text(
                 diagnostic.body,
                 style = MaterialTheme.typography.labelSmall,
-                color = diagnostic.tint.copy(alpha = 0.75f),
+                color = diagnostic.tint,
             )
         }
     }
@@ -417,38 +621,37 @@ private data class DeviceDiagnostic(
     val iconRes: Int? = null,
 )
 
-private fun deviceDiagnostic(uiState: DevicesTabUiState): DeviceDiagnostic? {
-    // Access colors without composition — use fixed semantic values
+private fun deviceDiagnostic(uiState: DevicesTabUiState, colors: AirclipColorScheme): DeviceDiagnostic? {
     return when {
         uiState.syncMode == SyncMode.PAUSED -> DeviceDiagnostic(
             "Sync is paused",
             "Resume sync to reconnect nearby devices.",
             Icons.Outlined.PauseCircle,
-            Color(0xFF9CA3AF),
+            colors.textSecondary,
         )
         uiState.lanRuntimeDiagnostic.issue == LanRuntimeIssue.SERVER_FAILED -> DeviceDiagnostic(
             "Local listener could not start",
-            "Restart AirClip. Another process may be using port 7878.",
+            "Restart Airclip. Another process may be using port 7878.",
             Icons.Outlined.ErrorOutline,
-            Color(0xFFD97706),
+            colors.yellow,
         )
         uiState.lanRuntimeDiagnostic.issue == LanRuntimeIssue.DISCOVERY_FAILED -> DeviceDiagnostic(
             "Discovery could not start",
             "Check Wi-Fi, VPN settings, and allow local network discovery.",
             Icons.Outlined.WifiOff,
-            Color(0xFFD97706),
+            colors.yellow,
         )
         uiState.lanRuntimeDiagnostic.issue == LanRuntimeIssue.ADVERTISEMENT_FAILED -> DeviceDiagnostic(
             "This device is not advertising",
             "Other devices may not find it. Check Wi-Fi settings.",
             Icons.Outlined.PortableWifiOff,
-            Color(0xFFD97706),
+            colors.yellow,
         )
         uiState.pairedDevices.isEmpty() && uiState.myDeviceId != null -> DeviceDiagnostic(
             title = "No paired devices yet",
-            body = "Tap the QR icon to scan another AirClip device.",
+            body = "Tap the QR icon to scan another Airclip device.",
             icon = null,
-            tint = Color(0xFF2563EB),
+            tint = colors.blue,
             iconRes = R.drawable.ic_pair_qr,
         )
         else -> null
@@ -466,9 +669,17 @@ private fun DeviceFeedRow(
     onRefresh: () -> Unit,
     onRemove: () -> Unit,
 ) {
-    val c = LocalAirClipColors.current
+    val c = LocalAirclipColors.current
     var showMenu by remember { mutableStateOf(false) }
     var showConfirm by remember { mutableStateOf(false) }
+    val menuInteraction = remember { MutableInteractionSource() }
+    val menuPressed by menuInteraction.collectIsPressedAsState()
+    val menuHovered by menuInteraction.collectIsHoveredAsState()
+    val menuScale by animateFloatAsState(
+        targetValue = if (menuPressed) 0.97f else 1f,
+        animationSpec = tween(100),
+        label = "device menu press",
+    )
 
     val status = deviceDisplayStatus(device, isReachable, nowMs)
     val contentAlpha = if (status == DeviceDisplayStatus.Offline) 0.5f else 1f
@@ -477,24 +688,22 @@ private fun DeviceFeedRow(
         modifier = Modifier
             .padding(horizontal = 20.dp)
             .fillMaxWidth()
-            .height(68.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .border(1.dp, c.borderSubtle, RoundedCornerShape(8.dp)),
+            .height(68.dp),
     ) {
-        Icon(
-            painter = painterResource(platformIconRes(device)),
-            contentDescription = null,
-            tint = Color.Unspecified,
+        DeviceArtwork(
+            name = if (device.platform.lowercase() in listOf("mac", "windows", "linux")) "laptop" else "phone",
             modifier = Modifier
                 .offset(x = 12.dp, y = 20.dp)
                 .size(28.dp)
+                .padding(horizontal = if (device.platform.lowercase() in listOf("mac", "windows", "linux")) 1.458.dp else 4.958.dp, vertical = 1.458.dp)
                 .graphicsLayer { alpha = contentAlpha },
         )
 
         Column(
             modifier = Modifier
-                .offset(x = 52.dp, y = 8.dp)
-                .width(264.dp)
+                .offset(x = 56.dp, y = 12.dp)
+                .fillMaxWidth()
+                .padding(end = 104.dp)
                 .height(52.dp),
         ) {
             Text(
@@ -507,46 +716,57 @@ private fun DeviceFeedRow(
                 overflow = TextOverflow.Ellipsis,
             )
             Spacer(Modifier.height(4.dp))
-            Text(
-                text = status.label,
+            Crossfade(targetState = status.label, animationSpec = tween(140), label = "device status") { label -> Text(
+                text = label,
                 fontSize = 14.sp,
                 lineHeight = 16.sp,
                 fontWeight = FontWeight.Normal,
                 color = c.textSecondary.copy(alpha = contentAlpha),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-            )
+            ) }
         }
 
         Box(
             modifier = Modifier
-                .align(Alignment.TopEnd)
-                .offset(x = (-12).dp, y = 24.dp)
-                .size(20.dp)
+                .align(Alignment.CenterEnd)
+                .size(48.dp)
+                .graphicsLayer { scaleX = menuScale; scaleY = menuScale }
+                .hoverable(menuInteraction)
                 .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = LocalIndication.current,
+                    interactionSource = menuInteraction,
+                    indication = null,
                     role = Role.Button,
                 ) { showMenu = true },
             contentAlignment = Alignment.Center,
         ) {
-            Icon(
-                painter = painterResource(R.drawable.ic_device_more_vertical),
-                contentDescription = "More",
-                tint = Color.Unspecified,
-                modifier = Modifier.size(20.dp),
-            )
-            AirClipDropdownMenu(
+            Box(
+                modifier = Modifier
+                    .size(32.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(
+                        if (menuPressed || menuHovered) {
+                            if (c.isDark) Color.White.copy(alpha = 0.08f)
+                            else Color.Black.copy(alpha = 0.04f)
+                        } else {
+                            Color.Transparent
+                        },
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                DeviceArtwork("more", Modifier.size(2.104.dp, 12.083.dp), "Device actions", c.textSecondary)
+            }
+            AirclipDropdownMenu(
                 expanded = showMenu,
                 onDismissRequest = { showMenu = false },
                 items = listOf(
-                    AirClipDropdownItem(
-                        label = "Refresh",
+                    AirclipDropdownItem(
+                        label = "Reconnect",
                         onClick = onRefresh,
                     ),
-                    AirClipDropdownItem(
+                    AirclipDropdownItem(
                         label = "Remove device",
-                        color = LocalAirClipColors.current.destructive,
+                        color = LocalAirclipColors.current.destructive,
                         onClick = { showConfirm = true },
                     ),
                 ),
@@ -555,7 +775,8 @@ private fun DeviceFeedRow(
     }
 
     if (!isLast) {
-        Spacer(Modifier.height(12.dp))
+        HorizontalDivider(Modifier.padding(horizontal = 20.dp), thickness = 1.dp,
+            color = if (c.isDark) c.borderSubtle else Color(0xFFEEEFF0))
     }
 
     if (showConfirm) {
@@ -564,7 +785,7 @@ private fun DeviceFeedRow(
             title = { Text("Remove ${device.deviceName}?", color = c.textPrimary) },
             text = {
                 Text(
-                    "This device will no longer sync with your AirClip network.",
+                    "This device will no longer sync with your Airclip space.",
                     color = c.textSecondary,
                     style = MaterialTheme.typography.bodySmall,
                 )
@@ -586,10 +807,11 @@ private fun DeviceFeedRow(
 
 @Composable
 private fun AddNewDeviceButton(
+    label: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val c = LocalAirClipColors.current
+    val c = LocalAirclipColors.current
     Button(
         onClick = onClick,
         modifier = modifier
@@ -609,7 +831,7 @@ private fun AddNewDeviceButton(
         )
         Spacer(Modifier.width(8.dp))
         Text(
-            text = "Add New Device",
+            text = label,
             fontSize = 16.sp,
             lineHeight = 20.sp,
             fontWeight = FontWeight.Normal,
@@ -620,15 +842,11 @@ private fun AddNewDeviceButton(
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-private sealed class DeviceDisplayStatus(
-    val label: String,
-    val color: Color,
-) {
-    data object Online : DeviceDisplayStatus("Online", Color(0xFF18D437))
-    data object Offline : DeviceDisplayStatus("Offline", Color(0xFF9CA3AF))
+private sealed class DeviceDisplayStatus(val label: String) {
+    data object Online : DeviceDisplayStatus("Online")
+    data object Offline : DeviceDisplayStatus("Offline")
     data class LastSeen(private val timestampMs: Long, private val nowMs: Long) : DeviceDisplayStatus(
         formatRelativeTime(timestampMs, nowMs),
-        Color(0xFF6F7785),
     )
 }
 

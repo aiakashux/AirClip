@@ -5,9 +5,10 @@ import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
 import android.net.wifi.WifiManager
 import android.util.Log
-import com.airclip.airclip.AirClipIdentity
+import com.airclip.airclip.AirclipIdentity
 import com.airclip.airclip.crypto.KeyManager
 import com.airclip.airclip.device.DeviceRemovalNotice
+import com.airclip.airclip.device.WifiNetworkName
 import com.airclip.airclip.pairing.ResolvedHostCache
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -20,8 +21,11 @@ private const val TAG          = "LanBrowser"
 private const val SERVICE_TYPE = "_airclip._tcp"
 private const val LAN_PORT     = 7878
 
+internal fun shouldClearPeerStateOnServiceLost(hasAuthenticatedPeer: Boolean): Boolean =
+    !hasAuthenticatedPeer
+
 /**
- * Discovers AirClip peers on the LAN via mDNS (NsdManager) and connects to them
+ * Discovers Airclip peers on the LAN via mDNS (NsdManager) and connects to them
  * using outgoing OkHttp WebSocket connections.
  *
  * Also registers this device's own service so peers can discover us.
@@ -43,12 +47,14 @@ object LanBrowser {
 
     private var httpClient:  OkHttpClient? = null
     private var keyManager:  KeyManager?   = null
+    private var appContext: Context? = null
     private var multicastLock: WifiManager.MulticastLock? = null
 
     fun start(context: Context, client: OkHttpClient, km: KeyManager) {
         stop(context)
         httpClient = client
         keyManager  = km
+        appContext = context.applicationContext
         nsdManager  = context.getSystemService(Context.NSD_SERVICE) as? NsdManager
         if (nsdManager == null) {
             LanRuntimeDiagnostics.discoveryFailed("NSD unavailable")
@@ -83,7 +89,7 @@ object LanBrowser {
     // ── Service registration (so others discover us) ──────────────────────────
 
     private fun registerSelf(context: Context) {
-        val myId = AirClipIdentity.deviceId ?: run {
+        val myId = AirclipIdentity.deviceId ?: run {
             Log.w(TAG, "No device ID — skipping NSD registration")
             return
         }
@@ -131,7 +137,7 @@ object LanBrowser {
 
             override fun onServiceFound(service: NsdServiceInfo) {
                 val peerHint = service.serviceName ?: return
-                val myId     = AirClipIdentity.deviceId ?: return
+                val myId     = AirclipIdentity.deviceId ?: return
                 if (peerHint == myId) return
                 if (PeerManager.hasPeer(peerHint) || PeerManager.isPending(peerHint)) return
                 if (!PeerManager.addPendingHint(peerHint)) return
@@ -144,7 +150,9 @@ object LanBrowser {
             override fun onServiceLost(service: NsdServiceInfo) {
                 val peerHint = service.serviceName ?: return
                 Log.d(TAG, "Service lost: ${peerHint.take(8)}")
-                PeerManager.onPeerDisconnected(peerHint)
+                if (shouldClearPeerStateOnServiceLost(PeerManager.hasPeer(peerHint))) {
+                    PeerManager.onPeerDisconnected(peerHint)
+                }
             }
         }
         discoveryListener = listener
@@ -185,14 +193,14 @@ object LanBrowser {
     // ── Outgoing WebSocket connection ─────────────────────────────────────────
 
     private fun connectToPeer(host: String, port: Int, peerHint: String) {
-        val myDeviceId = AirClipIdentity.deviceId ?: return PeerManager.onPeerDisconnected(peerHint)
-        val myAirClipId = AirClipIdentity.airClipId ?: return PeerManager.onPeerDisconnected(peerHint)
+        val myDeviceId = AirclipIdentity.deviceId ?: return PeerManager.onPeerDisconnected(peerHint)
+        val myAirclipId = AirclipIdentity.airClipId ?: return PeerManager.onPeerDisconnected(peerHint)
         val myPubKey = keyManager?.getPublicKeyBase64() ?: return PeerManager.onPeerDisconnected(peerHint)
         val client = httpClient ?: return PeerManager.onPeerDisconnected(peerHint)
 
         Log.d(TAG, "Connecting to ${peerHint.take(8)} at $host:$port")
         val request = Request.Builder().url("ws://$host:$port/").build()
-        client.newWebSocket(request, OutgoingListener(peerHint, myDeviceId, myAirClipId, myPubKey))
+        client.newWebSocket(request, OutgoingListener(peerHint, myDeviceId, myAirclipId, myPubKey))
     }
 
     // ── Outgoing WebSocket listener ────────────────────────────────────────────
@@ -200,7 +208,7 @@ object LanBrowser {
     private class OutgoingListener(
         private val peerHint: String,
         private val myDeviceId: String,
-        private val myAirClipId: String,
+        private val myAirclipId: String,
         private val myPubKey: String,
     ) : WebSocketListener() {
 
@@ -212,9 +220,9 @@ object LanBrowser {
             webSocket.send(PeerManager.gson.toJson(mapOf(
                 "type"       to "auth",
                 "device_id"  to myDeviceId,
-                "airclip_id"    to myAirClipId,       // was account_id
+                "airclip_id"    to myAirclipId,       // was account_id
                 "public_key" to myPubKey,       // included so server can encrypt for us
-                "device_name" to AirClipIdentity.deviceName,
+                "device_name" to AirclipIdentity.deviceName,
                 "platform" to "android",
             )))
             Log.d(TAG, "Sent auth to ${peerHint.take(8)}")
@@ -236,7 +244,7 @@ object LanBrowser {
                 val peerId  = msg["device_id"]  ?: return closeWith(ws, "missing device_id")
                 val peerKey = msg["public_key"] ?: return closeWith(ws, "missing public_key")
 
-                if (!AirClipIdentity.pairedDevices.containsKey(peerId)) {
+                if (!AirclipIdentity.pairedDevices.containsKey(peerId)) {
                     return closeWith(ws, "unpaired device")
                 }
 
@@ -287,21 +295,23 @@ object LanBrowser {
                     }
                     "heartbeat" -> {
                         val fromId = authenticatedPeerId ?: peerHint
-                        PeerManager.markPeerSeen(fromId)
-                        ws.send(PeerManager.gson.toJson(mapOf(
+                        PeerManager.markPeerSeen(fromId, msg["ssid"])
+                        val ack = mutableMapOf(
                             "type" to "heartbeat_ack",
                             "ts" to System.currentTimeMillis().toString(),
-                        )))
+                        )
+                        appContext?.let { WifiNetworkName.current(it).name }?.let { ack["ssid"] = it }
+                        ws.send(PeerManager.gson.toJson(ack))
                     }
                     "heartbeat_ack" -> {
-                        PeerManager.markPeerSeen(authenticatedPeerId ?: peerHint)
+                        PeerManager.markPeerSeen(authenticatedPeerId ?: peerHint, msg["ssid"])
                     }
                     "app_activity" -> {
                         val ts = msg["ts"]?.toLongOrNull() ?: System.currentTimeMillis()
                         PeerManager.markPeerActivity(authenticatedPeerId ?: peerHint, ts)
                     }
                     DeviceRemovalNotice.TYPE -> {
-                        if (DeviceRemovalNotice.targetsCurrentDevice(msg, AirClipIdentity.deviceId)) {
+                        if (DeviceRemovalNotice.targetsCurrentDevice(msg, AirclipIdentity.deviceId)) {
                             PeerManager.dispatchRemovedFromNetwork()
                             ws.close(1000, "removed")
                         }
@@ -319,7 +329,7 @@ object LanBrowser {
 
         override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
             PeerManager.onPeerDisconnected(authenticatedPeerId ?: peerHint, connectionId)
-            Log.w(TAG, "Outgoing failure ${peerHint.take(8)}: ${t.message}")
+            Log.w(TAG, "Outgoing failure ${peerHint.take(8)}: ${t.javaClass.simpleName}: ${t.message}")
         }
 
         private fun closeWith(ws: WebSocket, reason: String) {

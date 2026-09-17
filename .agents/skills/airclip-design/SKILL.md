@@ -1,13 +1,13 @@
 ---
 name: airclip-design
-description: "AirClip core design system. Use when building ANY UI for the AirClip macOS app — colors, typography, spacing, borders, shadows, motion. Companion: /airclip-review for component patterns, UX laws, contrast audit."
+description: "Airclip core design system. Use when building ANY UI for the Airclip macOS app — colors, typography, spacing, borders, shadows, motion. Companion: /airclip-review for component patterns, UX laws, contrast audit."
 trigger: manual
 ---
 
-# AirClip Design System — Core
+# Airclip Design System — Core
 **Raycast-inspired. Native macOS. Premium without decoration.**
 
-> You are building AirClip — a secure cross-device clipboard syncing tool. The design must feel like it belongs in the same family as Raycast: invisible until needed, precise, fast, and trusted. Every decision should earn its place. If it doesn't serve the user's focus, remove it.
+> You are building Airclip — a secure cross-device clipboard syncing tool. The design must feel like it belongs in the same family as Raycast: invisible until needed, precise, fast, and trusted. Every decision should earn its place. If it doesn't serve the user's focus, remove it.
 
 > **Companion skill:** For component patterns, UX laws, and contrast audit → call `/airclip-review`
 
@@ -17,7 +17,7 @@ trigger: manual
 
 1. **The window IS the content.** No decorative chrome. No gradients for their own sake. The UI recedes so the content leads.
 2. **Density with rhythm.** High information density but every row, gap, and label has a deliberate weight. The eye flows without effort.
-3. **Restraint on accent.** The brand color (`#5647F2`) is a signal, not decoration. It marks selection and primary actions — nothing else.
+3. **Restraint on accent.** The brand color (`#6740BF`) is a signal, not decoration. It marks selection and primary actions — nothing else.
 4. **Motion as response, not performance.** Animations confirm actions. They are short, directional, and use Apple's easeOutQuart. No bounce. No spin. No blur transitions. No spring physics.
 
 ---
@@ -27,7 +27,7 @@ trigger: manual
 ### Dark Mode (Primary — default)
 
 ```swift
-// SwiftUI Color extensions — add to Color+AirClip.swift
+// SwiftUI Color extensions — add to Color+Airclip.swift
 
 // Backgrounds — layered surfaces, NOT pure black
 static let bgBase        = Color(hex: "#1C1C1E")   // window floor
@@ -36,7 +36,7 @@ static let bgFloating    = Color(hex: "#2A2A2E")   // popovers, dropdowns
 static let bgOverlay     = Color(hex: "#161618")   // modal scrim (0.7 opacity)
 
 // Selection & States
-static let selectionFill   = Color(hex: "#5647F2").opacity(0.14)
+static let selectionFill   = Color(hex: "#6740BF").opacity(0.14)
 static let hoverFill       = Color(white: 1, opacity: 0.05)
 static let activeFill      = Color(white: 1, opacity: 0.08)
 static let segmentSelected = Color(white: 1, opacity: 0.10)
@@ -55,9 +55,9 @@ static let borderFocus     = Color(white: 1, opacity: 0.20)
 static let borderDash      = Color(white: 1, opacity: 0.15)
 
 // Accent — USE SPARINGLY. Only selection, live state, destructive
-static let accent          = Color(hex: "#5647F2")
-static let accentDeep      = Color(hex: "#4436D9")
-static let accentGlow      = Color(hex: "#5647F2").opacity(0.08)
+static let accent          = Color(hex: "#6740BF")
+static let accentDeep      = Color(hex: "#6740BF")
+static let accentGlow      = Color(hex: "#6740BF").opacity(0.08)
 
 // Semantic status colors
 static let encryptedGreen  = Color(hex: "#59D499")   // E2E secure
@@ -73,7 +73,7 @@ static let bgBase_light       = Color(hex: "#F2F2F7")
 static let bgElevated_light   = Color(hex: "#FFFFFF")
 static let bgFloating_light   = Color(hex: "#FFFFFF")
 
-static let selectionFill_light   = Color(hex: "#5647F2").opacity(0.08)
+static let selectionFill_light   = Color(hex: "#6740BF").opacity(0.08)
 static let hoverFill_light       = Color(black: 0, opacity: 0.04)
 static let activeFill_light      = Color(black: 0, opacity: 0.07)
 static let segmentSelected_light = Color(black: 0, opacity: 0.08)
@@ -89,7 +89,7 @@ static let borderFocus_light     = Color(black: 0, opacity: 0.25)
 ```
 
 ### Color Rules
-- **Never** use `#5647F2` as a background fill on large surfaces
+- **Never** use `#6740BF` as a background fill on large surfaces
 - **Never** use pure `#000000` or `#FFFFFF` as a surface color
 - Semantic colors (`encryptedGreen`, `syncBlue`, `warningYellow`) are dots and icon tints only — never body text color
 - `textTertiary` is decorative context only — section headers users scan, not read
@@ -321,12 +321,12 @@ withAnimation(.linear(duration: 0.0)) { selectedItem = item }
 
 ---
 
-## 8. Anti-Patterns — What AirClip NEVER Does
+## 8. Anti-Patterns — What Airclip NEVER Does
 
 ```
 ❌ Pure black (#000000) backgrounds — use #1C1C1E
 ❌ Pure white (#FFFFFF) text — use rgba(255,255,255,0.92)
-❌ Accent (#5647F2) as decoration — it's a signal only
+❌ Accent (#6740BF) as decoration — it's a signal only
 ❌ Corner radius > 12pt on main window
 ❌ Shadows on list rows or inner elements
 ❌ Bold section headers or ALL CAPS labels
@@ -356,7 +356,7 @@ withAnimation(.linear(duration: 0.0)) { selectedItem = item }
 | text.tertiary | `rgba(255,255,255,0.25)` | `rgba(0,0,0,0.25)` |
 | border.subtle | `rgba(255,255,255,0.06)` | `rgba(0,0,0,0.06)` |
 | border.default | `rgba(255,255,255,0.10)` | `rgba(0,0,0,0.12)` |
-| accent | `#5647F2` | `#5647F2` |
+| accent | `#6740BF` | `#6740BF` |
 | row.height | `40pt` | `40pt` |
 | padding.h | `16pt` | `16pt` |
 | corner.window | `12pt` | `12pt` |

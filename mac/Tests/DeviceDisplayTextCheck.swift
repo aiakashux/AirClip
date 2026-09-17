@@ -9,5 +9,13 @@ struct DeviceDisplayTextCheck {
         let clipped = DeviceDisplayText.clipped(String(repeating: "B", count: 50))
         precondition(clipped.count == 36)
         precondition(clipped.hasSuffix("..."))
+
+        let devices = PairedDevice.deduplicated([
+            PairedDevice(deviceId: "old", deviceName: "ONEPLUS A6000", publicKey: "key", lastSeenMs: 1),
+            PairedDevice(deviceId: "current", deviceName: "ONEPLUS A6000", publicKey: "key", lastSeenMs: 2),
+            PairedDevice(deviceId: "other", deviceName: "ONEPLUS A6000", publicKey: "other", lastSeenMs: 1),
+        ])
+        precondition(devices.count == 2)
+        precondition(devices["current"] != nil)
     }
 }

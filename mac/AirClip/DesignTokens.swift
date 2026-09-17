@@ -19,7 +19,7 @@ extension Color {
     static let textSubtle    = adaptive("#CACDD3", light: "#30343B")  // toast, secondary labels
     static let textSecondary = adaptive("#8F949D", light: "#5B6270")  // subtitles, captions
     static let textTertiary  = adaptive("#626875", light: "#7A8392")  // section headers, placeholders
-    static let textLink      = adaptive("#A59DFF", light: "#4436D9")
+    static let textLink      = adaptive("#A59DFF", light: "#6740BF")
 
     // MARK: Borders — 4 tiers
 
@@ -30,15 +30,36 @@ extension Color {
 
     // MARK: Interactive fills
 
-    static let selectionFill   = adaptive("#5647F2", light: "#4436D9").opacity(0.14)
+    static let selectionFill   = accent.opacity(0.14)
     static let hoverFill       = adaptive("#FFFFFF", light: "#1C1D20").opacity(0.06)
     static let activeFill      = adaptive("#FFFFFF", light: "#1C1D20").opacity(0.10)
-    static let segmentSelected = adaptive("#FFFFFF", light: "#1C1D20").opacity(0.12)
+    static let segmentSelected = adaptive("#36373A", light: "#E5E7EB")
+    static let sidebarHover    = adaptive("#FFFFFF", light: "#FAFAFA").opacity(0.40)
+    static let sidebarSelected = adaptive("#2A2B2E", light: "#FFFFFF")
+    static let sidebarSelectedBorder = adaptive("#404248", light: "#EEF1F1")
+    static let listItemHover = adaptive(
+        "#FFFFFF",
+        light: "#1C1D20",
+        darkAlpha: 0.08,
+        lightAlpha: 0.045
+    )
+    static let listItemSelected = adaptive(
+        "#A59DFF",
+        light: "#6740BF",
+        darkAlpha: 0.14,
+        lightAlpha: 0.10
+    )
+    static let listItemSelectedBorder = adaptive(
+        "#A59DFF",
+        light: "#6740BF",
+        darkAlpha: 0.45,
+        lightAlpha: 0.32
+    )
 
     // MARK: Accent — signal only, not decoration
 
-    static let accent         = adaptive("#5647F2", light: "#4436D9")
-    static let accentDeep     = adaptive("#4436D9", light: "#3427B6")  // hover / pressed state
+    static let accent         = adaptive("#A59DFF", light: "#6740BF")  // foreground / focus
+    static let accentDeep     = Color(hex: "#6740BF")                   // filled controls
 
     // MARK: Semantic status
 
@@ -88,7 +109,12 @@ extension Color {
         )
     }
 
-    private static func adaptive(_ dark: String, light: String) -> Color {
+    private static func adaptive(
+        _ dark: String,
+        light: String,
+        darkAlpha: CGFloat = 1,
+        lightAlpha: CGFloat = 1
+    ) -> Color {
         Color(NSColor(name: nil, dynamicProvider: { appearance in
             let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
             let h = (isDark ? dark : light).trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
@@ -98,7 +124,7 @@ extension Color {
                 srgbRed: CGFloat((int & 0xFF0000) >> 16) / 255,
                 green:   CGFloat((int & 0x00FF00) >> 8)  / 255,
                 blue:    CGFloat( int & 0x0000FF)         / 255,
-                alpha:   1
+                alpha:   isDark ? darkAlpha : lightAlpha
             )
         }))
     }

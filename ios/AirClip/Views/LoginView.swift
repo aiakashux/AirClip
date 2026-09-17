@@ -68,7 +68,7 @@ struct LoginView: View {
                     .foregroundStyle(.secondary)
                 }
             }
-            .navigationTitle(mode == .login ? "Sign In to AirClip" : "Create Account")
+            .navigationTitle(mode == .login ? "Sign In to Airclip" : "Create Account")
         }
     }
 

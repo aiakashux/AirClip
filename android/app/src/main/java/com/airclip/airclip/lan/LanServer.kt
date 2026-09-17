@@ -1,11 +1,14 @@
 package com.airclip.airclip.lan
 
+import android.content.Context
 import android.util.Log
 import com.airclip.airclip.PairedDevice
-import com.airclip.airclip.AirClipIdentity
+import com.airclip.airclip.AirclipIdentity
 import com.airclip.airclip.crypto.KeyManager
 import com.airclip.airclip.device.DeviceRemovalNotice
+import com.airclip.airclip.device.WifiNetworkName
 import com.airclip.airclip.pairing.PairingSession
+import com.airclip.airclip.pairing.PairingCompletionPolicy
 import com.google.gson.Gson
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -24,7 +27,7 @@ private const val PORT = 7878
  * LAN WebSocket server — listens on port 7878, handles three message types:
  *
  *   1. auth        — airclip_id-based peer authentication for sync
- *   2. pair_request — incoming pairing from an existing AirClip network member
+ *   2. pair_request — incoming pairing from an existing Airclip space member
  *   3. pair_probe  — code-only lookup (responds with device info if code matches)
  *
  * Auth wire format (sync):
@@ -43,21 +46,21 @@ private const val PORT = 7878
  */
 object LanServer {
 
-    private var server: AirClipServer? = null
+    private var server: AirclipServer? = null
     private val gson = Gson()
 
     /** Callback invoked on successful inbound pairing so ViewModel can update state. */
     var onPairSuccess: (() -> Unit)? = null
 
     @Synchronized
-    fun start(keyManager: KeyManager) {
+    fun start(context: Context, keyManager: KeyManager) {
         if (server != null) {
             Log.d(TAG, "LAN server already running on port $PORT")
             return
         }
 
         runCatching {
-            server = AirClipServer(keyManager).also {
+            server = AirclipServer(context.applicationContext, keyManager).also {
                 it.setReuseAddr(true)
                 it.start()
             }
@@ -81,7 +84,10 @@ object LanServer {
 
     // ──────────────────────────────────────────────────────────────────────────
 
-    private class AirClipServer(private val km: KeyManager) : WebSocketServer(InetSocketAddress(PORT)) {
+    private class AirclipServer(
+        private val context: Context,
+        private val km: KeyManager,
+    ) : WebSocketServer(InetSocketAddress(PORT)) {
 
         private data class ConnectionPeer(val deviceId: String, val connectionId: String)
 
@@ -131,31 +137,28 @@ object LanServer {
 
         private fun handleAuth(conn: WebSocket, msg: Map<String, String>) {
             val peerId     = msg["device_id"]  ?: return reject(conn, "missing device_id")
-            val peerAirClipId = msg["airclip_id"]    ?: return reject(conn, "missing airclip_id")
+            val peerAirclipId = msg["airclip_id"]    ?: return reject(conn, "missing airclip_id")
             val peerPubKey = msg["public_key"] ?: return reject(conn, "missing public_key")
 
-            if (!PeerManager.isTrusted(peerAirClipId, peerId)) {
-                if (!AirClipIdentity.isPaired && PairingSession.current != null) {
-                    scope.launch {
-                        dispatchPairAccepted(peerAirClipId, peerId, msg["device_name"] ?: peerId, peerPubKey)
-                    }
-                } else {
-                    Log.w(TAG, "Auth rejected: untrusted peer ${peerId.take(8)}")
-                    conn.close()
-                    return
-                }
+            val isTrusted = PeerManager.isTrusted(peerAirclipId, peerId)
+            if (!PairingCompletionPolicy.shouldAcceptAuth(isTrusted, PairingSession.current != null)) {
+                Log.w(TAG, "Auth rejected: untrusted peer ${peerId.take(8)}")
+                conn.close()
+                return
             }
 
-            val myId  = AirClipIdentity.deviceId  ?: return conn.close()
+            val myId  = AirclipIdentity.deviceId  ?: return conn.close()
             val myKey = km.getPublicKeyBase64()
 
-            conn.send(gson.toJson(mapOf(
+            val auth = mutableMapOf(
                 "type"       to "auth_ok",
                 "device_id"  to myId,
                 "public_key" to myKey,
-                "device_name" to AirClipIdentity.deviceName,
+                "device_name" to AirclipIdentity.deviceName,
                 "platform" to "android",
-            )))
+            )
+            WifiNetworkName.current(context).name?.let { auth["ssid"] = it }
+            conn.send(gson.toJson(auth))
             val connectionId = java.util.UUID.randomUUID().toString()
             connToPeer[conn] = ConnectionPeer(peerId, connectionId)
 
@@ -180,7 +183,7 @@ object LanServer {
             val peerId      = msg["device_id"]   ?: return reject(conn, "missing device_id")
             val peerName    = msg["device_name"] ?: return reject(conn, "missing device_name")
             val peerPubKey  = msg["public_key"]  ?: return reject(conn, "missing public_key")
-            val peerAirClipId  = msg["airclip_id"]     ?: return reject(conn, "missing airclip_id")
+            val peerAirclipId  = msg["airclip_id"]     ?: return reject(conn, "missing airclip_id")
 
             // Verify the OTP
             if (!PairingSession.verifyCode(code)) {
@@ -189,8 +192,8 @@ object LanServer {
             }
 
             // Existing device presents its airclip_id; must match ours if we already have one
-            val myAirClipId = AirClipIdentity.airClipId
-            if (myAirClipId != null && myAirClipId != peerAirClipId) {
+            val myAirclipId = AirclipIdentity.airClipId
+            if (myAirclipId != null && myAirclipId != peerAirclipId) {
                 Log.w(TAG, "pair_request: airclip_id mismatch from ${peerId.take(8)}")
                 return reject(conn, "airclip_id_mismatch")
             }
@@ -198,7 +201,7 @@ object LanServer {
             Log.d(TAG, "pair_request accepted from ${peerId.take(8)}")
 
             // Gather our current trusted device list to hand to the new member
-            val allDevices = AirClipIdentity.pairedDevices.values
+            val allDevices = AirclipIdentity.pairedDevices.values
                 .filter { it.deviceId != peerId }
                 .map { d ->
                 mapOf(
@@ -209,11 +212,11 @@ object LanServer {
                 )
             }.toMutableList()
 
-            val myId = AirClipIdentity.deviceId
+            val myId = AirclipIdentity.deviceId
             if (myId != null && allDevices.none { it["device_id"] == myId }) {
                 allDevices += mapOf(
                     "device_id" to myId,
-                    "device_name" to AirClipIdentity.deviceName,
+                    "device_name" to AirclipIdentity.deviceName,
                     "public_key" to km.getPublicKeyBase64(),
                     "platform" to "android",
                 )
@@ -221,13 +224,14 @@ object LanServer {
 
             conn.send(gson.toJson(mapOf(
                 "type"        to "pair_ok",
-                "airclip_id"     to peerAirClipId,
+                "airclip_id"     to peerAirclipId,
+                "space_name"  to AirclipIdentity.spaceName,
                 "all_devices" to allDevices,
             )))
 
             // Notify ViewModel so it can persist the pairing result
             scope.launch {
-                dispatchPairAccepted(peerAirClipId, peerId, peerName, peerPubKey)
+                dispatchPairAccepted(peerAirclipId, msg["space_name"], peerId, peerName, peerPubKey)
             }
 
             conn.close()
@@ -245,17 +249,18 @@ object LanServer {
             }
 
             // Respond with our identity so the initiator can connect for a full pair_request
-            val myId   = AirClipIdentity.deviceId  ?: return conn.close()
-            val myName = AirClipIdentity.deviceName
+            val myId   = AirclipIdentity.deviceId  ?: return conn.close()
+            val myName = AirclipIdentity.deviceName
             val myKey  = km.getPublicKeyBase64()
-            val myAirClipId = AirClipIdentity.airClipId ?: return conn.close()
+            val myAirclipId = AirclipIdentity.airClipId ?: return conn.close()
 
             conn.send(gson.toJson(mapOf(
                 "type"        to "pair_info",
                 "device_id"   to myId,
                 "device_name" to myName,
                 "public_key"  to myKey,
-                "airclip_id"  to myAirClipId,
+                "airclip_id"  to myAirclipId,
+                "space_name"  to AirclipIdentity.spaceName,
             )))
             conn.close()
         }
@@ -282,21 +287,23 @@ object LanServer {
                         PeerManager.dispatchHistoryClip(ciphertext, nonce, ts, msgId, fromDeviceId)
                     }
                     "heartbeat" -> {
-                        PeerManager.markPeerSeen(fromId)
-                        conn.send(gson.toJson(mapOf(
+                        PeerManager.markPeerSeen(fromId, msg["ssid"])
+                        val ack = mutableMapOf(
                             "type" to "heartbeat_ack",
                             "ts" to System.currentTimeMillis().toString(),
-                        )))
+                        )
+                        WifiNetworkName.current(context).name?.let { ack["ssid"] = it }
+                        conn.send(gson.toJson(ack))
                     }
                     "heartbeat_ack" -> {
-                        PeerManager.markPeerSeen(fromId)
+                        PeerManager.markPeerSeen(fromId, msg["ssid"])
                     }
                     "app_activity" -> {
                         val ts = msg["ts"]?.toLongOrNull() ?: System.currentTimeMillis()
                         PeerManager.markPeerActivity(fromId, ts)
                     }
                     DeviceRemovalNotice.TYPE -> {
-                        if (DeviceRemovalNotice.targetsCurrentDevice(msg, AirClipIdentity.deviceId)) {
+                        if (DeviceRemovalNotice.targetsCurrentDevice(msg, AirclipIdentity.deviceId)) {
                             PeerManager.dispatchRemovedFromNetwork()
                             conn.close(1000, "removed")
                         }
@@ -334,10 +341,10 @@ object LanServer {
     // ──────────────────────────────────────────────────────────────────────────
 
     /** Set by ViewModel to persist pairing result. Called when a pair_request is accepted. */
-    var onPairAccepted: (suspend (airClipId: String, deviceId: String, deviceName: String, publicKey: String) -> Unit)? = null
+    var onPairAccepted: (suspend (airClipId: String, spaceName: String?, deviceId: String, deviceName: String, publicKey: String) -> Unit)? = null
 
-    private suspend fun dispatchPairAccepted(airClipId: String, deviceId: String, deviceName: String, publicKey: String) {
-        onPairAccepted?.invoke(airClipId, deviceId, deviceName, publicKey)
+    private suspend fun dispatchPairAccepted(airClipId: String, spaceName: String?, deviceId: String, deviceName: String, publicKey: String) {
+        onPairAccepted?.invoke(airClipId, spaceName, deviceId, deviceName, publicKey)
         onPairSuccess?.invoke()
     }
 }

@@ -16,7 +16,7 @@ private const val KEY_LAST_SYNC   = "last_sync_ms"
  *
  * States:
  *   NO_DEVICES    — no LAN peer connected (show "No devices nearby")
- *   SYNCED        — last action completed (show "AirClip in sync" + elapsed time)
+ *   SYNCED        — last action completed (show "Airclip in sync" + elapsed time)
  *   PENDING       — inbound clip waiting to be pasted (show preview + Paste button)
  *   READY_TO_SEND — outbound clip on clipboard (show "Ready to sync" + Send button)
  */
@@ -69,14 +69,14 @@ object WidgetState {
     // ------------------------------------------------------------------
 
     /**
-     * Trigger [AppWidgetManager] to call [AirClipWidget.onUpdate], which redraws
+     * Trigger [AppWidgetManager] to call [AirclipWidget.onUpdate], which redraws
      * all home-screen instances. No-op if no widget is placed.
      */
     fun notifyWidgets(context: Context) {
         val manager = AppWidgetManager.getInstance(context)
-        val ids     = manager.getAppWidgetIds(ComponentName(context, AirClipWidget::class.java))
+        val ids     = manager.getAppWidgetIds(ComponentName(context, AirclipWidget::class.java))
         if (ids.isEmpty()) return
-        val intent = Intent(context, AirClipWidget::class.java).apply {
+        val intent = Intent(context, AirclipWidget::class.java).apply {
             action = AppWidgetManager.ACTION_APPWIDGET_UPDATE
             putExtra(AppWidgetManager.EXTRA_APPWIDGET_IDS, ids)
         }

@@ -1,6 +1,6 @@
-# AirClip macOS App
+# Airclip macOS App
 
-Native SwiftUI macOS app for AirClip.
+Native SwiftUI macOS app for Airclip.
 
 The current macOS app is part of the LAN-first Mac + Android MVP. It advertises and discovers `_airclip._tcp` peers, listens on TCP `7878`, encrypts clipboard packets for paired devices, and stores local history with SwiftData.
 
@@ -16,8 +16,8 @@ From the repository root:
 
 ```bash
 xcodebuild \
-  -project mac/AirClip.xcodeproj \
-  -scheme AirClip \
+  -project mac/Airclip.xcodeproj \
+  -scheme Airclip \
   -configuration Debug \
   -destination 'platform=macOS' \
   -disableAutomaticPackageResolution \
@@ -26,7 +26,7 @@ xcodebuild \
   build
 ```
 
-For interactive development, open `mac/AirClip.xcodeproj` and run the `AirClip` scheme.
+For interactive development, open `mac/Airclip.xcodeproj` and run the `Airclip` scheme.
 
 ## Current Responsibilities
 
@@ -42,11 +42,11 @@ For interactive development, open `mac/AirClip.xcodeproj` and run the `AirClip` 
 ## Important Files
 
 ```text
-mac/AirClip/
-  AirClipApp.swift
+mac/Airclip/
+  AirclipApp.swift
   AppConfig.swift
   Core/
-    AirClipIdentity.swift
+    AirclipIdentity.swift
     ClipboardMonitor.swift
     CryptoManager.swift
     LanBrowser.swift

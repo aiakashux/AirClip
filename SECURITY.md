@@ -2,7 +2,7 @@
 
 ## Scope
 
-AirClip handles clipboard data — which can include passwords, OTPs, and sensitive personal content. Security issues are taken seriously.
+Airclip handles clipboard data — which can include passwords, OTPs, and sensitive personal content. Security issues are taken seriously.
 
 ## Supported Versions
 

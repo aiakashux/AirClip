@@ -262,7 +262,7 @@ final class LocalHistoryStore {
             imageData: packet.imageData,
             receivedAt: receivedAt,
             fromDeviceId: fromDeviceId,
-            isLocal: fromDeviceId == AirClipIdentity.shared.deviceId
+            isLocal: fromDeviceId == AirclipIdentity.shared.deviceId
         )
         ctx.insert(item)
         evictOldItems(ctx: ctx)
@@ -276,6 +276,14 @@ final class LocalHistoryStore {
             all.forEach { ctx.delete($0) }
         }
         try? ctx.save()
+    }
+
+    func latestPacket() -> ClipboardPacket? {
+        var descriptor = FetchDescriptor<ClipboardItem>(
+            sortBy: [SortDescriptor(\.receivedAt, order: .reverse)]
+        )
+        descriptor.fetchLimit = 1
+        return try? container.mainContext.fetch(descriptor).first?.clipboardPacket
     }
 
     func restore(_ snapshot: ClipboardItemSnapshot) {

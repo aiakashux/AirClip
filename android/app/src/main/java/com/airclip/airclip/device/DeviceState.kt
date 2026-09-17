@@ -1,6 +1,6 @@
 package com.airclip.airclip.device
 
-/** Whether this device has been paired into a AirClip. */
+/** Whether this device has been paired into a Airclip. */
 sealed class PairingState {
     object NotPaired : PairingState()
     object Paired    : PairingState()

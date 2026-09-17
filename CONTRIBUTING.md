@@ -1,4 +1,4 @@
-# Contributing to AirClip
+# Contributing to Airclip
 
 ## Branches
 
@@ -13,7 +13,7 @@ Work on `staging`. Open PRs into `main` when ready.
 
 1. Clone the repo
 2. Android: open `android/` in Android Studio
-3. Mac: open `mac/AirClip.xcodeproj` in Xcode
+3. Mac: open `mac/Airclip.xcodeproj` in Xcode
 4. Read [docs/architecture.md](docs/architecture.md) and [docs/protocol.md](docs/protocol.md) first
 
 ## Pull Requests

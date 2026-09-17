@@ -23,7 +23,7 @@ final class SyncModeStore: ObservableObject {
     }
 
     func applyRuntimePolicy() {
-        guard AirClipIdentity.shared.isPaired else {
+        guard AirclipIdentity.shared.isPaired else {
             ClipboardMonitor.shared.stop()
             SyncEngine.shared.disconnect()
             return
@@ -43,7 +43,7 @@ final class SyncModeStore: ObservableObject {
     }
 
     func recoverRuntime() {
-        guard AirClipIdentity.shared.isPaired else { return }
+        guard AirclipIdentity.shared.isPaired else { return }
         if mode.allowsAutomaticCapture {
             ClipboardMonitor.shared.restart()
         }

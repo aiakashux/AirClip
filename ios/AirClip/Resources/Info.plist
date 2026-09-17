@@ -4,7 +4,7 @@
 <dict>
     <!-- Local network access — required for NWListener + NWBrowser -->
     <key>NSLocalNetworkUsageDescription</key>
-    <string>AirClip uses your local network to sync clipboard content directly between your devices. No data leaves your network.</string>
+    <string>Airclip uses your local network to sync clipboard content directly between your devices. No data leaves your network.</string>
 
     <!-- mDNS service types to browse/advertise -->
     <key>NSBonjourServices</key>

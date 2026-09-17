@@ -9,7 +9,7 @@ import android.os.Bundle
 import android.provider.OpenableColumns
 import android.util.Base64
 import android.widget.Toast
-import com.airclip.airclip.AirClipIdentity
+import com.airclip.airclip.AirclipIdentity
 import com.airclip.airclip.ManualSendBootstrap
 import com.airclip.airclip.Prefs
 import com.airclip.airclip.SyncEngine
@@ -24,7 +24,7 @@ import java.util.concurrent.TimeUnit
 
 private const val MAX_TEXT_BYTES = 256 * 1024
 
-class AirClipShareActivity : Activity() {
+class AirclipShareActivity : Activity() {
     private val scope = CoroutineScope(Dispatchers.IO)
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -34,7 +34,7 @@ class AirClipShareActivity : Activity() {
         scope.launch {
             val result = handleShare(intent)
             withContext(Dispatchers.Main) {
-                Toast.makeText(this@AirClipShareActivity, result.message, Toast.LENGTH_SHORT).show()
+                Toast.makeText(this@AirclipShareActivity, result.message, Toast.LENGTH_SHORT).show()
                 finish()
             }
         }
@@ -42,7 +42,7 @@ class AirClipShareActivity : Activity() {
 
     private suspend fun handleShare(intent: Intent): ShareResult {
         if (intent.action != Intent.ACTION_SEND && intent.action != Intent.ACTION_SEND_MULTIPLE) {
-            return ShareResult("AirClip could not read this share.")
+            return ShareResult("Airclip could not read this share.")
         }
 
         val sharedItems = extractSharedItems(intent)
@@ -50,7 +50,7 @@ class AirClipShareActivity : Activity() {
             return ShareResult("This share type is not supported yet.")
         }
         if (!prepareSyncRuntime()) {
-            return ShareResult("AirClip is not ready to share.")
+            return ShareResult("Airclip is not ready to share.")
         }
 
         SyncEngine.markLocalActivity()
@@ -61,7 +61,7 @@ class AirClipShareActivity : Activity() {
             }
         }
         return ShareResult(
-            if (sharedItems.size == 1) "Shared to AirClip" else "Shared ${sharedItems.size} items to AirClip"
+            if (sharedItems.size == 1) "Shared to Airclip" else "Shared ${sharedItems.size} items to Airclip"
         )
     }
 
@@ -147,8 +147,8 @@ class AirClipShareActivity : Activity() {
         return ManualSendBootstrap.prepare(
             mode = Prefs.syncMode,
             loadIdentity = {
-                AirClipIdentity.loadFromDisk(ctx)
-                AirClipIdentity.isPaired
+                AirclipIdentity.loadFromDisk(ctx)
+                AirclipIdentity.isPaired
             },
             loadKeys = {
                 km.loadFromDisk()

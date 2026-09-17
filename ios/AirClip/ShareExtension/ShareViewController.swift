@@ -9,7 +9,7 @@ import UniformTypeIdentifiers
 /// sheet's NSExtensionItem, not from UIPasteboard). This extension:
 ///   1. Extracts the shared text from the extension context
 ///   2. Stores it in the App Group container as a pending outbox item
-///   3. Opens the main AirClip app via URL scheme so it can encrypt + send on foreground
+///   3. Opens the main Airclip app via URL scheme so it can encrypt + send on foreground
 ///
 /// The main app reads `AppConfig.appGroupID` defaults on `airclip://send` URL open.
 final class ShareViewController: UIViewController {
@@ -82,6 +82,6 @@ final class ShareViewController: UIViewController {
     }
 
     private func cancel() {
-        extensionContext?.cancelRequest(withError: NSError(domain: "AirClipShare", code: 0))
+        extensionContext?.cancelRequest(withError: NSError(domain: "AirclipShare", code: 0))
     }
 }

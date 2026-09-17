@@ -18,7 +18,7 @@ private const val LAN_PORT = 7878
 /**
  * Sends an outgoing pair_request to a device that was discovered via mDNS.
  *
- * Flow (this device scans an existing AirClip network member's QR):
+ * Flow (this device scans an existing Airclip space member's QR):
  *   1. This device knows the target's device_id + airclip_id + code (from QR)
  *   2. Target's device_id == mDNS service name → we need its IP from mDNS
  *   3. We use the mDNS discovery to get the IP (see [resolveAndConnect])
@@ -42,13 +42,13 @@ object PairingClient {
         host: String,
         port: Int = LAN_PORT,
         targetDeviceId: String,
-        targetAirClipId: String,
+        targetAirclipId: String,
         code: String,
         myDeviceId: String,
         myDeviceName: String,
         myPublicKey: String,
         httpClient: OkHttpClient,
-        onSuccess: (airClipId: String, allDevices: List<PairedDevice>) -> Unit,
+        onSuccess: (airClipId: String, spaceName: String?, allDevices: List<PairedDevice>) -> Unit,
         onError: (reason: String) -> Unit,
     ) {
         val url     = "ws://$host:$port/"
@@ -62,8 +62,9 @@ object PairingClient {
                     "code"        to code,
                     "device_id"   to myDeviceId,
                     "device_name" to myDeviceName,
+                    "space_name"  to com.airclip.airclip.AirclipIdentity.spaceName,
                     "public_key"  to myPublicKey,
-                    "airclip_id"     to targetAirClipId,
+                    "airclip_id"     to targetAirclipId,
                     "platform"    to "android",
                 ))
                 webSocket.send(msg)
@@ -99,7 +100,7 @@ object PairingClient {
 
                             Log.d(TAG, "pair_ok — airclip_id=${airClipId.take(8)} devices=${devices.size}")
                             webSocket.close(1000, "bye")
-                            onSuccess(airClipId, devices)
+                            onSuccess(airClipId, msg["space_name"] as? String, devices)
                         }
 
                         "pair_reject" -> {
@@ -141,13 +142,13 @@ object PairingClient {
      */
     fun sendPairRequest(
         targetDeviceId: String,
-        targetAirClipId: String,
+        targetAirclipId: String,
         code: String,
         myDeviceId: String,
         myDeviceName: String,
         myPublicKey: String,
         httpClient: OkHttpClient,
-        onSuccess: (airClipId: String, allDevices: List<PairedDevice>) -> Unit,
+        onSuccess: (airClipId: String, spaceName: String?, allDevices: List<PairedDevice>) -> Unit,
         onError: (reason: String) -> Unit,
     ) {
         // Resolved IP cache is populated by LanBrowser; look it up here
@@ -159,7 +160,7 @@ object PairingClient {
         sendPairRequestToHost(
             host           = host,
             targetDeviceId = targetDeviceId,
-            targetAirClipId   = targetAirClipId,
+            targetAirclipId   = targetAirclipId,
             code           = code,
             myDeviceId     = myDeviceId,
             myDeviceName   = myDeviceName,
@@ -183,7 +184,7 @@ object PairingClient {
             deviceId: String,
             deviceName: String,
             publicKey: String,
-            airClipId: String,
+            airClipId: String?,
         ) -> Unit,
         onError: (String) -> Unit,
     ) {
@@ -206,7 +207,7 @@ object PairingClient {
                             val deviceId   = msg["device_id"]   ?: return onError("missing device_id")
                             val deviceName = msg["device_name"] ?: return onError("missing device_name")
                             val publicKey  = msg["public_key"]  ?: return onError("missing public_key")
-                            val airClipId   = msg["airclip_id"]  ?: return onError("missing airclip_id")
+                            val airClipId   = msg["airclip_id"]
                             webSocket.close(1000, "bye")
                             onFound(deviceId, deviceName, publicKey, airClipId)
                         }

@@ -1,26 +1,26 @@
 import AppKit
 import SwiftUI
 
-enum AirClipDeviceIconName: String {
+enum AirclipDeviceIconName: String {
     case tv
     case laptop
     case computer
     case smartPhone
 }
 
-struct AirClipDeviceIcon: View {
-    let name: AirClipDeviceIconName
+struct AirclipDeviceIcon: View {
+    let name: AirclipDeviceIconName
     var size: CGFloat = 56
     var tint: Color = .secondary
 
-    init(_ name: AirClipDeviceIconName, size: CGFloat = 56, tint: Color = .secondary) {
+    init(_ name: AirclipDeviceIconName, size: CGFloat = 56, tint: Color = .secondary) {
         self.name = name
         self.size = size
         self.tint = tint
     }
 
     var body: some View {
-        Image(nsImage: AirClipDeviceIconRenderer.nsImage(name))
+        Image(nsImage: AirclipDeviceIconRenderer.nsImage(name))
             .renderingMode(.template)
             .resizable()
             .scaledToFit()
@@ -30,10 +30,10 @@ struct AirClipDeviceIcon: View {
     }
 }
 
-enum AirClipDeviceIconRenderer {
-    private static var cache: [AirClipDeviceIconName: NSImage] = [:]
+enum AirclipDeviceIconRenderer {
+    private static var cache: [AirclipDeviceIconName: NSImage] = [:]
 
-    static func nsImage(_ name: AirClipDeviceIconName) -> NSImage {
+    static func nsImage(_ name: AirclipDeviceIconName) -> NSImage {
         if let cached = cache[name] { return cached }
         let svg = (deviceIconSVG[name] ?? deviceIconSVG[.smartPhone] ?? "")
             .replacingOccurrences(of: "currentColor", with: "black")
@@ -44,7 +44,7 @@ enum AirClipDeviceIconRenderer {
     }
 }
 
-private let deviceIconSVG: [AirClipDeviceIconName: String] = [
+private let deviceIconSVG: [AirclipDeviceIconName: String] = [
     .tv: """
     <svg preserveAspectRatio="xMidYMid meet" width="73.0104" height="66.2192" viewBox="0 0 73.0104 66.2192" fill="none" xmlns="http://www.w3.org/2000/svg">
     <path opacity="0.4" d="M43.2969 2.54688H29.7135C16.9071 2.54688 10.5038 2.54688 6.52534 6.52534C2.54688 10.5038 2.54688 16.9071 2.54688 29.7135C2.54688 42.52 2.54688 48.9233 6.52534 52.9017C10.5038 56.8802 16.9071 56.8802 29.7135 56.8802H43.2969C56.1034 56.8802 62.5066 56.8802 66.4851 52.9017C70.4635 48.9233 70.4635 42.52 70.4635 29.7135C70.4635 16.9071 70.4635 10.5038 66.4851 6.52534C62.5066 2.54688 56.1034 2.54688 43.2969 2.54688Z" fill="currentColor"/>

@@ -6,6 +6,7 @@ import android.content.Context
 import android.util.Log
 import com.airclip.airclip.crypto.KeyManager
 import com.airclip.airclip.crypto.SealedBox
+import com.airclip.airclip.device.WifiNetworkName
 import com.airclip.airclip.lan.LanBrowser
 import com.airclip.airclip.lan.LanServer
 import com.airclip.airclip.lan.PeerManager
@@ -51,6 +52,7 @@ object SyncEngine {
     private var connectJob: Job? = null
     private var peerCountJob: Job? = null
     private var heartbeatJob: Job? = null
+    private var discoveryRefreshJob: Job? = null
     private var localActivityMs: Long = 0L
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
@@ -66,21 +68,21 @@ object SyncEngine {
 
         PeerManager.onInboundClip  = ::processInboundClip
         PeerManager.onHistoryClip  = ::processHistoryClip
-        PeerManager.onPeerSeen = { deviceId ->
+        PeerManager.onPeerSeen = { deviceId, wifiNetwork ->
             appContext?.let { ctx ->
-                scope.launch { AirClipIdentity.touchDevice(ctx, deviceId) }
+                scope.launch { AirclipIdentity.touchDevice(ctx, deviceId, wifiNetwork) }
             }
         }
         PeerManager.onPeerActivity = { deviceId, timestampMs ->
             appContext?.let { ctx ->
-                scope.launch { AirClipIdentity.markDeviceActive(ctx, deviceId, timestampMs) }
+                scope.launch { AirclipIdentity.markDeviceActive(ctx, deviceId, timestampMs) }
             }
         }
         PeerManager.onPeerRegistered = { peer ->
             appContext?.let { ctx ->
                 scope.launch {
-                    val existing = AirClipIdentity.pairedDevices[peer.deviceId]
-                    AirClipIdentity.addOrUpdateDevice(
+                    val existing = AirclipIdentity.pairedDevices[peer.deviceId]
+                    AirclipIdentity.addOrUpdateDevice(
                         ctx,
                         PairedDevice(
                             deviceId = peer.deviceId,
@@ -101,7 +103,7 @@ object SyncEngine {
 
     /** Start LAN server + browser. */
     fun connect() {
-        if (!SyncRuntimePolicy.shouldRunLanService(AirClipIdentity.isPaired, Prefs.syncMode)) {
+        if (!SyncRuntimePolicy.shouldRunLanService(AirclipIdentity.isPaired, Prefs.syncMode)) {
             disconnect()
             return
         }
@@ -117,7 +119,7 @@ object SyncEngine {
         }
 
         connectJob = scope.launch {
-            if (!lifecycleGate.runIfConnectRequested { LanServer.start(km) }) {
+            if (!lifecycleGate.runIfConnectRequested { LanServer.start(ctx, km) }) {
                 return@launch
             }
 
@@ -146,7 +148,11 @@ object SyncEngine {
             heartbeatJob = scope.launch {
                 while (isActive && Prefs.syncMode.keepsLanServiceRunning) {
                     delay(15_000)
-                    PeerManager.sendHeartbeats()
+                    if (PeerManager.connectedCount.value == 0) {
+                        refreshConnections()
+                    } else {
+                        PeerManager.sendHeartbeats(WifiNetworkName.current(ctx).name)
+                    }
                 }
             }
             Log.d(TAG, "SyncEngine connected — server+browser started")
@@ -162,10 +168,27 @@ object SyncEngine {
         peerCountJob = null
         heartbeatJob?.cancel()
         heartbeatJob = null
+        discoveryRefreshJob?.cancel()
+        discoveryRefreshJob = null
         appContext?.let { LanBrowser.stop(it) }
         LanServer.stop()
         PeerManager.disconnectAll()
         Log.d(TAG, "SyncEngine disconnected")
+    }
+
+    /** Restart discovery without tearing down healthy server or peer sockets. */
+    fun refreshConnections() {
+        if (!lifecycleGate.isConnectRequested()) return
+        val ctx = appContext ?: return
+        val client = httpClient ?: return
+        val km = keyManager ?: return
+        discoveryRefreshJob?.cancel()
+        discoveryRefreshJob = scope.launch { LanBrowser.start(ctx, client, km) }
+    }
+
+    fun reconnect() {
+        disconnect()
+        connect()
     }
 
     suspend fun awaitConnectedPeer(timeoutMs: Long = 2_000L): Boolean {
@@ -185,7 +208,7 @@ object SyncEngine {
     }
 
     fun markLocalActivity() {
-        if (!AirClipIdentity.isPaired) return
+        if (!AirclipIdentity.isPaired) return
         localActivityMs = System.currentTimeMillis()
         PeerManager.broadcastAppActivity(localActivityMs)
     }
@@ -229,7 +252,7 @@ object SyncEngine {
                 val record = ClipItemRecord(
                     messageId    = "local-${UUID.randomUUID()}",
                     seq          = 0L,
-                    fromDeviceId = AirClipIdentity.deviceId ?: "self",
+                    fromDeviceId = AirclipIdentity.deviceId ?: "self",
                     timestampMs  = System.currentTimeMillis(),
                     cipherHash   = hash.take(16),
                     preview      = text.take(40),
@@ -276,7 +299,7 @@ object SyncEngine {
                 val record = ClipItemRecord(
                     messageId = "local-${UUID.randomUUID()}",
                     seq = 0L,
-                    fromDeviceId = AirClipIdentity.deviceId ?: "self",
+                    fromDeviceId = AirclipIdentity.deviceId ?: "self",
                     timestampMs = System.currentTimeMillis(),
                     cipherHash = hash.take(16),
                     preview = displayText.take(40),
@@ -348,7 +371,7 @@ object SyncEngine {
                     imageDataBase64 = payload.imageDataBase64,
                 )
                 if (payload.kind != ClipKind.IMAGE || !ImageClipboard.copy(ctx, record)) {
-                    val clip = ClipData.newPlainText("AirClip", text)
+                    val clip = ClipData.newPlainText("Airclip", text)
                     val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                     cm.setPrimaryClip(clip)
                 }

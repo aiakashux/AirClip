@@ -1,6 +1,6 @@
 # Code Map
 
-Important components in AirClip
+Important components in Airclip
 
 Backend
 

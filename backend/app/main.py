@@ -24,7 +24,7 @@ async def lifespan(app: FastAPI):
     await storage.close_db()
 
 
-app = FastAPI(title="AirClip", version="0.2.0", lifespan=lifespan)
+app = FastAPI(title="Airclip", version="0.2.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,

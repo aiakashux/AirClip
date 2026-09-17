@@ -1,8 +1,8 @@
-# AirClip
+# Airclip
 
 **Clipboard sync between your Mac and Android — private, local, encrypted.**
 
-AirClip copies whatever you copy on one device and pastes it on the other. No cloud. No account. Works on your local Wi-Fi network using end-to-end encryption.
+Airclip copies whatever you copy on one device and pastes it on the other. No cloud. No account. Works on your local Wi-Fi network using end-to-end encryption.
 
 ---
 
@@ -16,7 +16,7 @@ AirClip copies whatever you copy on one device and pastes it on the other. No cl
 
 ## How It Works
 
-AirClip discovers devices on the same Wi-Fi network using Bonjour (Mac) and NSD (Android). Clipboard packets are encrypted with NaCl sealed boxes before leaving the device. Nothing touches a server.
+Airclip discovers devices on the same Wi-Fi network using Bonjour (Mac) and NSD (Android). Clipboard packets are encrypted with NaCl sealed boxes before leaving the device. Nothing touches a server.
 
 ```
 Mac app                          Android app
@@ -45,7 +45,7 @@ Transport: WebSocket over TCP `7878` · Discovery: `_airclip._tcp` · Encryption
 ## Project Structure
 
 ```
-AirClip/
+Airclip/
   android/      Android app (Kotlin + Jetpack Compose)
   mac/          macOS app (Swift + SwiftUI)
   backend/      Legacy relay (not used in current MVP)
@@ -69,12 +69,12 @@ JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' \
 
 ### macOS
 
-Open `mac/AirClip.xcodeproj` in Xcode, or build from terminal:
+Open `mac/Airclip.xcodeproj` in Xcode, or build from terminal:
 
 ```bash
 xcodebuild \
-  -project mac/AirClip.xcodeproj \
-  -scheme AirClip \
+  -project mac/Airclip.xcodeproj \
+  -scheme Airclip \
   -configuration Debug \
   -destination 'platform=macOS' \
   CODE_SIGNING_ALLOWED=NO \

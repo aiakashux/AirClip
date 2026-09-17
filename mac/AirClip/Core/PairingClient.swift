@@ -18,7 +18,7 @@ final class ResolvedEndpointCache {
 
 // MARK: - Pairing Client
 
-/// Handles the outgoing side of the pairing flow (Mac joining an existing AirClip network):
+/// Handles the outgoing side of the pairing flow (Mac joining an existing Airclip space):
 ///
 ///   Strategy (in order):
 ///   1. Poll mDNS cache up to 8s — catches most cases once discovery completes.
@@ -36,13 +36,13 @@ final class PairingClient {
 
     // MARK: - Public API
 
-    func joinAirClip(
+    func joinAirclip(
         code: String,
         myName: String,
-        onSuccess: @escaping (String, [PairedDevice]) -> Void,
+        onSuccess: @escaping (String, String?, [PairedDevice]) -> Void,
         onError: @escaping (String) -> Void
     ) {
-        AirClipIdentity.shared.ensureDeviceId()
+        AirclipIdentity.shared.ensureDeviceId()
         subnetDone = false
 
         Task { @MainActor [weak self] in
@@ -70,7 +70,7 @@ final class PairingClient {
         _ endpoints: [NWEndpoint],
         code: String,
         myName: String,
-        onSuccess: @escaping (String, [PairedDevice]) -> Void,
+        onSuccess: @escaping (String, String?, [PairedDevice]) -> Void,
         onError: @escaping (String) -> Void
     ) {
         probeNext(Array(endpoints), code: code, myName: myName, onSuccess: onSuccess, onError: onError)
@@ -80,7 +80,7 @@ final class PairingClient {
         _ endpoints: [NWEndpoint],
         code: String,
         myName: String,
-        onSuccess: @escaping (String, [PairedDevice]) -> Void,
+        onSuccess: @escaping (String, String?, [PairedDevice]) -> Void,
         onError: @escaping (String) -> Void
     ) {
         guard let endpoint = endpoints.first else {
@@ -107,12 +107,12 @@ final class PairingClient {
             }
 
             let targetName   = resp["device_name"] as? String ?? targetId
-            let targetAirClipId = resp["airclip_id"]     as? String ?? ""
+            let targetAirclipId = resp["airclip_id"]     as? String ?? ""
 
             self.sendPairRequest(
                 to: endpoint,
                 targetId: targetId, targetName: targetName,
-                targetPubKey: targetPk, targetAirClipId: targetAirClipId,
+                targetPubKey: targetPk, targetAirclipId: targetAirclipId,
                 code: code, myName: myName,
                 onSuccess: onSuccess, onError: onError
             )
@@ -124,17 +124,17 @@ final class PairingClient {
     private func scanSubnet(
         code: String,
         myName: String,
-        onSuccess: @escaping (String, [PairedDevice]) -> Void,
+        onSuccess: @escaping (String, String?, [PairedDevice]) -> Void,
         onError: @escaping (String) -> Void
     ) {
         guard let myIP = PairingSession.localLANAddress() else {
-            onError("No AirClip devices found. Make sure you're on the same Wi-Fi.")
+            onError("No Airclip devices found. Make sure you're on the same Wi-Fi.")
             return
         }
 
         let parts = myIP.split(separator: ".")
         guard parts.count == 4 else {
-            onError("No AirClip devices found. Make sure you're on the same Wi-Fi.")
+            onError("No Airclip devices found. Make sure you're on the same Wi-Fi.")
             return
         }
         let prefix = "\(parts[0]).\(parts[1]).\(parts[2])."
@@ -164,17 +164,17 @@ final class PairingClient {
                    let targetPk = resp["public_key"] as? String {
                     self.subnetDone = true
                     let targetName   = resp["device_name"] as? String ?? targetId
-                    let targetAirClipId = resp["airclip_id"]     as? String ?? ""
+                    let targetAirclipId = resp["airclip_id"]     as? String ?? ""
                     self.sendPairRequest(
                         to: endpoint,
                         targetId: targetId, targetName: targetName,
-                        targetPubKey: targetPk, targetAirClipId: targetAirClipId,
+                        targetPubKey: targetPk, targetAirclipId: targetAirclipId,
                         code: code, myName: myName,
                         onSuccess: onSuccess, onError: onError
                     )
                 } else if remaining <= 0 && !self.subnetDone {
                     self.subnetDone = true
-                    onError("No AirClip devices found. Make sure you're on the same Wi-Fi.")
+                    onError("No Airclip devices found. Make sure you're on the same Wi-Fi.")
                 }
             }
         }
@@ -185,17 +185,17 @@ final class PairingClient {
     private func sendPairRequest(
         to endpoint: NWEndpoint,
         targetId: String, targetName: String,
-        targetPubKey: String, targetAirClipId: String,
+        targetPubKey: String, targetAirclipId: String,
         code: String, myName: String,
-        onSuccess: @escaping (String, [PairedDevice]) -> Void,
+        onSuccess: @escaping (String, String?, [PairedDevice]) -> Void,
         onError: @escaping (String) -> Void
     ) {
         guard
-            let myId  = AirClipIdentity.shared.deviceId,
+            let myId  = AirclipIdentity.shared.deviceId,
             let myKey = try? CryptoManager.shared.publicKeyBase64
         else { onError("Device not initialized"); return }
 
-        let myAirClipId = AirClipIdentity.shared.airClipId ?? targetAirClipId
+        let myAirclipId = AirclipIdentity.shared.airClipId ?? targetAirclipId
 
         let ex = PairingExchange(endpoint: endpoint)
         activeExchanges.insert(ex)
@@ -205,8 +205,9 @@ final class PairingClient {
             "code":        code,
             "device_id":   myId,
             "device_name": myName,
+            "space_name":  AirclipIdentity.shared.spaceName,
             "public_key":  myKey,
-            "airclip_id":     myAirClipId,
+            "airclip_id":     myAirclipId,
             "platform":    "mac",
         ]) { [weak self] response in
             guard let self else { return }
@@ -234,7 +235,7 @@ final class PairingClient {
                 publicKey: targetPubKey, platform: "android"
             )
             let allDevices = devices.filter { $0.deviceId != targetId && $0.deviceId != myId } + [newPeer]
-            onSuccess(airClipId, allDevices)
+            onSuccess(airClipId, resp["space_name"] as? String, allDevices)
         }
     }
 }

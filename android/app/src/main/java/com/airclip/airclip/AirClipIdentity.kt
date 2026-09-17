@@ -8,6 +8,7 @@ import androidx.datastore.preferences.preferencesDataStore
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import com.airclip.airclip.lan.PeerManager
+import com.airclip.airclip.pairing.PairingCompletionPolicy
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.firstOrNull
@@ -15,7 +16,7 @@ import java.util.UUID
 
 // ── Data model ────────────────────────────────────────────────────────────────
 
-/** A device paired into this AirClip. */
+/** A device paired into this Airclip. */
 data class PairedDevice(
     val deviceId: String,
     val deviceName: String,
@@ -34,6 +35,7 @@ private val Context.airClipIdentityStore: DataStore<Preferences>
 private val KEY_AIRCLIP_ID  = stringPreferencesKey("airclip_id")
 private val KEY_DEVICE_ID   = stringPreferencesKey("device_id")
 private val KEY_DEVICE_NAME = stringPreferencesKey("device_name")
+private val KEY_SPACE_NAME  = stringPreferencesKey("space_name")
 private val KEY_DEVICES     = stringPreferencesKey("paired_devices_json")
 private val KEY_DEVICE_NAMES = stringPreferencesKey("known_device_names_json")
 private val KEY_IS_PAIRED   = booleanPreferencesKey("is_paired")
@@ -41,7 +43,7 @@ private val KEY_IS_PAIRED   = booleanPreferencesKey("is_paired")
 /**
  * Self-sovereign identity store — no server required.
  *
- * airclip_id:   shared UUID across all devices in the same AirClip.
+ * airclip_id:   shared UUID across all devices in the same Airclip.
  *            Joining = adopting an existing airclip_id via QR/code pairing.
  * device_id: UUID unique to this device; used as the mDNS service name.
  * pairedDevices: locally-stored registry of trusted devices — built via QR/code pairing.
@@ -49,11 +51,12 @@ private val KEY_IS_PAIRED   = booleanPreferencesKey("is_paired")
  * Thread safety: @Volatile in-memory fields + DataStore for persistence.
  * Call [loadFromDisk] once on startup before any reads.
  */
-object AirClipIdentity {
+object AirclipIdentity {
 
     @Volatile var airClipId: String?  = null; private set
     @Volatile var deviceId: String? = null; private set
     @Volatile var deviceName: String = ""; private set
+    @Volatile var spaceName: String = ""; private set
     @Volatile var isPaired: Boolean  = false; private set
 
     private val _pairedDevices = mutableMapOf<String, PairedDevice>()
@@ -73,6 +76,7 @@ object AirClipIdentity {
         airClipId     = prefs[KEY_AIRCLIP_ID]
         deviceId   = prefs[KEY_DEVICE_ID]
         deviceName = prefs[KEY_DEVICE_NAME] ?: Build.MODEL
+        spaceName  = prefs[KEY_SPACE_NAME] ?: "My Space"
         isPaired   = prefs[KEY_IS_PAIRED] ?: false
         _pairedDevices.clear()
         prefs[KEY_DEVICES]?.let { json ->
@@ -86,45 +90,50 @@ object AirClipIdentity {
                 .getOrNull()
                 ?.let { _knownDeviceNames.putAll(it) }
         }
+        val removedSelf = deviceId?.let { _pairedDevices.remove(it) != null } ?: false
+        deviceId?.let { _knownDeviceNames.remove(it) }
         rememberDeviceNames(_pairedDevices.values)
-        publishDevices()
+        if (removedSelf) persistDevices(context) else publishDevices()
     }
 
-    // ── AirClip creation ─────────────────────────────────────────────────────────
+    // ── Airclip creation ─────────────────────────────────────────────────────────
 
     /**
-     * Called on "Create AirClip network". Generates airclip_id + device_id, stores immediately.
+     * Called on "Create Airclip space". Generates airclip_id + device_id, stores immediately.
      * KeyManager keypair must already be generated before calling this.
      */
-    suspend fun createAirClip(context: Context, name: String) {
+    suspend fun createAirclip(context: Context, deviceName: String, spaceName: String) {
         airClipId     = UUID.randomUUID().toString()
-        deviceId   = UUID.randomUUID().toString()
-        deviceName = name
+        deviceId   = PairingCompletionPolicy.retainedDeviceId(deviceId, UUID.randomUUID().toString())
+        this.deviceName = deviceName
+        this.spaceName = spaceName
         isPaired   = true
         _pairedDevices.clear()
         _knownDeviceNames.clear()
         persist(context)
     }
 
-    // ── Joining an existing AirClip ──────────────────────────────────────────────
+    // ── Joining an existing Airclip ──────────────────────────────────────────────
 
     /**
-     * Called when pairing succeeds and we adopt an existing AirClip's identity.
-     * [allDevices] = the existing AirClip's current device list from the pairing host.
+     * Called when pairing succeeds and we adopt an existing Airclip's identity.
+     * [allDevices] = the existing Airclip's current device list from the pairing host.
      */
-    suspend fun joinAirClip(
+    suspend fun joinAirclip(
         context: Context,
-        incomingAirClipId: String,
+        incomingAirclipId: String,
         myName: String,
+        incomingSpaceName: String? = null,
         allDevices: List<PairedDevice>,
     ) {
-        if (deviceId == null) deviceId = UUID.randomUUID().toString()
-        airClipId     = incomingAirClipId
+        deviceId = PairingCompletionPolicy.retainedDeviceId(deviceId, UUID.randomUUID().toString())
+        airClipId     = incomingAirclipId
         deviceName = myName
+        if (!incomingSpaceName.isNullOrBlank()) spaceName = incomingSpaceName
         isPaired   = true
         _pairedDevices.clear()
         allDevices
-            .filter { it.deviceId != deviceId }
+            .filter { PairingCompletionPolicy.isRemoteDevice(it.deviceId, deviceId) }
             .forEach {
                 _pairedDevices[it.deviceId] = it
                 rememberDeviceName(it)
@@ -136,6 +145,7 @@ object AirClipIdentity {
 
     /** Add or refresh a paired device record. */
     suspend fun addOrUpdateDevice(context: Context, device: PairedDevice) {
+        if (!PairingCompletionPolicy.isRemoteDevice(device.deviceId, deviceId)) return
         _pairedDevices[device.deviceId] = device
         rememberDeviceName(device)
         persistDevices(context)
@@ -176,7 +186,7 @@ object AirClipIdentity {
 
     /** Ensure this device has a device_id even before full pairing completes (for QR). */
     fun ensureDeviceId() {
-        if (deviceId == null) deviceId = UUID.randomUUID().toString()
+        deviceId = PairingCompletionPolicy.retainedDeviceId(deviceId, UUID.randomUUID().toString())
     }
 
     fun setDeviceName(name: String) { deviceName = name }
@@ -187,14 +197,19 @@ object AirClipIdentity {
     // ── Reset ─────────────────────────────────────────────────────────────────
 
     suspend fun clearAll(context: Context) {
+        val retainedDeviceId = PairingCompletionPolicy.retainedDeviceId(deviceId, UUID.randomUUID().toString())
         airClipId     = null
-        deviceId   = null
+        deviceId   = retainedDeviceId
         deviceName = ""
+        spaceName = ""
         isPaired   = false
         _pairedDevices.clear()
         _knownDeviceNames.clear()
         publishDevices()
-        context.airClipIdentityStore.edit { it.clear() }
+        context.airClipIdentityStore.edit {
+            it.clear()
+            it[KEY_DEVICE_ID] = retainedDeviceId
+        }
     }
 
     // ── Persistence ───────────────────────────────────────────────────────────
@@ -204,6 +219,7 @@ object AirClipIdentity {
             prefs[KEY_AIRCLIP_ID]  = airClipId!!
             prefs[KEY_DEVICE_ID]   = deviceId!!
             prefs[KEY_DEVICE_NAME] = deviceName
+            prefs[KEY_SPACE_NAME]  = spaceName
             prefs[KEY_IS_PAIRED]   = isPaired
             prefs[KEY_DEVICES]     = gson.toJson(_pairedDevices)
             prefs[KEY_DEVICE_NAMES] = gson.toJson(_knownDeviceNames)

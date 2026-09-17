@@ -1,5 +1,6 @@
 package com.airclip.airclip.ui.screens
 
+import android.animation.ValueAnimator
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
@@ -27,16 +28,20 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -64,11 +69,12 @@ import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
 import com.airclip.airclip.R
 import com.airclip.airclip.MainViewModel
-import com.airclip.airclip.pairing.AirClipCaptureActivity
+import com.airclip.airclip.pairing.AirclipCaptureActivity
 import com.airclip.airclip.pairing.PairingCode
 import com.airclip.airclip.ui.theme.*
 import androidx.compose.ui.graphics.asImageBitmap
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlin.math.PI
 import kotlin.math.atan2
 import kotlin.math.cos
@@ -91,7 +97,7 @@ private val BearyFontFamily = FontFamily(Font(R.font.beary))
 
 @Composable
 fun OnboardingScreen(viewModel: MainViewModel, uiState: MainViewModel.UiState) {
-    val c = LocalAirClipColors.current
+    val c = LocalAirclipColors.current
     var nav by remember { mutableStateOf<OnboardingNav>(OnboardingNav.Landing) }
 
     // When pairing completes, move to success screen
@@ -126,17 +132,21 @@ fun OnboardingScreen(viewModel: MainViewModel, uiState: MainViewModel.UiState) {
     ) { screen ->
         when (screen) {
             OnboardingNav.Landing -> LandingScreen(
-                onCreateAirClip = { nav = OnboardingNav.CreateName },
-                onJoinAirClip   = {
+                onCreateAirclip = {
+                    viewModel.suggestSpaceName()
+                    nav = OnboardingNav.CreateName
+                },
+                onJoinAirclip   = {
                     viewModel.onStartPairingSession()
                     nav = OnboardingNav.JoinFlow
                 },
             )
             OnboardingNav.CreateName -> CreateNameScreen(
                 uiState = uiState,
-                onDeviceNameChange = viewModel::onDeviceNameChange,
+                onSpaceNameChange = viewModel::onSpaceNameChange,
+                onRefreshName = { viewModel.suggestSpaceName(force = true) },
                 onBack = { nav = OnboardingNav.Landing },
-                onCreate = { viewModel.onCreateAirClip() },
+                onCreate = { viewModel.onCreateAirclip() },
                 error = uiState.lastError,
             )
             OnboardingNav.JoinFlow -> JoinFlowScreen(
@@ -149,7 +159,7 @@ fun OnboardingScreen(viewModel: MainViewModel, uiState: MainViewModel.UiState) {
                     val opts = ScanOptions().apply {
                         setPrompt("")
                         setBeepEnabled(false)
-                        setCaptureActivity(AirClipCaptureActivity::class.java)
+                        setCaptureActivity(AirclipCaptureActivity::class.java)
                         setOrientationLocked(true)
                     }
                     scanLauncher.launch(opts)
@@ -169,8 +179,8 @@ fun OnboardingScreen(viewModel: MainViewModel, uiState: MainViewModel.UiState) {
 
 @Composable
 private fun LandingScreen(
-    onCreateAirClip: () -> Unit,
-    onJoinAirClip: () -> Unit,
+    onCreateAirclip: () -> Unit,
+    onJoinAirclip: () -> Unit,
 ) {
     BoxWithConstraints(
         modifier = Modifier
@@ -266,20 +276,20 @@ private fun LandingScreen(
                     verticalArrangement = Arrangement.spacedBy(buttonGap),
                 ) {
                     LandingButton(
-                        label = "Create an Airclip",
+                        label = "Create a space",
                         icon = R.drawable.airclip_splash_add,
                         containerColor = Color.Black,
                         contentColor = Color.White,
                         modifier = Modifier.fillMaxWidth(),
-                        onClick = onCreateAirClip,
+                        onClick = onCreateAirclip,
                     )
                     LandingButton(
-                        label = "Join your Airclip",
+                        label = "Join a space",
                         icon = R.drawable.airclip_splash_link,
                         containerColor = Color(0xFFF5F4F7),
                         contentColor = Color(0xFF202327),
                         modifier = Modifier.fillMaxWidth(),
-                        onClick = onJoinAirClip,
+                        onClick = onJoinAirclip,
                     )
                 }
             }
@@ -462,12 +472,13 @@ private fun LandingButton(
 @Composable
 private fun CreateNameScreen(
     uiState: MainViewModel.UiState,
-    onDeviceNameChange: (String) -> Unit,
+    onSpaceNameChange: (String) -> Unit,
+    onRefreshName: () -> String?,
     onBack: () -> Unit,
     onCreate: () -> Unit,
     error: String?,
 ) {
-    val c = LocalAirClipColors.current
+    val c = LocalAirclipColors.current
     val focusManager = LocalFocusManager.current
     val easeOut = CubicBezierEasing(0.23f, 1f, 0.32f, 1f)
     var revealContent by remember { mutableStateOf(false) }
@@ -520,7 +531,7 @@ private fun CreateNameScreen(
             ) {
                 Spacer(Modifier.height(16.dp))
                 Text(
-                    "Name this device",
+                    "Name your space",
                     fontSize = 32.sp,
                     lineHeight = 40.sp,
                     fontFamily = BearyFontFamily,
@@ -530,7 +541,7 @@ private fun CreateNameScreen(
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "Helps you recognise it on your other devices.",
+                    "A shared space for all your devices.",
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Normal,
                     color = c.textSecondary,
@@ -541,8 +552,9 @@ private fun CreateNameScreen(
 
                 Spacer(Modifier.height(48.dp))
                 DeviceNameField(
-                    value = uiState.deviceName,
-                    onValueChange = onDeviceNameChange,
+                    value = uiState.spaceName,
+                    onValueChange = onSpaceNameChange,
+                    onRefreshName = onRefreshName,
                     onDone = { focusManager.clearFocus() },
                     modifier = Modifier
                         .fillMaxWidth()
@@ -561,13 +573,13 @@ private fun CreateNameScreen(
 
                 Spacer(Modifier.height(16.dp))
                 LandingButton(
-                    label = "Create an Airclip",
+                    label = "Create space",
                     icon = R.drawable.airclip_splash_add,
-                    containerColor = if (uiState.deviceName.isNotBlank()) c.textPrimary else c.borderDefault,
-                    contentColor = if (uiState.deviceName.isNotBlank()) c.bgBase else c.textTertiary,
-                    enabled = uiState.deviceName.isNotBlank(),
+                    containerColor = if (uiState.spaceName.isNotBlank()) c.textPrimary else c.activeFill,
+                    contentColor = if (uiState.spaceName.isNotBlank()) c.bgBase else c.textSecondary,
+                    enabled = uiState.spaceName.isNotBlank(),
                     loading = uiState.isPairingWaiting,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().height(56.dp),
                     onClick = onCreate,
                 )
                 Spacer(Modifier.height(24.dp))
@@ -580,41 +592,118 @@ private fun CreateNameScreen(
 private fun DeviceNameField(
     value: String,
     onValueChange: (String) -> Unit,
+    onRefreshName: () -> String?,
     onDone: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val c = LocalAirClipColors.current
-    OutlinedTextField(
-        value = value,
-        onValueChange = onValueChange,
-        modifier = modifier,
-        placeholder = {
-            Text(
-                "One Plus 6",
-                color = c.textTertiary,
+    val c = LocalAirclipColors.current
+    val scope = rememberCoroutineScope()
+    val animationsEnabled = ValueAnimator.areAnimatorsEnabled()
+    var refreshing by remember { mutableStateOf(false) }
+    var refreshTurns by remember { mutableIntStateOf(0) }
+    var draftValue by remember { mutableStateOf(value) }
+    var revealProgress by remember { mutableFloatStateOf(1f) }
+    var isFocused by remember { mutableStateOf(false) }
+    val refreshInteractionSource = remember { MutableInteractionSource() }
+    val isRefreshPressed by refreshInteractionSource.collectIsPressedAsState()
+    LaunchedEffect(value, refreshing) {
+        if (!refreshing && draftValue != value) draftValue = value
+    }
+    val refreshRotation by animateFloatAsState(
+        targetValue = refreshTurns * 360f,
+        animationSpec = tween(250, easing = CubicBezierEasing(0.23f, 1f, 0.32f, 1f)),
+        label = "SpaceNameRefreshRotation",
+    )
+
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(16.dp))
+            .background(c.bgBase)
+            .border(
+                width = 1.dp,
+                color = if (isFocused) c.accent else c.borderDefault,
+                shape = RoundedCornerShape(16.dp),
+            ),
+    ) {
+        BasicTextField(
+            value = draftValue,
+            onValueChange = {
+                draftValue = it
+                if (!refreshing) onValueChange(it)
+            },
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(start = 16.dp, end = 64.dp)
+                .onFocusChanged { isFocused = it.isFocused },
+            textStyle = MaterialTheme.typography.bodyLarge.copy(
+                color = c.textPrimary,
                 fontSize = 18.sp,
                 lineHeight = 25.2.sp,
+            ),
+            cursorBrush = SolidColor(c.accent),
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+            keyboardActions = KeyboardActions(onDone = { onDone() }),
+            decorationBox = { innerTextField ->
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.CenterStart) {
+                    if (draftValue.isEmpty()) {
+                        Text("My Space", color = c.textTertiary, fontSize = 18.sp, lineHeight = 25.2.sp)
+                    }
+                    Box(
+                        modifier = Modifier
+                            .blur(if (refreshing && animationsEnabled) (6f * (1f - revealProgress)).dp else 0.dp)
+                            .alpha(if (refreshing) 0.4f + 0.6f * revealProgress else 1f),
+                    ) {
+                        innerTextField()
+                    }
+                }
+            },
+        )
+
+        IconButton(
+            onClick = {
+                if (refreshing) return@IconButton
+                refreshing = true
+                revealProgress = 0f
+                refreshTurns += 1
+                scope.launch {
+                    delay(80)
+                    val newName = onRefreshName()
+                    if (newName == null || !animationsEnabled) {
+                        if (newName != null) draftValue = newName
+                        revealProgress = 1f
+                        refreshing = false
+                        return@launch
+                    }
+
+                    draftValue = ""
+                    val characterDelay = 180L / newName.length.coerceAtLeast(1)
+                    newName.forEachIndexed { index, character ->
+                        delay(characterDelay)
+                        draftValue += character
+                        revealProgress = (index + 1f) / newName.length
+                    }
+                    refreshing = false
+                }
+            },
+            interactionSource = refreshInteractionSource,
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .padding(end = 4.dp)
+                .size(48.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(if (isRefreshPressed) c.activeFill else Color.Transparent),
+        ) {
+            Icon(
+                painter = painterResource(R.drawable.ic_refresh_airclip),
+                contentDescription = "Suggest another space name",
+                tint = c.textSecondary,
+                modifier = Modifier
+                    .size(22.dp)
+                    .graphicsLayer { rotationZ = refreshRotation },
             )
-        },
-        singleLine = true,
-        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-        keyboardActions = KeyboardActions(onDone = { onDone() }),
-        colors = OutlinedTextFieldDefaults.colors(
-            focusedBorderColor = c.accent,
-            unfocusedBorderColor = c.borderDefault,
-            focusedContainerColor = c.bgBase,
-            unfocusedContainerColor = c.bgBase,
-            focusedTextColor = c.textPrimary,
-            unfocusedTextColor = c.textPrimary,
-            cursorColor = c.accent,
-        ),
-        shape = RoundedCornerShape(16.dp),
-        textStyle = MaterialTheme.typography.bodyLarge.copy(
-            color = c.textPrimary,
-            fontSize = 18.sp,
-            lineHeight = 25.2.sp,
-        ),
-    )
+        }
+    }
 }
 
 // ── Join flow ─────────────────────────────────────────────────────────────────
@@ -628,7 +717,7 @@ private fun JoinFlowScreen(
     onRefreshCode: () -> Unit,
     error: String?,
 ) {
-    val c = LocalAirClipColors.current
+    val c = LocalAirclipColors.current
     var activeTab by remember { mutableStateOf(JoinTab.SHOW_QR) }
 
     BoxWithConstraints(
@@ -659,7 +748,7 @@ private fun JoinFlowScreen(
             }
 
             Text(
-                "Join your Airclip",
+                "Join a space",
                 fontFamily = BearyFontFamily,
                 fontSize = 32.sp,
                 lineHeight = 40.sp,
@@ -668,21 +757,27 @@ private fun JoinFlowScreen(
                 textAlign = TextAlign.Center,
             )
             Spacer(Modifier.height(4.dp))
-            Text(
-                when (activeTab) {
-                    JoinTab.SCAN_QR -> "Scan the QR code shown on a device in your Airclip network."
-                    JoinTab.SHOW_QR -> "Scan this QR code with another Airclip device, or enter the code below."
-                    JoinTab.CODE_INPUT -> "Enter the 6-digit code shown on an Airclip network device"
+            Crossfade(targetState = activeTab, animationSpec = tween(150), label = "join subtitle") { tab -> Text(
+                when (tab) {
+                    JoinTab.SCAN_QR -> "Scan the QR code shown on another Airclip device."
+                    JoinTab.SHOW_QR -> "Open Airclip on your other device. Choose Join a space, then scan or enter the code below."
+                    JoinTab.CODE_INPUT -> "Enter the 6-digit code shown on another Airclip device."
                 },
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
                 fontSize = 16.sp,
                 lineHeight = 24.sp,
                 color = c.textSecondary,
                 textAlign = TextAlign.Center,
-            )
+                maxLines = 2,
+            ) }
 
-            Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
-                when (activeTab) {
+            AnimatedContent(
+                targetState = activeTab,
+                modifier = Modifier.fillMaxWidth().weight(1f),
+                transitionSpec = { fadeIn(tween(160)) togetherWith fadeOut(tween(120)) },
+                label = "join tab content",
+            ) { tab ->
+                when (tab) {
                     JoinTab.SCAN_QR -> ScanQrTabContent(onScanQr = onScanQr, scale = scale)
                     JoinTab.SHOW_QR -> ShowQrTabContent(uiState, scale, onRefreshCode)
                     JoinTab.CODE_INPUT -> CodeInputTabContent(onEnterCode, error, scale)
@@ -753,7 +848,8 @@ private fun ShowQrTabContent(
     scale: Float,
     onRefreshCode: () -> Unit,
 ) {
-    val c = LocalAirClipColors.current
+    val c = LocalAirclipColors.current
+    val animationsEnabled = ValueAnimator.areAnimatorsEnabled()
     var nowMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(uiState.pairingCodeExpiresAtMs) {
         while (true) {
@@ -761,7 +857,7 @@ private fun ShowQrTabContent(
             delay(1_000L)
         }
     }
-    val secondsRemaining = ((uiState.pairingCodeExpiresAtMs - nowMs) / 1_000L).coerceAtLeast(0L)
+    val secondsRemaining = ((uiState.pairingCodeExpiresAtMs - nowMs + 999L) / 1_000L).coerceAtLeast(0L)
 
     Column(
         modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp),
@@ -772,51 +868,56 @@ private fun ShowQrTabContent(
 
         Box(
             modifier = Modifier
-                .size(s(220f))
-                .clip(RoundedCornerShape(s(32f)))
+                .size(s(224f))
+                .clip(RoundedCornerShape(s(28f)))
                 .background(Color.White)
-                .border(s(18f), Color(0xFFF7F7F6), RoundedCornerShape(s(32f)))
-                .padding(s(24f)),
+                .border(s(14f), Color(0xFFF7F7F6), RoundedCornerShape(s(28f)))
+                .padding(s(20f)),
             contentAlignment = Alignment.Center,
         ) {
-            val qrBitmap = uiState.pairingQr
-            if (qrBitmap != null) {
-                Image(
-                    bitmap = qrBitmap.asImageBitmap(),
-                    contentDescription = "Pairing QR code",
-                    modifier = Modifier.fillMaxSize(),
-                )
-            } else {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(32.dp),
-                    color = c.accent,
-                    strokeWidth = 2.dp,
-                )
+            AnimatedContent(
+                targetState = uiState.pairingQr,
+                transitionSpec = {
+                    if (animationsEnabled) {
+                        fadeIn(tween(180, easing = CubicBezierEasing(0.23f, 1f, 0.32f, 1f))) togetherWith
+                            fadeOut(tween(140))
+                    } else {
+                        EnterTransition.None togetherWith ExitTransition.None
+                    }
+                },
+                label = "PairingQrCrossfade",
+            ) { qrBitmap ->
+                if (qrBitmap != null) {
+                    Image(
+                        bitmap = qrBitmap.asImageBitmap(),
+                        contentDescription = "Pairing QR code",
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                } else {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(32.dp),
+                        color = c.accent,
+                        strokeWidth = 2.dp,
+                    )
+                }
             }
         }
 
-        Spacer(Modifier.height(s(20f)))
-        uiState.pairingCode?.let { code ->
-            val normalized = PairingCode.normalize(code).take(PairingCode.LENGTH)
+        Spacer(Modifier.height(16.dp))
+        if (uiState.pairingCode != null) {
             PairingCodeDisplay(
-                code = normalized,
-                modifier = Modifier,
+                code = uiState.pairingCode,
                 scale = scale,
             )
         }
 
-        Spacer(Modifier.height(s(10f)))
+        Spacer(Modifier.height(8.dp))
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(s(8f)),
         ) {
-            CircularProgressIndicator(
-                modifier = Modifier.size(s(14f)),
-                color = c.green,
-                strokeWidth = s(2f),
-            )
             Text(
-                "Waiting · refreshes in ${secondsRemaining}s",
+                "Refreshes in ${secondsRemaining}s",
                 fontSize = 13.sp,
                 color = c.textSecondary,
             )
@@ -829,7 +930,7 @@ private fun ShowQrTabContent(
 
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
-private fun CodeInputTabContent(
+internal fun CodeInputTabContent(
     onEnterCode: (String) -> Unit,
     error: String?,
     scale: Float,
@@ -1044,7 +1145,7 @@ private fun CodeInputTabContent(
 
 @Composable
 private fun PairingCodeDisplay(code: String, modifier: Modifier = Modifier, scale: Float) {
-    val c = LocalAirClipColors.current
+    val c = LocalAirclipColors.current
     val parts = PairingCode.normalize(code).padEnd(PairingCode.LENGTH, ' ').chunked(3)
 
     Row(
@@ -1052,7 +1153,7 @@ private fun PairingCodeDisplay(code: String, modifier: Modifier = Modifier, scal
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy((12f * scale).dp),
     ) {
-        PairingCodeGroup(parts.getOrElse(0) { "   " }, scale)
+        PairingCodeGroup(parts.getOrElse(0) { "   " }, scale, 0)
         Text(
             "-",
             fontSize = 28.sp,
@@ -1060,13 +1161,14 @@ private fun PairingCodeDisplay(code: String, modifier: Modifier = Modifier, scal
             fontWeight = FontWeight.SemiBold,
             color = c.textPrimary,
         )
-        PairingCodeGroup(parts.getOrElse(1) { "   " }, scale)
+        PairingCodeGroup(parts.getOrElse(1) { "   " }, scale, 3)
     }
 }
 
 @Composable
-private fun PairingCodeGroup(part: String, scale: Float) {
-    val c = LocalAirClipColors.current
+private fun PairingCodeGroup(part: String, scale: Float, startIndex: Int) {
+    val c = LocalAirclipColors.current
+    val animationsEnabled = ValueAnimator.areAnimatorsEnabled()
 
     Row(
         modifier = Modifier
@@ -1078,15 +1180,32 @@ private fun PairingCodeGroup(part: String, scale: Float) {
         horizontalArrangement = Arrangement.spacedBy((4f * scale).dp),
     ) {
         repeat(3) { index ->
-            Text(
-                part.getOrNull(index)?.toString()?.trim().orEmpty(),
+            val digit = part.getOrNull(index)?.toString()?.trim().orEmpty()
+            AnimatedContent(
+                targetState = digit,
                 modifier = Modifier.width((38f * scale).dp),
-                fontSize = 28.sp,
-                lineHeight = 39.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = c.textPrimary,
-                textAlign = TextAlign.Center,
-            )
+                transitionSpec = {
+                    if (animationsEnabled) {
+                        val delay = (startIndex + index) * 18
+                        (slideInVertically(
+                            tween(180, delay, CubicBezierEasing(0.23f, 1f, 0.32f, 1f)),
+                        ) { it / 3 } + fadeIn(tween(140, delay))) togetherWith
+                            (slideOutVertically(tween(140)) { -it / 3 } + fadeOut(tween(100)))
+                    } else {
+                        EnterTransition.None togetherWith ExitTransition.None
+                    }
+                },
+                label = "PairingDigit",
+            ) { displayedDigit ->
+                Text(
+                    displayedDigit,
+                    fontSize = 28.sp,
+                    lineHeight = 39.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = c.textPrimary,
+                    textAlign = TextAlign.Center,
+                )
+            }
         }
     }
 }
@@ -1190,7 +1309,7 @@ private fun JoinTabBar(
 
 @Composable
 private fun SuccessScreen(onGetStarted: () -> Unit) {
-    val c = LocalAirClipColors.current
+    val c = LocalAirclipColors.current
 
     // Entrance animation
     var visible by remember { mutableStateOf(false) }
@@ -1237,7 +1356,7 @@ private fun SuccessScreen(onGetStarted: () -> Unit) {
                 Spacer(Modifier.height(10.dp))
 
                 Text(
-                    "This device is now part of your Airclip network. Copy on one device, paste from another.",
+                    "This device is now part of your Airclip space. Copy on one device, paste from another.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = c.textSecondary,
                     textAlign = TextAlign.Center,
@@ -1266,7 +1385,7 @@ private fun OnboardingPrimaryButton(
     loading: Boolean,
     onClick: () -> Unit,
 ) {
-    val c = LocalAirClipColors.current
+    val c = LocalAirclipColors.current
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(

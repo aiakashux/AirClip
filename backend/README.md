@@ -1,4 +1,4 @@
-# AirClip Backend
+# Airclip Backend
 
 Status: legacy / inactive for the current LAN-first MVP.
 
@@ -6,7 +6,7 @@ The backend source remains in the repository from an earlier relay-based product
 
 ## Current Guidance
 
-Do not use this backend README as the source of truth for current AirClip sync behavior.
+Do not use this backend README as the source of truth for current Airclip sync behavior.
 
 Use:
 

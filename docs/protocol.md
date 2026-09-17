@@ -1,4 +1,4 @@
-# AirClip LAN Protocol
+# Airclip LAN Protocol
 
 ## Transport
 

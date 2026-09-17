@@ -5,6 +5,12 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
@@ -25,7 +31,7 @@ import com.airclip.airclip.clipboard.ClipboardMonitor
 import com.airclip.airclip.device.PairingState
 import com.airclip.airclip.ui.screens.MainScreen
 import com.airclip.airclip.ui.screens.OnboardingScreen
-import com.airclip.airclip.ui.theme.AirClipTheme
+import com.airclip.airclip.ui.theme.AirclipTheme
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalComposeUiApi::class)
@@ -64,29 +70,38 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            AirClipTheme(appearanceSetting = uiState.appearanceSetting) {
+            AirclipTheme(appearanceSetting = uiState.appearanceSetting) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background,
                 ) {
-                    if (isPaired) {
-                        MainScreen(viewModel, uiState)
-                    } else {
-                        OnboardingScreen(viewModel, uiState)
+                    AnimatedContent(
+                        targetState = isPaired,
+                        transitionSpec = {
+                            fadeIn(tween(220, easing = CubicBezierEasing(0.23f, 1f, 0.32f, 1f))) togetherWith
+                                fadeOut(tween(140))
+                        },
+                        label = "onboarding to app",
+                    ) { paired ->
+                        if (paired) {
+                            MainScreen(viewModel, uiState)
+                        } else {
+                            OnboardingScreen(viewModel, uiState)
+                        }
                     }
 
                     if (uiState.showNetworkSwitchConfirmation) {
                         AlertDialog(
                             onDismissRequest = viewModel::onCancelNetworkSwitch,
-                            title = { Text("Join this AirClip?") },
+                            title = { Text("Join this Airclip?") },
                             text = {
                                 Text(
-                                    "This device is already part of another AirClip. Joining this one will leave the current AirClip on this device.",
+                                    "This device is already part of another Airclip. Joining this one will leave the current Airclip on this device.",
                                 )
                             },
                             confirmButton = {
                                 TextButton(onClick = viewModel::onConfirmNetworkSwitch) {
-                                    Text("Join this AirClip")
+                                    Text("Join this Airclip")
                                 }
                             },
                             dismissButton = {

@@ -1,14 +1,15 @@
 package com.airclip.airclip.ui.screens
 
 import androidx.annotation.DrawableRes
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -68,11 +69,13 @@ data class ClipboardTabUiState(
 
 @Immutable
 data class DevicesTabUiState(
+    val spaceName: String,
     val pairedDevices: List<PairedDevice>,
     val connectedPeerCount: Int,
     val myDeviceId: String?,
     val syncMode: SyncMode,
     val lanRuntimeDiagnostic: LanRuntimeDiagnostic,
+    val pairingError: String?,
 )
 
 @Immutable
@@ -86,12 +89,12 @@ data class SettingsTabUiState(
 
 @Composable
 fun MainScreen(viewModel: MainViewModel, uiState: MainViewModel.UiState) {
-    val c = LocalAirClipColors.current
+    val c = LocalAirclipColors.current
+    var showDeviceCodeInput by remember { mutableStateOf(false) }
     var currentTab by remember {
         mutableStateOf(if (uiState.openDevicesOnFirstLaunch) Tab.DEVICES else Tab.HOME)
     }
-    val snackbarHostState = remember { SnackbarHostState() }
-    var showDeviceAddedToast by remember { mutableStateOf(false) }
+    val alertHostState = rememberAirclipAlertHostState()
     val homeListState = rememberLazyListState()
     val devicesListState = rememberLazyListState()
     val clipboardTabState = remember(uiState.clipHistory, uiState.syncMode) {
@@ -102,17 +105,21 @@ fun MainScreen(viewModel: MainViewModel, uiState: MainViewModel.UiState) {
     }
     val devicesTabState = remember(
         uiState.pairedDevices,
+        uiState.spaceName,
         uiState.connectedPeerCount,
         uiState.myDeviceId,
         uiState.syncMode,
         uiState.lanRuntimeDiagnostic,
+        uiState.lastError,
     ) {
         DevicesTabUiState(
+            spaceName = uiState.spaceName,
             pairedDevices = uiState.pairedDevices,
             connectedPeerCount = uiState.connectedPeerCount,
             myDeviceId = uiState.myDeviceId,
             syncMode = uiState.syncMode,
             lanRuntimeDiagnostic = uiState.lanRuntimeDiagnostic,
+            pairingError = uiState.lastError,
         )
     }
     val settingsTabState = remember(
@@ -138,50 +145,62 @@ fun MainScreen(viewModel: MainViewModel, uiState: MainViewModel.UiState) {
     }
 
     LaunchedEffect(uiState.sensitiveBlockedNotice) {
-        val finding = uiState.sensitiveBlockedNotice ?: return@LaunchedEffect
-        snackbarHostState.showSnackbar(
-            message = "${finding.category.label} blocked. Kept on this device.",
-            withDismissAction = true,
+        uiState.sensitiveBlockedNotice ?: return@LaunchedEffect
+        alertHostState.show(
+            message = "Sensitive item wasn’t shared",
+            kind = AirclipAlertKind.DANGER,
         )
         viewModel.onSensitiveBlockedNoticeShown()
     }
 
-    LaunchedEffect(uiState.deviceAddedToastId) {
-        if (uiState.deviceAddedToastId == 0L) return@LaunchedEffect
-        showDeviceAddedToast = true
-        delay(1_800)
-        showDeviceAddedToast = false
-        viewModel.onDeviceAddedToastShown()
-    }
-
-    Scaffold(
-        snackbarHost = { SnackbarHost(snackbarHostState) },
-        bottomBar = {
-            AirClipBottomNavigation(
-                currentTab = currentTab,
-                onTabSelected = { currentTab = it },
-            )
-        },
-        containerColor = c.bgBase,
-        contentWindowInsets = WindowInsets(0.dp),
-    ) { padding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
-        ) {
-            when (currentTab) {
-                Tab.HOME     -> ClipboardScreen(viewModel, clipboardTabState, listState = homeListState)
-                Tab.DEVICES  -> DevicesScreen(viewModel, devicesTabState, listState = devicesListState)
-                Tab.SETTINGS -> SettingsScreen(viewModel, settingsTabState)
-            }
-
-            DeviceAddedToast(
-                visible = showDeviceAddedToast,
+    CompositionLocalProvider(LocalAirclipAlertHostState provides alertHostState) {
+        Scaffold(
+            bottomBar = {
+                AnimatedVisibility(
+                    visible = !showDeviceCodeInput,
+                    enter = fadeIn(tween(120, easing = CubicBezierEasing(0.23f, 1f, 0.32f, 1f))),
+                    exit = fadeOut(tween(120)),
+                ) {
+                    AirclipBottomNavigation(
+                        currentTab = currentTab,
+                        onTabSelected = { tab -> currentTab = tab },
+                    )
+                }
+            },
+            containerColor = c.bgBase,
+            contentWindowInsets = WindowInsets(0.dp),
+        ) { padding ->
+            Box(
                 modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 24.dp),
-            )
+                    .fillMaxSize()
+                    .padding(padding),
+            ) {
+                AnimatedContent(
+                    targetState = currentTab,
+                    transitionSpec = {
+                        fadeIn(tween(150, easing = CubicBezierEasing(0.23f, 1f, 0.32f, 1f))) togetherWith
+                            fadeOut(tween(120))
+                    },
+                    label = "main tabs",
+                ) { tab ->
+                    when (tab) {
+                        Tab.HOME -> ClipboardScreen(viewModel, clipboardTabState, listState = homeListState)
+                        Tab.DEVICES -> DevicesScreen(
+                            viewModel, devicesTabState, listState = devicesListState,
+                            showCodeInput = showDeviceCodeInput,
+                            onCodeInputChanged = { showDeviceCodeInput = it },
+                        )
+                        Tab.SETTINGS -> SettingsScreen(viewModel, settingsTabState)
+                    }
+                }
+
+                AirclipAlertHost(
+                    state = alertHostState,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(horizontal = 16.dp, vertical = 16.dp),
+                )
+            }
         }
     }
 
@@ -213,49 +232,11 @@ fun MainScreen(viewModel: MainViewModel, uiState: MainViewModel.UiState) {
 }
 
 @Composable
-private fun DeviceAddedToast(
-    visible: Boolean,
-    modifier: Modifier = Modifier,
-) {
-    val c = LocalAirClipColors.current
-
-    AnimatedVisibility(
-        visible = visible,
-        modifier = modifier,
-        enter = fadeIn(tween(120)) +
-                scaleIn(
-                    animationSpec = spring(
-                        dampingRatio = Spring.DampingRatioNoBouncy,
-                        stiffness = Spring.StiffnessMediumLow,
-                    ),
-                    initialScale = 0.96f,
-                ),
-        exit = fadeOut(tween(160)) +
-                scaleOut(animationSpec = tween(160), targetScale = 0.96f),
-    ) {
-        Box(
-            modifier = Modifier
-                .clip(RoundedCornerShape(percent = 50))
-                .background(c.bgFloating.copy(alpha = 0.94f))
-                .border(0.5.dp, c.borderSubtle, RoundedCornerShape(percent = 50))
-                .padding(horizontal = 16.dp, vertical = 9.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                text = "New device added",
-                style = MaterialTheme.typography.labelLarge,
-                color = c.textPrimary,
-            )
-        }
-    }
-}
-
-@Composable
-private fun AirClipBottomNavigation(
+private fun AirclipBottomNavigation(
     currentTab: Tab,
     onTabSelected: (Tab) -> Unit,
 ) {
-    val c = LocalAirClipColors.current
+    val c = LocalAirclipColors.current
     val navigationBarBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
     Box(
@@ -276,7 +257,7 @@ private fun AirClipBottomNavigation(
                 .height(64.dp),
         ) {
             navItems.forEach { item ->
-                AirClipBottomNavigationItem(
+                AirclipBottomNavigationItem(
                     item = item,
                     isSelected = currentTab == item.tab,
                     onClick = { onTabSelected(item.tab) },
@@ -288,14 +269,23 @@ private fun AirClipBottomNavigation(
 }
 
 @Composable
-private fun AirClipBottomNavigationItem(
+private fun AirclipBottomNavigationItem(
     item: NavItem,
     isSelected: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val c = LocalAirClipColors.current
-    val itemColor = if (isSelected) c.blue else c.textSecondary
+    val c = LocalAirclipColors.current
+    val itemColor by animateColorAsState(
+        targetValue = if (isSelected) c.accent else c.textSecondary,
+        animationSpec = tween(140),
+        label = "navigation color",
+    )
+    val indicatorColor by animateColorAsState(
+        targetValue = if (isSelected) c.activeFill else Color.Transparent,
+        animationSpec = tween(140),
+        label = "navigation indicator",
+    )
     Column(
         modifier = modifier
             .fillMaxHeight()
@@ -313,15 +303,17 @@ private fun AirClipBottomNavigationItem(
             modifier = Modifier
                 .size(width = 56.dp, height = 32.dp)
                 .clip(RoundedCornerShape(16.dp))
-                .background(if (isSelected) c.activeFill else Color.Transparent),
+                .background(indicatorColor),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(
-                painter = painterResource(id = if (isSelected) item.activeIconRes else item.iconRes),
-                contentDescription = item.label,
-                modifier = Modifier.size(24.dp),
-                tint = itemColor,
-            )
+            Crossfade(targetState = isSelected, animationSpec = tween(120), label = "navigation icon") { selected ->
+                Icon(
+                    painter = painterResource(id = if (selected) item.activeIconRes else item.iconRes),
+                    contentDescription = item.label,
+                    modifier = Modifier.size(24.dp),
+                    tint = itemColor,
+                )
+            }
         }
         Spacer(modifier = Modifier.height(4.dp))
         Text(

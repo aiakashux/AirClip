@@ -2,8 +2,8 @@ import WidgetKit
 import SwiftUI
 
 @main
-struct AirClipWidgetBundle: WidgetBundle {
+struct AirclipWidgetBundle: WidgetBundle {
     var body: some Widget {
-        AirClipWidget()
+        AirclipWidget()
     }
 }

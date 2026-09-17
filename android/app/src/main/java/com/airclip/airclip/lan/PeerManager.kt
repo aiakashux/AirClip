@@ -4,7 +4,7 @@ import android.util.Log
 import android.os.Handler
 import android.os.Looper
 import com.google.gson.Gson
-import com.airclip.airclip.AirClipIdentity
+import com.airclip.airclip.AirclipIdentity
 import com.airclip.airclip.crypto.SealedBox
 import com.airclip.airclip.device.DeviceRemovalNotice
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -61,7 +61,7 @@ object PeerManager {
     var onHistoryClip: ((ciphertext: String, nonce: String, ts: Long, msgId: String, fromDeviceId: String) -> Unit)? = null
 
     /** Callback invoked when a peer proves it is still reachable. Set by SyncEngine. */
-    var onPeerSeen: ((deviceId: String) -> Unit)? = null
+    var onPeerSeen: ((deviceId: String, wifiNetwork: String?) -> Unit)? = null
 
     /** Callback invoked when a peer reports foreground or share activity. Set by SyncEngine. */
     var onPeerActivity: ((deviceId: String, timestampMs: Long) -> Unit)? = null
@@ -69,18 +69,18 @@ object PeerManager {
     /** Callback invoked after a peer becomes the active authenticated connection. Set by SyncEngine. */
     var onPeerRegistered: ((Peer) -> Unit)? = null
 
-    /** Callback invoked when another paired device removes this device from the network. */
+    /** Callback invoked when another paired device removes this device from the space. */
     var onRemovedFromNetwork: (() -> Unit)? = null
 
     // ── Trust ─────────────────────────────────────────────────────────────────
 
     /**
-     * Returns true if [theirAirClipId] matches our AirClip ID and [deviceId]
+     * Returns true if [theirAirclipId] matches our Airclip ID and [deviceId]
      * has not been removed from the local paired-device registry.
      */
-    fun isTrusted(theirAirClipId: String, deviceId: String): Boolean {
-        val myAirClipId = AirClipIdentity.airClipId ?: return false
-        return theirAirClipId == myAirClipId
+    fun isTrusted(theirAirclipId: String, deviceId: String): Boolean {
+        val myAirclipId = AirclipIdentity.airClipId ?: return false
+        return theirAirclipId == myAirclipId
     }
 
     // ── Peer lifecycle ────────────────────────────────────────────────────────
@@ -93,9 +93,13 @@ object PeerManager {
     fun registerPeer(peer: Peer) {
         val existing = peers[peer.deviceId]
         if (existing != null) {
-            if (existing.isIncoming && !peer.isIncoming) {
+            val prefersIncoming = prefersIncomingConnection(
+                AirclipIdentity.deviceId.orEmpty(),
+                peer.deviceId,
+            )
+            if (existing.isIncoming == peer.isIncoming || peer.isIncoming != prefersIncoming) {
                 peer.close()
-                Log.d(TAG, "Duplicate outgoing discarded for ${peer.deviceId.take(8)}")
+                Log.d(TAG, "Duplicate connection discarded for ${peer.deviceId.take(8)}")
                 return
             }
             existing.close()
@@ -166,11 +170,13 @@ object PeerManager {
         }
     }
 
-    fun sendHeartbeats() {
-        val json = gson.toJson(mapOf(
+    fun sendHeartbeats(wifiNetwork: String?) {
+        val payload = mutableMapOf(
             "type" to "heartbeat",
             "ts" to System.currentTimeMillis().toString(),
-        ))
+        )
+        wifiNetwork?.let { payload["ssid"] = it }
+        val json = gson.toJson(payload)
         peers.values.forEach { peer ->
             runCatching { peer.send(json) }
         }
@@ -196,8 +202,8 @@ object PeerManager {
         onHistoryClip?.invoke(ciphertext, nonce, ts, msgId, fromDeviceId)
     }
 
-    fun markPeerSeen(deviceId: String) {
-        onPeerSeen?.invoke(deviceId)
+    fun markPeerSeen(deviceId: String, wifiNetwork: String? = null) {
+        onPeerSeen?.invoke(deviceId, wifiNetwork)
     }
 
     fun markPeerActivity(deviceId: String, timestampMs: Long) {
@@ -221,3 +227,6 @@ object PeerManager {
         _connectedCount.value = peers.size
     }
 }
+
+internal fun prefersIncomingConnection(localDeviceId: String, peerDeviceId: String): Boolean =
+    localDeviceId > peerDeviceId
