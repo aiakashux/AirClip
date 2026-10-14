@@ -14,6 +14,13 @@ import java.util.concurrent.ConcurrentHashMap
 
 private const val TAG = "PeerManager"
 
+internal fun isTrustedPeer(
+    theirAirclipId: String,
+    ourAirclipId: String?,
+    deviceId: String,
+    pairedDeviceIds: Set<String>,
+): Boolean = theirAirclipId == ourAirclipId && deviceId in pairedDeviceIds
+
 /**
  * One authenticated LAN peer — either an incoming (server-role) or outgoing (client-role)
  * connection. The [sendFn] and [closeFn] closures abstract over Java-WebSocket vs OkHttp.
@@ -55,10 +62,14 @@ object PeerManager {
     val connectedCount: StateFlow<Int> = _connectedCount
 
     /** Callback invoked when a live inbound clip arrives. Set by SyncEngine. */
-    var onInboundClip: ((ciphertext: String, nonce: String, fromDeviceId: String) -> Unit)? = null
+    var onInboundClip: ((ciphertext: String, nonce: String, fromDeviceId: String, timestampMs: Long, messageId: String) -> Unit)? = null
 
     /** Callback invoked when a history_clip message arrives. Set by SyncEngine. */
     var onHistoryClip: ((ciphertext: String, nonce: String, ts: Long, msgId: String, fromDeviceId: String) -> Unit)? = null
+
+    var onHistoryDelete: ((messageId: String, fromDeviceId: String, timestampMs: Long) -> Unit)? = null
+    var onHistoryClear: ((throughMs: Long) -> Unit)? = null
+    var onHistoryRequest: ((deviceId: String) -> Unit)? = null
 
     /** Callback invoked when a peer proves it is still reachable. Set by SyncEngine. */
     var onPeerSeen: ((deviceId: String, wifiNetwork: String?) -> Unit)? = null
@@ -79,8 +90,12 @@ object PeerManager {
      * has not been removed from the local paired-device registry.
      */
     fun isTrusted(theirAirclipId: String, deviceId: String): Boolean {
-        val myAirclipId = AirclipIdentity.airClipId ?: return false
-        return theirAirclipId == myAirclipId
+        return isTrustedPeer(
+            theirAirclipId,
+            AirclipIdentity.airClipId,
+            deviceId,
+            AirclipIdentity.pairedDevices.keys,
+        )
     }
 
     // ── Peer lifecycle ────────────────────────────────────────────────────────
@@ -91,6 +106,10 @@ object PeerManager {
      */
     @Synchronized
     fun registerPeer(peer: Peer) {
+        if (!AirclipIdentity.pairedDevices.containsKey(peer.deviceId)) {
+            peer.close()
+            return
+        }
         val existing = peers[peer.deviceId]
         if (existing != null) {
             val prefersIncoming = prefersIncomingConnection(
@@ -154,7 +173,7 @@ object PeerManager {
      * Encrypt [plaintext] for each authenticated peer's public key and broadcast.
      * Per-peer failures are logged and skipped — other peers still receive.
      */
-    fun broadcast(plaintext: ByteArray) {
+    fun broadcast(plaintext: ByteArray, messageId: String, timestampMs: Long, fromDeviceId: String) {
         peers.values.forEach { peer ->
             try {
                 val enc  = SealedBox.encryptForRecipient(plaintext, peer.publicKey)
@@ -162,12 +181,35 @@ object PeerManager {
                     "type"       to "clip",
                     "ciphertext" to enc.ciphertextBase64,
                     "nonce"      to enc.nonce,
+                    "msg_id"     to messageId,
+                    "ts"         to timestampMs.toString(),
+                    "from_device_id" to fromDeviceId,
                 ))
                 peer.send(json)
             } catch (e: Exception) {
                 Log.w(TAG, "broadcast to ${peer.deviceId.take(8)} failed: ${e.message}")
             }
         }
+    }
+
+    fun broadcastHistoryDelete(messageId: String, fromDeviceId: String, timestampMs: Long) {
+        val json = gson.toJson(mapOf(
+            "type" to "history_delete",
+            "msg_id" to messageId,
+            "from_device_id" to fromDeviceId,
+            "ts" to timestampMs.toString(),
+        ))
+        peers.values.forEach { peer -> runCatching { peer.send(json) } }
+    }
+
+    fun broadcastHistoryClear(throughMs: Long) {
+        val json = gson.toJson(mapOf("type" to "history_clear", "through_ms" to throughMs.toString()))
+        peers.values.forEach { peer -> runCatching { peer.send(json) } }
+    }
+
+    fun requestHistoryFromPeers() {
+        val json = gson.toJson(mapOf("type" to "history_request"))
+        peers.values.forEach { peer -> runCatching { peer.send(json) } }
     }
 
     fun sendHeartbeats(wifiNetwork: String?) {
@@ -194,13 +236,24 @@ object PeerManager {
 
     // ── Receiving ─────────────────────────────────────────────────────────────
 
-    fun dispatchInboundClip(ciphertext: String, nonce: String, fromDeviceId: String) {
-        onInboundClip?.invoke(ciphertext, nonce, fromDeviceId)
+    fun dispatchInboundClip(
+        ciphertext: String,
+        nonce: String,
+        fromDeviceId: String,
+        timestampMs: Long,
+        messageId: String,
+    ) {
+        onInboundClip?.invoke(ciphertext, nonce, fromDeviceId, timestampMs, messageId)
     }
 
     fun dispatchHistoryClip(ciphertext: String, nonce: String, ts: Long, msgId: String, fromDeviceId: String) {
         onHistoryClip?.invoke(ciphertext, nonce, ts, msgId, fromDeviceId)
     }
+
+    fun dispatchHistoryDelete(messageId: String, fromDeviceId: String, timestampMs: Long) =
+        onHistoryDelete?.invoke(messageId, fromDeviceId, timestampMs)
+    fun dispatchHistoryClear(throughMs: Long) = onHistoryClear?.invoke(throughMs)
+    fun dispatchHistoryRequest(deviceId: String) = onHistoryRequest?.invoke(deviceId)
 
     fun markPeerSeen(deviceId: String, wifiNetwork: String? = null) {
         onPeerSeen?.invoke(deviceId, wifiNetwork)

@@ -7,12 +7,13 @@ import AppKit
 // MARK: - Popover View
 
 private enum PopoverMetrics {
-    static let width: CGFloat = 324
+    static let width: CGFloat = 372
     static let outerPadding: CGFloat = 24
     static let topPadding: CGFloat = 8
     static let cardSpacing: CGFloat = 8
     static let cardRadius: CGFloat = 16
-    static let cardPadding: CGFloat = 12.5
+    static let cardPaddingHorizontal: CGFloat = 16
+    static let cardPaddingVertical: CGFloat = 20
     static let footerTopPadding: CGFloat = 8
     static let footerHeight: CGFloat = 36
     static let emptyHeight: CGFloat = 132
@@ -34,6 +35,8 @@ struct PopoverView: View {
     @State private var animationSession = 0
     @State private var copyFlowSession = 0
     @State private var keyboardSelection = 0
+    @State private var knownItemIDs = Set<UUID>()
+    @State private var animateRemoteInsertion = false
     @FocusState private var isKeyboardFocused: Bool
 
     @State private var openAirclipHovered = false
@@ -86,6 +89,8 @@ struct PopoverView: View {
             isContentVisible = false
             showToast = false
             keyboardSelection = 0
+            knownItemIDs = Set(allItems.map(\.id))
+            animateRemoteInsertion = false
             animationSession &+= 1
             DispatchQueue.main.async {
                 isKeyboardFocused = true
@@ -97,6 +102,11 @@ struct PopoverView: View {
         .onReceive(NotificationCenter.default.publisher(for: .panelWillClose)) { _ in
             copyFlowSession &+= 1
             dismissWithAnimation()
+        }
+        .onChange(of: allItems.map(\.id)) { _, _ in
+            let inserted = allItems.filter { !knownItemIDs.contains($0.id) }
+            animateRemoteInsertion = contentIsVisible && !reduceMotion && inserted.contains { !$0.isLocal }
+            knownItemIDs = Set(allItems.map(\.id))
         }
     }
 
@@ -115,19 +125,28 @@ struct PopoverView: View {
                 ForEach(Array(recentItems.enumerated()), id: \.element.id) { index, item in
                     ClipCard(
                         item: item,
-                        isKeyboardSelected: keyboardSelection == index
-                    ) {
-                        handleCardTap(item: item)
-                    }
+                        isKeyboardSelected: keyboardSelection == index,
+                        onCopy: { handleCardCopy(item) },
+                        onTap: { handleCardTap(item: item) }
+                    )
                     .id("\(item.id)-\(animationSession)")
                     .popoverListMotion(
                         isVisible: contentIsVisible,
                         index: index,
                         reduceMotion: reduceMotion
                     )
+                    .transition(remoteItemTransition)
                 }
             }
         }
+        .animation(animateRemoteInsertion ? .spring(response: 0.28, dampingFraction: 0.82) : nil, value: recentItems.map(\.id))
+    }
+
+    private var remoteItemTransition: AnyTransition {
+        reduceMotion ? .opacity : .asymmetric(
+            insertion: .move(edge: .top).combined(with: .opacity),
+            removal: .move(edge: .bottom).combined(with: .opacity)
+        )
     }
 
     // MARK: - Empty State
@@ -239,6 +258,11 @@ struct PopoverView: View {
             dismissWithAnimation { NSWorkspace.shared.open(url) }
             return
         }
+
+        handleCardCopy(item)
+    }
+
+    private func handleCardCopy(_ item: ClipboardItem) {
 
         copyFlowSession &+= 1
         let activeCopyFlow = copyFlowSession
@@ -371,10 +395,14 @@ private struct OpenAirclipFooterButtonStyle: ButtonStyle {
 private struct ClipCard: View {
     let item: ClipboardItem
     let isKeyboardSelected: Bool
+    let onCopy: () -> Void
     let onTap: () -> Void
 
     @ObservedObject private var revealStore = SensitiveContentRevealStore.shared
     @State private var isHovered = false
+    @State private var isOpenActionHovered = false
+    @State private var isCopyActionHovered = false
+    @State private var linkPreview: LinkPreviewMetadata?
 
     private var type: ClipType { item.clipType }
     private var shouldRedact: Bool {
@@ -387,7 +415,8 @@ private struct ClipCard: View {
         Button(action: onTap) {
             contentView
                 .blur(radius: isHovered ? 6 : 0)
-                .padding(PopoverMetrics.cardPadding)
+                .padding(.horizontal, PopoverMetrics.cardPaddingHorizontal)
+                .padding(.vertical, PopoverMetrics.cardPaddingVertical)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background {
                     RoundedRectangle(cornerRadius: PopoverMetrics.cardRadius)
@@ -403,14 +432,12 @@ private struct ClipCard: View {
                         )
                         .animation(.easeOut(duration: 0.12), value: isHovered)
                 )
-                .overlay {
-                    if isHovered {
-                        actionOverlay
-                    }
-                }
-                .animation(.easeOut(duration: 0.16), value: isHovered)
         }
         .buttonStyle(CardPressStyle())
+        .overlay {
+            if isHovered { actionOverlay }
+        }
+        .animation(.easeOut(duration: 0.16), value: isHovered)
         .accessibilityLabel(type == .url ? "Open link from \(deviceName)" : "Copy \(type.rawValue) from \(deviceName)")
         .accessibilityHint(type == .url ? "Opens this link in your browser" : "Copies this item and closes Airclip")
         .onHover { hovering in
@@ -424,22 +451,60 @@ private struct ClipCard: View {
     }
 
     private var actionOverlay: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: PopoverMetrics.cardRadius, style: .continuous)
-                .fill(Color.bgElevated.opacity(0.75))
-            HStack(spacing: 8) {
-                AirclipIcon(type == .url ? .openBrowser : .copy, size: type == .url ? 20 : 16)
-                Text(type == .url ? "Open in browser" : "Click to Copy")
+        RoundedRectangle(cornerRadius: PopoverMetrics.cardRadius, style: .continuous)
+            .fill(Color.bgElevated.opacity(0.75))
+            .overlay {
+                HStack(spacing: 0) {
+                    if type == .url {
+                        Button(action: onTap) {
+                            actionLabel(
+                                icon: .openBrowser,
+                                title: "Open",
+                                iconSize: 18,
+                                color: isOpenActionHovered ? .accentDeep : .accent,
+                                shimmer: isOpenActionHovered
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .onHover { isOpenActionHovered = $0 }
+                    }
+                    Button(action: onCopy) {
+                        actionLabel(
+                            icon: .copy,
+                            title: "Click to Copy",
+                            color: isCopyActionHovered ? .accentDeep : .accent,
+                            shimmer: isCopyActionHovered
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .onHover { isCopyActionHovered = $0 }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             }
-            .font(.system(size: 12, weight: .medium))
-            .foregroundColor(.accent)
-        }
-        .clipShape(RoundedRectangle(cornerRadius: PopoverMetrics.cardRadius, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: PopoverMetrics.cardRadius, style: .continuous)
-                .strokeBorder(Color.borderDefault, lineWidth: 0.5)
-        )
+            .clipShape(RoundedRectangle(cornerRadius: PopoverMetrics.cardRadius, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: PopoverMetrics.cardRadius, style: .continuous)
+                .strokeBorder(Color.borderDefault, lineWidth: 0.5))
         .transition(.opacity)
+    }
+
+    private func actionLabel(
+        icon: AirclipIconName,
+        title: String,
+        iconSize: CGFloat = 18,
+        color: Color = .accent,
+        shimmer: Bool
+    ) -> some View {
+        HStack(spacing: 8) {
+            AirclipIcon(icon, size: iconSize)
+            Text(title)
+        }
+        .font(.system(size: 13, weight: .medium))
+        .foregroundColor(color)
+        .singleShimmer(isActive: shimmer)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .contentShape(Rectangle())
     }
 
     private var primaryTextColor: Color {
@@ -463,7 +528,7 @@ private struct ClipCard: View {
     }
 
     private var imageBorderColor: Color {
-        .borderDefault
+        Color(hex: "#DADDDF")
     }
 
     @ViewBuilder
@@ -472,16 +537,15 @@ private struct ClipCard: View {
         case .url:
             HStack(alignment: .top, spacing: 12) {
                 typeBadge(background: Color.accent.opacity(0.16)) {
-                    AirclipIcon(.arrowUpRight, size: 14)
+                    AirclipIcon(.link, size: 14)
                         .foregroundColor(linkTextColor)
                 }
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(item.text)
-                        .font(.system(size: 13, weight: .regular))
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(linkPreview?.hasExplicitTitle == true ? linkPreview!.title : item.text)
+                        .font(.system(size: 14, weight: .regular))
                         .foregroundColor(linkTextColor)
                         .underline()
-                        .lineSpacing(4.5)
-                        .lineLimit(2)
+                        .lineLimit(1)
                         .truncationMode(.tail)
                         .blur(radius: shouldRedact ? 4 : 0)
                         .frame(minHeight: 19.5, alignment: .top)
@@ -489,15 +553,18 @@ private struct ClipCard: View {
                     metaRowJustified
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .task(id: item.id) {
+                    linkPreview = await LinkPreviewLoader.preview(for: item.text, includeImage: false)
+                }
             }
 
         case .code:
-            HStack(alignment: .top, spacing: 12) {
+            HStack(alignment: .center, spacing: 12) {
                 typeBadge(background: Color.warningYellow.opacity(0.16)) {
                     AirclipIcon(.text, size: 14)
                         .foregroundColor(Color.warningYellow)
                 }
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 6) {
                     Text(item.text)
                         .font(.system(size: 13, weight: .regular, design: .monospaced))
                         .foregroundColor(codeTextColor)
@@ -513,7 +580,7 @@ private struct ClipCard: View {
             }
 
         case .color:
-            HStack(alignment: .top, spacing: 12) {
+            HStack(alignment: .center, spacing: 12) {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(parsedColor ?? Color.accent)
                     .frame(width: 54, height: 54)
@@ -521,7 +588,7 @@ private struct ClipCard: View {
                         RoundedRectangle(cornerRadius: 10, style: .continuous)
                             .strokeBorder(Color.white.opacity(0.15), lineWidth: 0.5)
                     )
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 6) {
                     Text(colorDisplayText)
                         .font(.system(size: 20, weight: .regular))
                         .foregroundColor(primaryTextColor)
@@ -537,28 +604,26 @@ private struct ClipCard: View {
         case .image:
             HStack(alignment: .top, spacing: 14) {
                 previewImageView
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 6) {
                     Text(imageDisplayName)
-                        .font(.system(size: 13, weight: .regular))
+                        .font(.system(size: 14, weight: .regular))
                         .foregroundColor(primaryTextColor)
                         .lineLimit(1)
                         .truncationMode(.tail)
                         .frame(minHeight: 19.5, alignment: .top)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                    Spacer(minLength: 0)
                     metaRowJustified
                 }
-                .frame(height: 80)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
 
         case .email:
-            HStack(alignment: .top, spacing: 12) {
+            HStack(alignment: .center, spacing: 12) {
                 typeBadge(background: Color.syncBlue.opacity(0.16)) {
                     AirclipIcon(.text, size: 14)
                         .foregroundColor(Color.syncBlue)
                 }
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 6) {
                     Text(item.text)
                         .font(.system(size: 13, weight: .regular))
                         .foregroundColor(primaryTextColor)
@@ -574,12 +639,12 @@ private struct ClipCard: View {
             }
 
         case .text:
-            HStack(alignment: .top, spacing: 12) {
+            HStack(alignment: .center, spacing: 12) {
                 typeBadge(background: Color.encryptedGreen.opacity(0.10)) {
                     AirclipIcon(.text, size: 14)
                         .foregroundColor(Color.encryptedGreen)
                 }
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 6) {
                     Text(item.text)
                         .font(.system(size: 13, weight: .regular))
                         .foregroundColor(primaryTextColor)
@@ -598,25 +663,17 @@ private struct ClipCard: View {
 
     private var metaRowJustified: some View {
         HStack(spacing: 8) {
-            Text(deviceName)
-                .lineLimit(1)
-                .truncationMode(.tail)
-            Spacer(minLength: 8)
             Text(relativeTime)
                 .lineLimit(1)
         }
         .font(.system(size: 12))
         .foregroundColor(metaTextColor)
         .frame(height: 16)
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var metaRowInline: some View {
         HStack(spacing: 9) {
-            Text(deviceName)
-                .lineLimit(1)
-                .truncationMode(.tail)
-            Text("•")
             Text(relativeTime)
                 .lineLimit(1)
         }
@@ -714,6 +771,39 @@ private struct CardPressStyle: ButtonStyle {
             .scaleEffect(configuration.isPressed ? 0.965 : 1.0)
             .brightness(configuration.isPressed ? -0.08 : 0)
             .animation(.airClipInstant(0.10), value: configuration.isPressed)
+    }
+}
+
+private struct SingleShimmer: ViewModifier {
+    let isActive: Bool
+    @State private var phase: CGFloat = -0.6
+
+    func body(content: Content) -> some View {
+        content
+            .overlay {
+                GeometryReader { proxy in
+                    LinearGradient(
+                        colors: [.clear, .white.opacity(0.5), .clear],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                    .frame(width: proxy.size.width * 0.65)
+                    .offset(x: phase * proxy.size.width)
+                    .mask(content)
+                }
+                .allowsHitTesting(false)
+            }
+            .onChange(of: isActive) { _, active in
+                guard active else { return }
+                phase = -0.6
+                withAnimation(.easeOut(duration: 0.32)) { phase = 1.6 }
+            }
+    }
+}
+
+private extension View {
+    func singleShimmer(isActive: Bool) -> some View {
+        modifier(SingleShimmer(isActive: isActive))
     }
 }
 

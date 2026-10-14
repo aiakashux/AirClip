@@ -191,7 +191,7 @@ enum ClipType: String, Codable, CaseIterable {
         let t = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         if isImageLike(t) { return .image }
         if t.hasPrefix("http://") || t.hasPrefix("https://") { return .url }
-        if isColorHex(t) { return .color }
+        if isColorHex(t) || isColorRGB(t) { return .color }
         if isEmail(t) { return .email }
         return .text
     }
@@ -206,9 +206,26 @@ enum ClipType: String, Codable, CaseIterable {
     }
 
     private static func isColorHex(_ t: String) -> Bool {
-        guard t.hasPrefix("#") else { return false }
-        let hex = String(t.dropFirst())
-        return [3, 4, 6, 8].contains(hex.count) && hex.allSatisfy(\.isHexDigit)
+        if t.hasPrefix("#") {
+            let hex = String(t.dropFirst())
+            return [3, 4, 6, 8].contains(hex.count) && hex.allSatisfy(\.isHexDigit)
+        }
+
+        // Hashless six-digit values are common in design tools. Requiring an
+        // uppercase hex letter avoids treating arbitrary six-character text as a color.
+        guard t.count == 6, t.allSatisfy(\.isHexDigit), t.contains(where: ("A"..."F").contains) else {
+            return false
+        }
+        return t == t.uppercased()
+    }
+
+    private static func isColorRGB(_ t: String) -> Bool {
+        let pattern = #"^rgba?\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}(?:\s*,\s*(?:0|1|0?\.\d+))?\s*\)$"#
+        guard let range = t.range(of: pattern, options: .regularExpression) else { return false }
+        let values = t[range].drop { $0 != "(" }.dropFirst().dropLast()
+            .split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
+        return values.count == (t.hasPrefix("rgba") ? 4 : 3)
+            && values.prefix(3).allSatisfy { (0...255).contains($0) }
     }
 
     private static func isEmail(_ t: String) -> Bool {

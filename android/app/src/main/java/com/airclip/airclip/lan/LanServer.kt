@@ -276,7 +276,15 @@ object LanServer {
                     "clip" -> {
                         val ciphertext = msg["ciphertext"] ?: return
                         val nonce      = msg["nonce"]      ?: return
-                        PeerManager.dispatchInboundClip(ciphertext, nonce, fromId)
+                        val timestampMs = msg["ts"]?.toLongOrNull() ?: System.currentTimeMillis()
+                        val messageId = msg["msg_id"] ?: java.util.UUID.randomUUID().toString()
+                        PeerManager.dispatchInboundClip(
+                            ciphertext,
+                            nonce,
+                            msg["from_device_id"] ?: fromId,
+                            timestampMs,
+                            messageId,
+                        )
                     }
                     "history_clip" -> {
                         val ciphertext   = msg["ciphertext"]         ?: return
@@ -286,6 +294,13 @@ object LanServer {
                         val fromDeviceId = msg["from_device_id"]     ?: fromId
                         PeerManager.dispatchHistoryClip(ciphertext, nonce, ts, msgId, fromDeviceId)
                     }
+                    "history_delete" -> PeerManager.dispatchHistoryDelete(
+                        msg["msg_id"] ?: "legacy",
+                        msg["from_device_id"] ?: fromId,
+                        msg["ts"]?.toLongOrNull() ?: Long.MIN_VALUE,
+                    )
+                    "history_clear" -> msg["through_ms"]?.toLongOrNull()?.let(PeerManager::dispatchHistoryClear)
+                    "history_request" -> PeerManager.dispatchHistoryRequest(fromId)
                     "heartbeat" -> {
                         PeerManager.markPeerSeen(fromId, msg["ssid"])
                         val ack = mutableMapOf(

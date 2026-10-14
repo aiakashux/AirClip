@@ -461,16 +461,7 @@ private fun NetworkStatusCard(
     )
     val needsPermission = network.unavailableReason == WifiNetworkName.UnavailableReason.PermissionRequired
     val networkName = network.name ?: "Wi-Fi name unavailable"
-    val subtitle = network.unavailableReason?.let { reason ->
-        when (reason) {
-            WifiNetworkName.UnavailableReason.PermissionRequired ->
-                "Tap to show your Wi-Fi network name."
-            WifiNetworkName.UnavailableReason.LocationDisabled ->
-                "Turn on Location to show your Wi-Fi network name."
-            WifiNetworkName.UnavailableReason.Unknown ->
-                "Wi-Fi network name could not be read."
-        }
-    } ?: spaceName.ifBlank { "My Space" }
+    val spaceDisplayName = spaceName.ifBlank { "My Space" }
 
     Box(
         modifier = modifier
@@ -528,7 +519,7 @@ private fun NetworkStatusCard(
             }
 
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(0.dp)) {
-                Crossfade(targetState = networkName, animationSpec = tween(140), label = "network name") { name -> Text(
+                Crossfade(targetState = spaceDisplayName, animationSpec = tween(140), label = "space name") { name -> Text(
                     name,
                     fontSize = 18.sp,
                     lineHeight = 25.sp,
@@ -537,7 +528,7 @@ private fun NetworkStatusCard(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 ) }
-                Crossfade(targetState = subtitle, animationSpec = tween(140), label = "network subtitle") { text -> Text(
+                Crossfade(targetState = networkName, animationSpec = tween(140), label = "network name") { text -> Text(
                     text,
                     fontSize = 13.sp,
                     lineHeight = 18.sp,

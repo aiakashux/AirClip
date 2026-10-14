@@ -31,6 +31,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -190,6 +191,25 @@ fun SettingsScreen(viewModel: MainViewModel, uiState: SettingsTabUiState) {
                     iconRes = R.drawable.ic_settings_information_circle,
                     title = "Version",
                     value = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+                )
+                SettingsListRow(
+                    iconRes = R.drawable.ic_settings_database_sync,
+                    title = "Check for Updates",
+                    value = uiState.updateStatus ?: "Checks automatically at most once daily",
+                    showArrow = true,
+                    onClick = viewModel::onCheckForUpdates,
+                )
+            }
+
+            SettingsGroupDivider()
+
+            SettingsGroup {
+                SettingsSwitchRow(
+                    iconRes = R.drawable.ic_settings_security_lock,
+                    title = "Share Anonymous Analytics",
+                    value = "Coarse event counts only. No clipboard or device data.",
+                    checked = uiState.analyticsEnabled,
+                    onCheckedChange = viewModel::onAnalyticsEnabledChanged,
                 )
             }
 
@@ -523,6 +543,29 @@ private fun SettingsStaticRow(
         showArrow = false,
         onClick = null,
     )
+}
+
+@Composable
+private fun SettingsSwitchRow(
+    iconRes: Int,
+    title: String,
+    value: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    val c = LocalAirclipColors.current
+    Row(
+        modifier = Modifier.fillMaxWidth().heightIn(min = 84.dp).padding(horizontal = 20.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(painterResource(iconRes), null, tint = c.textSecondary, modifier = Modifier.size(24.dp))
+        Spacer(Modifier.width(16.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, color = c.textPrimary, fontSize = 16.sp, fontWeight = FontWeight.Medium)
+            Text(value, color = c.textSecondary, fontSize = 13.sp, lineHeight = 18.sp)
+        }
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
+    }
 }
 
 @Composable

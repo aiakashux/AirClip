@@ -10,8 +10,12 @@ private const val KEY_SYNC_MODE = "sync_mode"
 private const val KEY_APPEARANCE = "appearance_setting"
 private const val KEY_HISTORY_DEPTH = "history_depth"
 private const val KEY_HISTORY_DEPTH_VERSION = "history_depth_version"
+private const val HISTORY_DEPTH_VERSION = 4
+private const val DEFAULT_HISTORY_DEPTH = 2
 private const val KEY_SENSITIVE_MASTER_RULE = "sensitive_rule_master"
 private const val KEY_SENSITIVE_RULE_PREFIX = "sensitive_rule_"
+private const val KEY_ANALYTICS_ENABLED = "analytics_enabled"
+private const val KEY_LAST_UPDATE_CHECK = "last_update_check"
 private const val DEFAULT_URL  = "http://10.0.2.2:8000"
 
 enum class AppAppearanceSetting(val label: String) {
@@ -60,35 +64,39 @@ object Prefs {
 
     var historyDepth: Int
         get() {
-            val stored = sp.getInt(KEY_HISTORY_DEPTH, 4)
+            val stored = if (sp.contains(KEY_HISTORY_DEPTH)) {
+                sp.getInt(KEY_HISTORY_DEPTH, DEFAULT_HISTORY_DEPTH)
+            } else {
+                null
+            }
             val version = sp.getInt(KEY_HISTORY_DEPTH_VERSION, 1)
-            if (version < 3) {
-                val migrated = if (version < 2) {
-                    when (stored.coerceIn(0, 3)) {
-                        0 -> 2 // 7 days
-                        else -> 4 // Legacy 30/90-day and forever choices become Forever.
-                    }
-                } else {
-                    if (stored >= 4) 4 else stored.coerceIn(0, historyRetentionDays.lastIndex)
-                }
+            val migrated = migratedHistoryDepth(stored, version)
+            if (version < HISTORY_DEPTH_VERSION || stored == null) {
                 sp.edit()
                     .putInt(KEY_HISTORY_DEPTH, migrated)
-                    .putInt(KEY_HISTORY_DEPTH_VERSION, 3)
+                    .putInt(KEY_HISTORY_DEPTH_VERSION, HISTORY_DEPTH_VERSION)
                     .apply()
-                return migrated
             }
-            return stored.coerceIn(0, historyRetentionDays.lastIndex)
+            return migrated
         }
         set(value) {
             sp.edit()
                 .putInt(KEY_HISTORY_DEPTH, value.coerceIn(0, historyRetentionDays.lastIndex))
-                .putInt(KEY_HISTORY_DEPTH_VERSION, 3)
+                .putInt(KEY_HISTORY_DEPTH_VERSION, HISTORY_DEPTH_VERSION)
                 .apply()
         }
 
     var sensitiveMasterRule: SensitiveRuleAction
         get() = SensitiveRuleAction.fromStoredValue(sp.getString(KEY_SENSITIVE_MASTER_RULE, null))
         set(value) { sp.edit().putString(KEY_SENSITIVE_MASTER_RULE, value.name).apply() }
+
+    var analyticsEnabled: Boolean
+        get() = sp.getBoolean(KEY_ANALYTICS_ENABLED, false)
+        set(value) { sp.edit().putBoolean(KEY_ANALYTICS_ENABLED, value).apply() }
+
+    var lastUpdateCheckMs: Long
+        get() = sp.getLong(KEY_LAST_UPDATE_CHECK, 0L)
+        set(value) { sp.edit().putLong(KEY_LAST_UPDATE_CHECK, value).apply() }
 
     fun sensitiveRule(category: SensitiveCategory): SensitiveRuleAction =
         if (sensitiveMasterRule == SensitiveRuleAction.ALLOW) {
@@ -118,9 +126,30 @@ object Prefs {
             .remove(KEY_HISTORY_DEPTH)
             .remove(KEY_HISTORY_DEPTH_VERSION)
             .remove(KEY_SENSITIVE_MASTER_RULE)
+            .remove(KEY_ANALYTICS_ENABLED)
+            .remove(KEY_LAST_UPDATE_CHECK)
         SensitiveCategory.entries.forEach {
             editor.remove("$KEY_SENSITIVE_RULE_PREFIX${it.name}")
         }
         editor.apply()
+    }
+}
+
+internal fun migratedHistoryDepth(stored: Int?, version: Int): Int {
+    if (stored == null) return DEFAULT_HISTORY_DEPTH
+
+    val previousValue = if (version < 2) {
+        when (stored.coerceIn(0, 3)) {
+            0 -> 2
+            else -> 4
+        }
+    } else {
+        stored.coerceIn(0, Prefs.historyRetentionDays.lastIndex)
+    }
+
+    return if (version < HISTORY_DEPTH_VERSION && previousValue == 4) {
+        DEFAULT_HISTORY_DEPTH
+    } else {
+        previousValue
     }
 }

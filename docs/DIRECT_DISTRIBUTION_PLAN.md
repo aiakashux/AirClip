@@ -1,6 +1,6 @@
 # Airclip direct distribution and updates
 
-Planning draft · 11 September 2026 · Recommendations, not implemented infrastructure.
+Updated 18 September 2026. The client update checks and metadata paths below are implemented; production signing, notarization, and release publication still require the release credentials.
 
 ## Recommended setup
 

@@ -1,6 +1,32 @@
 import SwiftUI
 import SwiftData
 import AppKit
+import Quartz
+import Carbon
+
+private final class QuickLookImagePreviewer: NSObject, QLPreviewPanelDataSource {
+    static let shared = QuickLookImagePreviewer()
+    private var previewURL: URL?
+
+    func show(imageData: Data, name: String) {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent(name.isEmpty ? UUID().uuidString : name)
+            .appendingPathExtension("png")
+        try? imageData.write(to: url, options: .atomic)
+        previewURL = url
+
+        guard let panel = QLPreviewPanel.shared() else { return }
+        panel.dataSource = self
+        panel.reloadData()
+        panel.makeKeyAndOrderFront(nil)
+    }
+
+    func numberOfPreviewItems(in panel: QLPreviewPanel!) -> Int { previewURL == nil ? 0 : 1 }
+
+    func previewPanel(_ panel: QLPreviewPanel!, previewItemAt index: Int) -> QLPreviewItem! {
+        previewURL as NSURL?
+    }
+}
 
 private enum MainPage: String, CaseIterable {
     case home = "Home"
@@ -537,7 +563,6 @@ private struct ClipboardItemGroup: Identifiable {
 
 private struct ClipboardWorkspace: View {
     @Environment(\.modelContext) private var modelContext
-    @Environment(\.undoManager) private var undoManager
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Query(sort: \ClipboardItem.receivedAt, order: .reverse) private var allItems: [ClipboardItem]
     @ObservedObject private var revealStore = SensitiveContentRevealStore.shared
@@ -555,6 +580,8 @@ private struct ClipboardWorkspace: View {
     @State private var canScrollFiltersLeft = false
     @State private var canScrollFiltersRight = false
     @State private var hoveredItemID: UUID?
+    @State private var knownItemIDs = Set<UUID>()
+    @State private var animateRemoteInsertion = false
     @FocusState private var searchFocused: Bool
 
     private var filteredItems: [ClipboardItem] {
@@ -601,11 +628,29 @@ private struct ClipboardWorkspace: View {
             previewPane
         }
         .frame(width: workspaceWidth, height: workspaceHeight)
-        .onAppear { ensureSelection() }
-        .onChange(of: allItems) { _, _ in ensureSelection() }
+        .onAppear {
+            knownItemIDs = Set(allItems.map(\.id))
+            ensureSelection()
+        }
+        .onChange(of: allItems) { _, _ in
+            let inserted = allItems.filter { !knownItemIDs.contains($0.id) }
+            animateRemoteInsertion = !reduceMotion && inserted.contains { item in
+                !item.isLocal && filteredItems.contains { $0.id == item.id }
+            }
+            knownItemIDs = Set(allItems.map(\.id))
+            ensureSelection()
+        }
         .onChange(of: filter) { _, _ in ensureSelection() }
         .onChange(of: searchQuery) { _, _ in ensureSelection() }
         .onChange(of: selectedTypeFilter) { _, _ in ensureSelection() }
+        .onKeyPress(.space) {
+            guard !searchFocused,
+                  let selectedItem,
+                  selectedItem.clipType == .image,
+                  let imageData = selectedItem.imageData else { return .ignored }
+            QuickLookImagePreviewer.shared.show(imageData: imageData, name: selectedItem.text)
+            return .handled
+        }
     }
 
     private var listPane: some View {
@@ -629,7 +674,7 @@ private struct ClipboardWorkspace: View {
                                 ForEach(group.items) { item in
                                     clipRow(item)
                                         .padding(.horizontal, MainWindowLayout.listRowHorizontalInset)
-                                        .transition(reduceMotion ? .opacity : .opacity.combined(with: .offset(y: 4)))
+                                        .transition(remoteItemTransition)
                                 }
                             } header: {
                                 sectionHeader(group.title)
@@ -637,7 +682,7 @@ private struct ClipboardWorkspace: View {
                         }
                     }
                     .padding(.bottom, 8)
-                    .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: allItems.map(\.id))
+                    .animation(animateRemoteInsertion ? .spring(response: 0.28, dampingFraction: 0.82) : nil, value: filteredItems.map(\.id))
                 }
                 .scrollIndicators(.never)
                 .simultaneousGesture(TapGesture().onEnded { searchFocused = false })
@@ -653,6 +698,13 @@ private struct ClipboardWorkspace: View {
         }
         .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: filtersVisible)
         .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: filteredItems.isEmpty)
+    }
+
+    private var remoteItemTransition: AnyTransition {
+        reduceMotion ? .opacity : .asymmetric(
+            insertion: .move(edge: .top).combined(with: .opacity),
+            removal: .move(edge: .bottom).combined(with: .opacity)
+        )
     }
 
     private var manualSendRow: some View {
@@ -883,7 +935,7 @@ private struct ClipboardWorkspace: View {
             searchFocused = false
             selectedItem = item
         } label: {
-            HStack(alignment: .top, spacing: 8) {
+            HStack(alignment: .center, spacing: 8) {
                 clipTypeBadge(for: item)
                 VStack(alignment: .leading, spacing: 8) {
                     if item.clipType == .url {
@@ -892,21 +944,13 @@ private struct ClipboardWorkspace: View {
                         Text(item.text)
                             .font(titleFont(for: item))
                             .foregroundColor(titleColor(for: item))
-                            .lineLimit(2)
+                            .lineSpacing(2.2)
+                            .lineLimit(1)
                             .truncationMode(.tail)
                             .blur(radius: shouldRedact(item) ? 4 : 0)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     HStack(spacing: 0) {
-                        HStack(spacing: 4) {
-                            Text(deviceLabel(for: item))
-                                .lineLimit(1)
-                                .truncationMode(.tail)
-                            if item.isSaved {
-                                AirclipIcon(.bookmarkCheck, size: 9)
-                            }
-                        }
-                        Spacer(minLength: 4)
                         Text(relativeTime(item.receivedAt))
                     }
                     .font(.system(size: 12))
@@ -939,30 +983,18 @@ private struct ClipboardWorkspace: View {
             Button {
                 copy(item)
             } label: {
-                Label {
-                    Text("Copy")
-                } icon: {
-                    AirclipIcon(.copy, size: 13)
-                }
+                Label("Copy", systemImage: "doc.on.doc")
             }
             Button {
                 toggleSaved(item)
             } label: {
-                Label {
-                    Text(item.isSaved ? "Saved" : "Save")
-                } icon: {
-                    AirclipIcon(item.isSaved ? .bookmarkCheck : .bookmarkAdd, size: 13)
-                }
+                Label(item.isSaved ? "Saved" : "Save", systemImage: item.isSaved ? "bookmark.fill" : "bookmark")
             }
             Divider()
             Button(role: .destructive) {
                 delete(item)
             } label: {
-                Label {
-                    Text("Delete")
-                } icon: {
-                    AirclipIcon(.delete, size: 13)
-                }
+                Label("Delete", systemImage: "trash")
             }
         }
     }
@@ -1051,7 +1083,7 @@ private struct ClipboardWorkspace: View {
             }
         case .url:
             clipBadge(background: MainWindowLayout.linkBadgeFill) {
-                AirclipIcon(.arrowUpRight, size: MainWindowLayout.rowIconWidth)
+                AirclipIcon(.link, size: MainWindowLayout.rowIconWidth)
                     .foregroundColor(MainWindowLayout.linkBadgeForeground)
             }
         case .code:
@@ -1105,20 +1137,7 @@ private struct ClipboardWorkspace: View {
     }
 
     private func titleFont(for item: ClipboardItem) -> Font {
-        switch item.clipType {
-        case .code:
-            return .system(size: 12, weight: .medium, design: .monospaced)
-        case .url:
-            return .system(size: 12, weight: .medium)
-        case .image:
-            return .system(size: 12, weight: .medium)
-        case .email:
-            return .system(size: 12, weight: .medium, design: .monospaced)
-        case .color:
-            return .system(size: 12, weight: .medium, design: .monospaced)
-        case .text:
-            return .system(size: 12, weight: .medium)
-        }
+        .system(size: 13, weight: .regular)
     }
 
     private func titleColor(for item: ClipboardItem) -> Color {
@@ -1157,6 +1176,9 @@ private struct ClipboardWorkspace: View {
                                 - MainWindowLayout.previewBottomInset,
                             0
                         )
+                        , onQuickLook: { imageData, name in
+                            QuickLookImagePreviewer.shared.show(imageData: imageData, name: name)
+                        }
                     )
                         .padding(.top, MainWindowLayout.previewTopInset)
                         .padding(.leading, MainWindowLayout.previewLeadingInset)
@@ -1247,20 +1269,12 @@ private struct ClipboardWorkspace: View {
     }
 
     private func delete(_ item: ClipboardItem) {
-        let snapshot = ClipboardItemSnapshot(item)
         if selectedItem?.id == item.id {
             selectedItem = filteredItems.first { $0.id != item.id }
         }
         revealStore.setRevealed(false, for: item.id)
-        modelContext.delete(item)
-        try? modelContext.save()
-        undoManager?.registerUndo(withTarget: LocalHistoryStore.shared) { store in
-            store.restore(snapshot)
-        }
-        undoManager?.setActionName("Delete Clipboard Item")
-        AirclipAlertCenter.shared.show("Deleted", actionTitle: "Undo") {
-            LocalHistoryStore.shared.restore(snapshot)
-        }
+        SyncEngine.shared.deleteHistoryItem(item)
+        AirclipAlertCenter.shared.show("Deleted")
     }
 
     private func isSensitive(_ item: ClipboardItem) -> Bool {
@@ -1320,15 +1334,19 @@ private struct URLClipRowText: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(metadata?.title ?? URL(string: url)?.host ?? url)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundColor(MainWindowPalette.primaryText)
+            Text(hasTitle ? metadata!.title : url)
+                .font(.system(size: 14, weight: .regular))
+                .lineSpacing(2.6)
+                .foregroundColor(.accent)
+                .underline(hasTitle)
                 .lineLimit(1)
-            Text(url)
-                .font(.system(size: 11))
-                .foregroundColor(MainWindowPalette.secondaryText)
-                .lineLimit(1)
-                .truncationMode(.middle)
+            if hasTitle {
+                Text(url)
+                    .font(.system(size: 11))
+                    .foregroundColor(MainWindowPalette.secondaryText)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
         }
         .blur(radius: shouldRedact ? 4 : 0)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1337,6 +1355,8 @@ private struct URLClipRowText: View {
             metadata = await LinkPreviewLoader.preview(for: url, includeImage: false)
         }
     }
+
+    private var hasTitle: Bool { metadata?.hasExplicitTitle == true }
 }
 
 private struct ColorCircleTypeIcon: View {
@@ -1356,6 +1376,7 @@ private struct PreviewContent: View {
     let isSensitive: Bool
     let isRevealed: Bool
     let minimumHeight: CGFloat
+    let onQuickLook: (Data, String) -> Void
     @State private var isURLHovered = false
     @State private var linkPreview: LinkPreviewMetadata?
     @State private var isLoadedPreviewVisible = false
@@ -1376,14 +1397,7 @@ private struct PreviewContent: View {
                     imagePreview(image)
                         .opacity(isLoadedPreviewVisible ? 1 : 0)
                 } else if type == .color, let parsedColor {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(parsedColor)
-                        .frame(width: 200, height: 140)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .strokeBorder(Color(hex: "#808080").opacity(0.5), lineWidth: 1)
-                        )
-                        .padding(.bottom, 4)
+                    colorCard(color: parsedColor)
                 }
 
                 if type == .image {
@@ -1404,7 +1418,7 @@ private struct PreviewContent: View {
                             isURLHovered = hovering
                         }
                     }
-                } else {
+                } else if type != .color {
                     redactedPreviewText(foregroundColor: previewColor)
                         .textSelection(.enabled)
                 }
@@ -1476,17 +1490,64 @@ private struct PreviewContent: View {
     }
 
     private func imagePreview(_ image: NSImage) -> some View {
-        Image(nsImage: image)
-            .resizable()
-            .aspectRatio(contentMode: .fit)
-            .frame(maxWidth: 420, maxHeight: 320)
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(MainWindowPalette.divider, lineWidth: 1)
-            )
-            .shadow(color: MainWindowPalette.divider.opacity(0.55), radius: 8, x: 0, y: 4)
+        Button {
+            if let imageData = item.imageData { onQuickLook(imageData, item.text) }
+        } label: {
+            Image(nsImage: image)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(maxWidth: 420, maxHeight: 320)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(MainWindowPalette.divider, lineWidth: 1)
+                )
+                .shadow(color: MainWindowPalette.divider.opacity(0.55), radius: 8, x: 0, y: 4)
+        }
+        .buttonStyle(.plain)
         .frame(maxWidth: .infinity, alignment: .center)
+    }
+
+    @ViewBuilder
+    private func colorCard(color: Color) -> some View {
+        if let components = colorComponents {
+            VStack(alignment: .leading, spacing: 16) {
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .fill(color)
+                    .frame(height: 140)
+                    .overlay(Text(components.hex)
+                        .font(.system(size: 24, weight: .medium))
+                        .foregroundColor(.white))
+                    .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .strokeBorder(Color(hex: "#808080").opacity(0.5), lineWidth: 1))
+
+                VStack(alignment: .leading, spacing: 2) {
+                    colorCardRow(components.title, highlighted: true)
+                    colorCardRow("Hex: \(components.hex)")
+                    colorCardRow("RGB: \(components.red), \(components.green), \(components.blue)", highlighted: true)
+                    colorCardRow("HSL: \(components.hsl)")
+                }
+                .padding(.horizontal, 10)
+            }
+            .padding(16)
+            .frame(width: 286)
+            .background(Color(hex: "#F8F9F6"))
+            .clipShape(RoundedRectangle(cornerRadius: 40, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 40, style: .continuous)
+                .strokeBorder(Color(hex: "#EFEFEF"), lineWidth: 1))
+            .frame(maxWidth: .infinity)
+        }
+    }
+
+    private func colorCardRow(_ value: String, highlighted: Bool = false) -> some View {
+        Text(value)
+            .font(.system(size: 14))
+            .foregroundColor(Color(hex: "#60656C"))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 2)
+            .background(highlighted ? Color(hex: "#EBECE9") : .clear)
+            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
     }
 
     private var informationTable: some View {
@@ -1514,7 +1575,7 @@ private struct PreviewContent: View {
                 }
             }
         }
-        .frame(maxWidth: 360, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .contain)
     }
 
@@ -1610,6 +1671,19 @@ private struct PreviewContent: View {
         var css: String {
             let opacity = alpha == 255 ? "1" : String(format: "%.2f", Double(alpha) / 255)
             return "rgba(\(red), \(green), \(blue), \(opacity))"
+        }
+
+        var hsl: String {
+            let r = Double(red) / 255, g = Double(green) / 255, b = Double(blue) / 255
+            let maximum = max(r, g, b), minimum = min(r, g, b), delta = maximum - minimum
+            let lightness = (maximum + minimum) / 2
+            let saturation = delta == 0 ? 0 : delta / (1 - abs(2 * lightness - 1))
+            let hue: Double
+            if delta == 0 { hue = 0 }
+            else if maximum == r { hue = 60 * ((g - b) / delta).truncatingRemainder(dividingBy: 6) }
+            else if maximum == g { hue = 60 * ((b - r) / delta + 2) }
+            else { hue = 60 * ((r - g) / delta + 4) }
+            return "\(Int(hue < 0 ? hue + 360 : hue).formatted()), \(Int((saturation * 100).rounded()))%, \(Int((lightness * 100).rounded()))%"
         }
 
         var title: String {
@@ -1739,13 +1813,14 @@ private struct PreviewContent: View {
     }
 }
 
-private struct LinkPreviewMetadata {
+struct LinkPreviewMetadata {
     let title: String
     let site: String
     let image: NSImage?
+    let hasExplicitTitle: Bool
 }
 
-private enum LinkPreviewLoader {
+enum LinkPreviewLoader {
     private static let maxHTMLBytes = 512 * 1024
     private static let maxImageBytes = 10 * 1024 * 1024
 
@@ -1768,7 +1843,12 @@ private enum LinkPreviewLoader {
             let title = metadata.title ?? host ?? resolvedURL.absoluteString
             let site = metadata.site ?? host ?? resolvedURL.absoluteString
             let image = includeImage ? await loadImage(from: metadata.imageURL) : nil
-            return LinkPreviewMetadata(title: title, site: site, image: image)
+            return LinkPreviewMetadata(
+                title: title,
+                site: site,
+                image: image,
+                hasExplicitTitle: metadata.title != nil
+            )
         } catch {
             return nil
         }
@@ -2335,12 +2415,12 @@ private struct DevicesPanel: View {
             .frame(width: 48, height: 48)
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(hubWiFiStatus.displayName)
+                Text(identity.spaceName.isEmpty ? "My Space" : identity.spaceName)
                     .font(.system(size: 18, weight: .medium))
                     .foregroundColor(colorScheme == .dark ? MainWindowPalette.primaryText : Color(hex: "#232E43"))
                     .lineLimit(1)
                     .contentTransition(.opacity)
-                Text(connectionSummaryText)
+                Text(hubWiFiStatus.displayName)
                     .font(.airClipBody)
                     .foregroundColor(colorScheme == .dark ? MainWindowPalette.secondaryText : Color(hex: "#232E43").opacity(0.5))
                     .lineLimit(1)
@@ -2380,17 +2460,7 @@ private struct DevicesPanel: View {
         .background(colorScheme == .dark ? MainWindowPalette.sectionFill : Color(hex: "#F7F7F7"))
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: hubWiFiStatus.displayName)
-        .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: connectionSummaryText)
-    }
-
-    private var connectionSummaryText: String {
-        if syncModeStore.mode == .paused { return "Sync paused" }
-        if let helper = hubWiFiStatus.helperText { return helper }
-        switch lanDiagnostics.diagnostic.issue {
-        case .serverFailed: return "Can't listen for nearby devices — check network access"
-        case .discoveryFailed: return "Can't find nearby devices — check network access"
-        case .none: return identity.spaceName.isEmpty ? "My Space" : identity.spaceName
-        }
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: identity.spaceName)
     }
 
     private func deviceRow(_ device: PairedDevice) -> some View {
@@ -3374,6 +3444,8 @@ private struct SettingsPanel: View {
     @ObservedObject private var syncModeStore = SyncModeStore.shared
     @ObservedObject private var sensitiveProtection = SensitiveClipboardProtectionStore.shared
     @ObservedObject private var pasteShortcutStore = PasteShortcutStore.shared
+    @ObservedObject private var popoverShortcutStore = PasteShortcutStore.popover
+    @ObservedObject private var analytics = PrivacyAnalytics.shared
 
     @State private var historyDepth: Int = HistoryRetentionPolicy.selectedIndex()
     @State private var showResetAlert = false
@@ -3428,6 +3500,8 @@ private struct SettingsPanel: View {
 
                 settingsSection("Keyboard Shortcuts") {
                     settingsGroup {
+                        popoverShortcutRow
+                        settingsDivider
                         pasteLatestShortcutRow
                         settingsDivider
                         shortcutRow("Copy item", keys: ["⌘", "C"])
@@ -3442,6 +3516,31 @@ private struct SettingsPanel: View {
                             "Version",
                             value: "\(bundleValue("CFBundleShortVersionString")) (\(bundleValue("CFBundleVersion")))"
                         )
+                        settingsDivider
+                        SettingsActionRow(
+                            icon: .refresh,
+                            title: "Check for Updates",
+                            subtitle: "Checks Airclip's signed update feed.",
+                            tint: MainWindowPalette.primaryText,
+                            hoverFill: MainWindowPalette.hoverFill
+                        ) {
+                            AppUpdateController.shared.checkForUpdates()
+                        }
+                        settingsDivider
+                        settingsRow(
+                            icon: .shield,
+                            iconTint: MainWindowPalette.secondaryText,
+                            iconFill: MainWindowPalette.activeFill,
+                            title: "Share Anonymous Analytics",
+                            subtitle: "Coarse event counts only. No clipboard or device data."
+                        ) {
+                            Toggle("", isOn: $analytics.isEnabled)
+                                .labelsHidden()
+                                .toggleStyle(.switch)
+                                .onChange(of: analytics.isEnabled) { _, enabled in
+                                    if enabled { analytics.flushIfDue() }
+                                }
+                        }
                     }
                 }
 
@@ -3450,7 +3549,7 @@ private struct SettingsPanel: View {
                         SettingsActionRow(
                             icon: .delete,
                             title: "Clear History",
-                            subtitle: "Removes all local clips, including saved items.",
+                            subtitle: "Removes clips and saved items from every device in this space.",
                             tint: MainWindowPalette.destructive,
                             hoverFill: MainWindowPalette.hoverFill
                         ) {
@@ -3492,12 +3591,12 @@ private struct SettingsPanel: View {
             SettingsDestructiveConfirmationSheet(
                 icon: .delete,
                 title: "Clear history?",
-                message: "This permanently removes all clipboard history and saved items stored on this Mac.",
+                message: "This permanently removes all clipboard history and saved items from every device in this space, including devices that are currently offline.",
                 actionTitle: "Clear History",
                 onCancel: { showClearHistoryAlert = false },
                 onConfirm: {
                     showClearHistoryAlert = false
-                    LocalHistoryStore.shared.clearAll()
+                    SyncEngine.shared.clearHistory()
                 }
             )
         }
@@ -4060,6 +4159,23 @@ private struct SettingsPanel: View {
         .frame(minHeight: 60)
     }
 
+    private var popoverShortcutRow: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Toggle menu bar list")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(MainWindowPalette.primaryText)
+                Text("Press Control + ~ by default, or record a replacement.")
+                    .font(.system(size: 11))
+                    .foregroundColor(MainWindowPalette.secondaryText)
+            }
+            Spacer(minLength: 12)
+            PasteShortcutRecorder(store: popoverShortcutStore)
+        }
+        .padding(.horizontal, 16)
+        .frame(minHeight: 60)
+    }
+
     private func shortcutRow(_ label: String, keys: [String]) -> some View {
         HStack {
             Text(label)
@@ -4219,7 +4335,7 @@ private struct PasteShortcutRecorder: View {
                     )
 
                 if isRecording {
-                    Text("Press 2–3 keys")
+                    Text("Press ⌘ or ⌃ + key")
                         .font(.system(size: 11, weight: .medium))
                         .foregroundColor(MainWindowPalette.primaryText)
                 } else if let shortcut = store.shortcut {
@@ -4315,6 +4431,7 @@ private struct ShortcutCaptureView: NSViewRepresentable {
         }
 
         private static func label(for event: NSEvent) -> String? {
+            if event.keyCode == kVK_ANSI_Grave { return "~" }
             guard let character = event.charactersIgnoringModifiers, !character.isEmpty else { return nil }
             switch character {
             case " ": return "Space"

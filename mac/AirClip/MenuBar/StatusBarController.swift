@@ -22,8 +22,10 @@ final class StatusBarController: NSObject {
     private var identityPairingObserver: AnyCancellable?
     private var authCompletionObserver: NSObjectProtocol?
     private var openHotKey: EventHotKeyRef?
+    private var popoverHotKey: EventHotKeyRef?
     private var hotKeyHandler: EventHandlerRef?
     private var hotKeyObserver: AnyCancellable?
+    private var popoverHotKeyObserver: AnyCancellable?
 
     var isPanelVisible: Bool { panel?.isVisible ?? false }
 
@@ -43,6 +45,8 @@ final class StatusBarController: NSObject {
         installPasteHotKeyHandler()
         hotKeyObserver = PasteShortcutStore.shared.$shortcut
             .sink { [weak self] _ in self?.updatePasteHotKeyRegistration() }
+        popoverHotKeyObserver = PasteShortcutStore.popover.$shortcut
+            .sink { [weak self] _ in self?.updatePopoverHotKeyRegistration() }
 
         unreadObserver = UnreadStore.shared.$hasUnread.sink { [weak self] hasUnread in
             guard let button = self?.statusItem?.button else { return }
@@ -158,12 +162,24 @@ final class StatusBarController: NSObject {
         )
         InstallEventHandler(
             GetApplicationEventTarget(),
-            { _, _, context in
+            { _, event, context in
                 guard let context else { return OSStatus(eventNotHandledErr) }
                 let controller = Unmanaged<StatusBarController>
                     .fromOpaque(context)
                     .takeUnretainedValue()
-                Task { @MainActor in controller.pasteLatestItem() }
+                var hotKeyID = EventHotKeyID()
+                GetEventParameter(
+                    event,
+                    EventParamName(kEventParamDirectObject),
+                    EventParamType(typeEventHotKeyID),
+                    nil,
+                    MemoryLayout<EventHotKeyID>.size,
+                    nil,
+                    &hotKeyID
+                )
+                Task { @MainActor in
+                    hotKeyID.id == 2 ? controller.togglePopoverFromShortcut() : controller.pasteLatestItem()
+                }
                 return noErr
             },
             1,
@@ -189,6 +205,24 @@ final class StatusBarController: NSObject {
             GetApplicationEventTarget(),
             0,
             &openHotKey
+        )
+    }
+
+    private func updatePopoverHotKeyRegistration() {
+        if let popoverHotKey {
+            UnregisterEventHotKey(popoverHotKey)
+            self.popoverHotKey = nil
+        }
+
+        guard let shortcut = PasteShortcutStore.popover.shortcut else { return }
+        let hotKeyID = EventHotKeyID(signature: 0x41434C50, id: 2)
+        RegisterEventHotKey(
+            shortcut.keyCode,
+            shortcut.modifiers,
+            hotKeyID,
+            GetApplicationEventTarget(),
+            0,
+            &popoverHotKey
         )
     }
 
@@ -307,6 +341,10 @@ final class StatusBarController: NSObject {
             showContextMenu()
             return
         }
+        togglePopoverFromShortcut()
+    }
+
+    private func togglePopoverFromShortcut() {
         guard AirclipIdentity.shared.isPaired else {
             openMainWindow()
             return
@@ -487,16 +525,32 @@ final class PasteShortcutStore: ObservableObject {
     }
 
     static let shared = PasteShortcutStore()
+    static let popover = PasteShortcutStore(
+        defaultsKey: "popoverToggleShortcut",
+        defaultShortcut: Shortcut(keyCode: UInt32(kVK_ANSI_Grave), modifiers: UInt32(controlKey), keyLabel: "~")
+    )
 
     @Published private(set) var shortcut: Shortcut? {
         didSet { save() }
     }
 
-    private static let defaultsKey = "pasteLatestShortcut"
+    private let defaultsKey: String
+    private let allowsBareKey: Bool
 
-    private init() {
-        shortcut = UserDefaults.standard.data(forKey: Self.defaultsKey)
+    private init(
+        defaultsKey: String = "pasteLatestShortcut",
+        defaultShortcut: Shortcut? = nil,
+        allowsBareKey: Bool = false
+    ) {
+        self.defaultsKey = defaultsKey
+        self.allowsBareKey = allowsBareKey
+        let storedShortcut = UserDefaults.standard.data(forKey: defaultsKey)
             .flatMap { try? JSONDecoder().decode(Shortcut.self, from: $0) }
+        let migratePopoverShortcut = defaultsKey == "popoverToggleShortcut" &&
+            storedShortcut?.keyCode == UInt32(kVK_ANSI_Grave) &&
+            [UInt32(0), UInt32(shiftKey), UInt32(optionKey), UInt32(controlKey | shiftKey)].contains(storedShortcut?.modifiers ?? 0)
+        shortcut = migratePopoverShortcut ? defaultShortcut : storedShortcut ?? defaultShortcut
+        if migratePopoverShortcut { save() }
     }
 
     @discardableResult
@@ -506,7 +560,10 @@ final class PasteShortcutStore: ObservableObject {
         let modifierCount = [cmdKey, optionKey, controlKey, shiftKey]
             .filter { carbonModifiers & UInt32($0) != 0 }
             .count
-        guard (1...2).contains(modifierCount), !keyLabel.isEmpty else { return false }
+        let validModifierCount = allowsBareKey ? (0...2) : (1...2)
+        guard validModifierCount.contains(modifierCount),
+              carbonModifiers & UInt32(cmdKey | controlKey) != 0,
+              !keyLabel.isEmpty else { return false }
         shortcut = Shortcut(keyCode: UInt32(keyCode), modifiers: carbonModifiers, keyLabel: keyLabel)
         return true
     }
@@ -517,10 +574,10 @@ final class PasteShortcutStore: ObservableObject {
 
     private func save() {
         guard let shortcut else {
-            UserDefaults.standard.removeObject(forKey: Self.defaultsKey)
+            UserDefaults.standard.removeObject(forKey: defaultsKey)
             return
         }
-        UserDefaults.standard.set(try? JSONEncoder().encode(shortcut), forKey: Self.defaultsKey)
+        UserDefaults.standard.set(try? JSONEncoder().encode(shortcut), forKey: defaultsKey)
     }
 
     private func carbonModifiers(from flags: NSEvent.ModifierFlags) -> UInt32 {

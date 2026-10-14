@@ -64,12 +64,14 @@ Each device generates locally:
 2. Sensitive content policy applied (Block / Ask / Allow)
 3. Payload serialized to JSON `{ kindRaw, text, imageDataBase64 }`
 4. Encrypted with recipient's public key (NaCl sealed box)
-5. Sent as `{ type: "clip", ciphertext, nonce }` over authenticated WebSocket
+5. Sent with a stable message ID, source device, and timestamp over the authenticated WebSocket
 6. Receiver decrypts, deduplicates, stores in history, writes to system clipboard
 
 ## History Backfill
 
-On peer authentication, each side pushes up to 20 recent history items as `history_clip` messages. Receiver merges into local history only — never writes to system clipboard. Deduplicates by message ID or source/content/timestamp window.
+On peer authentication, each side pushes up to its retained-history limit (currently 500 items) as `history_clip` messages. A `history_request` repeats that backfill over an existing connection. Receiver merges into local history only — never writes to system clipboard. Android serializes history merges so concurrent WebSocket deliveries cannot overwrite one another. Both platforms deduplicate by message ID or source/content/timestamp window.
+
+Individual deletes and clear-history cutoffs are persisted as tombstones and sent before backfill. This prevents an offline device from restoring deleted clips when it reconnects.
 
 ## Loop Prevention
 

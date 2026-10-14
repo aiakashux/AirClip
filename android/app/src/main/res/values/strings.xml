@@ -1,4 +1,8 @@
 <resources>
     <string name="app_name">Airclip</string>
     <string name="widget_description">Airclip clipboard sync status and quick actions</string>
+    <string name="sync_notification_channel">Clipboard sync</string>
+    <string name="sync_notification_channel_description">Keeps Airclip available to sync in the background</string>
+    <string name="sync_notification_title">Clipboard sync is on</string>
+    <string name="sync_notification_text">Airclip is ready on your local network</string>
 </resources>

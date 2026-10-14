@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Airclip, case study</title>
+<style>
+:root{--ink:#111;--sub:#555;--line:#e5e5e5;--accent:#2952e3;--bg:#fff;--card:#f7f7f8}
+*{margin:0;box-sizing:border-box}
+body{font-family:-apple-system,'Inter',sans-serif;color:var(--ink);background:var(--bg);line-height:1.7}
+.wrap{max-width:720px;margin:0 auto;padding:0 24px}
+section{padding:52px 0;border-bottom:1px solid var(--line)}
+.label{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);font-weight:600;margin-bottom:20px}
+h1{font-size:27px;line-height:1.45;font-weight:600;margin-bottom:20px}
+h2{font-size:21px;line-height:1.35;margin-bottom:14px}
+h3{font-size:17px;margin:28px 0 8px}
+p{margin-bottom:14px;color:#222}
+.meta{display:flex;gap:32px;flex-wrap:wrap;margin-top:26px;font-size:14px}
+.meta div span{display:block;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--sub)}
+.num{font-size:13px;color:var(--accent);font-weight:700;margin-bottom:6px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin:22px 0}
+.stat{background:var(--card);border-radius:10px;padding:20px}
+.stat b{font-size:24px;display:block}
+.stat span{font-size:13px;color:var(--sub)}
+.img{border:1.5px dashed #bbb;border-radius:10px;padding:24px;text-align:center;color:var(--sub);font-size:13px;margin:20px 0;background:#fafafa}
+.img b{display:block;color:var(--ink);font-size:13px;margin-bottom:4px}
+.block{background:var(--card);border-radius:12px;padding:24px;margin:16px 0}
+.rule{border-left:3px solid var(--accent);padding:4px 0 4px 18px;font-size:19px;margin:20px 0;font-weight:600}
+.src{font-size:12px;color:var(--sub);margin-top:8px}
+table{width:100%;border-collapse:collapse;font-size:14px;margin:18px 0}
+th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--sub)}
+td b{display:block}
+.flow{margin:22px 0}
+.flow .step{display:flex;gap:16px;padding:11px 0;border-bottom:1px solid var(--line)}
+.flow .step:last-child{border-bottom:none}
+.flow .n{color:var(--accent);font-weight:700;font-size:13px;min-width:24px;padding-top:2px}
+.flow .step b{display:block;font-size:15px;font-weight:500}
+.costs{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;margin:18px 0}
+.costs div{background:var(--card);border-radius:10px;padding:18px 20px;font-size:14px;color:var(--sub)}
+.costs div b{display:block;color:var(--accent);font-size:15px;margin-bottom:4px}
+.close{font-size:23px;line-height:1.5;text-align:center;max-width:520px;margin:44px auto 0;color:var(--ink)}
+footer{padding:44px 0;color:var(--sub);font-size:14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<section>
+  <div class="label">Airclip · Self-initiated · Mac + Android · 2026</div>
+  <h1>I lost my iPhone. Suddenly my Mac and my Android had no way to pass anything to each other.</h1>
+  <div class="meta">
+    <div><span>Role</span>Product, design, build</div>
+    <div><span>Timeline</span>Mar to Sep 2026</div>
+    <div><span>Platform</span>Mac + Android</div>
+    <div><span>Status</span>Working, in daily use</div>
+  </div>
+  <div class="img"><b>[COVER IMAGE]</b>Mac menu bar list open, Android app beside it, same clip on both.</div>
+</section>
+
+<section>
+  <div class="label">The problem</div>
+  <h2>A feature I never thought about, until it was gone</h2>
+  <p>For two years I carried an iPhone, an Android, and a MacBook. Copy something on the iPhone, paste it on the Mac. It just worked. I never set it up and I never thought about it.</p>
+  <p>The Android sat outside all of that. I noticed, but the iPhone was always there to fall back on.</p>
+  <p>Then I lost the iPhone, and the Android became my only phone.</p>
+
+  <div class="flow">
+    <div class="step"><div class="n">01</div><div><b>Copy something on the Mac.</b></div></div>
+    <div class="step"><div class="n">02</div><div><b>Open WhatsApp and message it to myself.</b></div></div>
+    <div class="step"><div class="n">03</div><div><b>Pick up the phone and find the thread.</b></div></div>
+    <div class="step"><div class="n">04</div><div><b>Copy it back out of the message.</b></div></div>
+    <div class="step"><div class="n">05</div><div><b>An hour later, do the whole thing backwards.</b></div></div>
+  </div>
+
+  <div class="img"><b>[IMAGE, the detour]</b>The five steps. Last frame is my chat thread with myself, scrolled to show how long it is.</div>
+
+  <p>Fifteen seconds each time. Small enough to ignore, often enough to wear on you.</p>
+
+  <div class="costs">
+    <div><b>You get pulled away</b>You open WhatsApp to send yourself a link, and someone has messaged you about something that matters. A minute later you have forgotten what you copied.</div>
+    <div><b>Codes run out</b>A login code lasts thirty seconds. The detour eats most of it.</div>
+    <div><b>It piles up in a chat</b>Addresses, keys, and codes end up sitting in a message thread forever.</div>
+  </div>
+
+  <p>Nobody would ever report this as a bug. Too small to complain about, too normal to notice.</p>
+</section>
+
+<section>
+  <div class="label">What I found</div>
+  <h2>It was already solved, just not for people like me</h2>
+  <p>Before building anything I went looking. Reddit, a few maker communities. People had solved this, and some of it was good work.</p>
+  <p>Then I tried to use it. Step one was usually clone this repo. Then run something in Terminal, find your device's IP address, and type it into a file on both machines. Again every time the WiFi changed.</p>
+  <p>I have a computer science background and I still had to look things up. Almost nobody I know would get through that. The easy apps had the opposite problem: simple to install, and your clipboard lives on their servers.</p>
+
+  <table>
+    <tr><th>Option</th><th>Works for</th><th>Setup</th><th>What you give up</th></tr>
+    <tr><td><b>Apple's built-in sync</b></td><td>People whose devices are all Apple</td><td>None, it is already on</td><td>Nothing, unless you ever buy something else</td></tr>
+    <tr><td><b>Open source tools</b></td><td>People who enjoy a terminal</td><td>Repos, config files, IP addresses</td><td>An afternoon</td></tr>
+    <tr><td><b>Cloud clipboard apps</b></td><td>Anyone</td><td>Sign up and log in</td><td>Everything you copy</td></tr>
+  </table>
+
+  <p>The row I wanted was not there. Easy for anyone, no account, and nothing leaving my own network.</p>
+</section>
+
+<section>
+  <div class="label">The turning point</div>
+  <h2>My first version had a server. Losing my phone is what killed it</h2>
+  <p>I built the obvious version first. A small server in the middle, both devices connect to it, clips pass through. It worked fine.</p>
+  <p>Two things nagged at me. I would be paying for that server forever. And I would be asking strangers to trust me about how I ran it.</p>
+  <p>Then the real problem landed. If any device can reach that server from anywhere, so can a phone I no longer own.</p>
+  <p>I had just lost a phone. I was building the exact thing that had scared me.</p>
+  <p>So I deleted it and wrote one rule instead:</p>
+
+  <div class="rule">Devices only talk when they are on the same network.</div>
+
+  <p>Same WiFi. Same hotspot. Same room, basically. If a device is not near me it gets nothing, and there is no account for a lost phone to log back into.</p>
+  <p>The cost is real. Nothing waits. If my phone is on mobile data and I copy something on the Mac, that clip never arrives.</p>
+
+  <div class="img"><b>[DIAGRAM, before and after]</b>Version one with the server in the middle, next to version two with two devices talking directly.</div>
+</section>
+
+<section>
+  <div class="label">What I built</div>
+  <h2>Small enough to forget it is running</h2>
+  <p>On the Mac it lives in the menu bar. Click it, see your recent clips, click one, it is copied. Most days that is the entire app.</p>
+  <p>The full window has three tabs. Clips is your history, labelled with the device each one came from. Devices shows what is paired and whether it is online. Settings holds the rest.</p>
+  <p>Devices matters more here than in a normal app. Being online is the whole condition for this working, so when nothing syncs that screen has to say why in plain words instead of spinning.</p>
+  <p>Android does the same, shaped for a phone, with a share button and a home screen widget for sending on purpose.</p>
+
+  <div class="img"><b>[IMAGE, Mac menu bar]</b>The dropdown with recent clips.</div>
+  <div class="img"><b>[IMAGE, the three tabs]</b>Clips, Devices, Settings.</div>
+
+  <h3>What is coming</h3>
+  <p>It started as text. Now it handles links, images, and colours. Bigger files and video are next, and they need a progress bar and a way to cancel, so that is its own problem. Windows and Linux after that.</p>
+</section>
+
+<section>
+  <div class="label">Privacy and security</div>
+  <h2>What actually happens when you copy something</h2>
+  <p>Your Mac notices you copied something and checks it against a few rules. If it passes, it locks the content and sends it straight to your phone across your own WiFi. Your phone unlocks it and puts it on your clipboard.</p>
+  <p>It never touches the internet. There is no company in the middle, and that includes me.</p>
+
+  <div class="block">
+    <h3>Some things do not move on their own</h3>
+    <p>Passwords, keys, and card numbers are blocked before they leave your device.</p>
+    <p>Login codes ask you first instead. That is on purpose, because moving a login code between a phone and a laptop is the main reason anyone wants this at all. Blocking those would have broken the app. Every rule can be changed.</p>
+  </div>
+
+  <div class="block">
+    <h3>Three ways to run it</h3>
+    <p>Automatic sends everything. Manual sends only what you pick. Paused stops all of it. Manual is there so that when automatic feels like too much, the answer is turning it down instead of deleting the app.</p>
+  </div>
+
+  <div class="block">
+    <h3>The risks, and the trade</h3>
+    <p>The one to think about is someone else on your WiFi. Devices have to be paired first and clips are locked before sending, so being on the network is not enough to read anything. Still, a shared office network is different from your home, and that is worth knowing.</p>
+    <p>Lose a device and it cannot pull anything unless it is back on your network. That was the point.</p>
+    <p>No server means nothing waits for you when a device is away. It also means there is nothing to hack, no account to leak, and no company that could be sold or pressured into changing its mind later.</p>
+  </div>
+
+  <div class="img"><b>[IMAGE, settings]</b>The blocked list, with passwords blocked and login codes set to ask.</div>
+</section>
+
+<section>
+  <div class="label">Where it stands</div>
+  <h2>It works, and that is a smaller claim than it sounds</h2>
+
+  <div class="stats">
+    <div class="stat"><b>5 → 0</b><span>extra steps to move a clip</span></div>
+    <div class="stat"><b>Under 2s</b><span>for it to show up</span></div>
+    <div class="stat"><b>~20s</b><span>to set up, no account</span></div>
+    <div class="stat"><b>Never</b><span>leaves your network</span></div>
+  </div>
+
+  <p>I have used it as my only way of moving things between my Mac and my phone since it started working. The chat thread with myself has not been used for that in months.</p>
+  <p>That is also the whole evidence. One person, two devices, no users.</p>
+  <p class="src">Source: daily use, and timing on my own paired devices.</p>
+
+  <h3>What broke</h3>
+  <p>Taking out the server did not remove the hard part. It moved it into the two apps.</p>
+  <p>A server keeps score. It knows who is connected and what arrived. Without one the two devices work that out themselves, which is fine until a laptop wakes from sleep or a phone changes WiFi.</p>
+  <p>I got that wrong. My Mac sometimes does not reconnect after waking, and quitting and reopening is the only fix. That is the kind of bug that gets a small tool deleted rather than reported, and the decision I am proudest of is what caused it.</p>
+
+  <h3>What I cannot see</h3>
+  <p>Anything about how it gets used. There is no tracking in it, because the whole promise is that it does not report back. So I do not know if anyone uses manual mode, or where setup loses people. A real product would have to price anonymous measuring against that promise. I have not had to make that call.</p>
+
+  <h3>What I am least sure about</h3>
+  <p>Same network only means someone copying on their office laptop and wanting it on their phone on the train gets nothing. That is not a rare person. I cut them out on principle, and the only research behind it was me.</p>
+</section>
+
+<section>
+  <div class="label">What I learned</div>
+  <h2>I set out to save four steps</h2>
+
+  <div class="num">01</div>
+  <h3>The thing that started it is not what shaped it</h3>
+  <p>I began because pasting between my devices was annoying. Every decision that mattered came from a different question: what happens the next time I lose a device.</p>
+
+  <div class="num">02</div>
+  <h3>Taking something out moves the work somewhere else</h3>
+  <p>I thought I was removing a server. I was handing its job to two apps that now have to agree without one, and the reconnection bug is the bill.</p>
+
+  <div class="num">03</div>
+  <h3>Not being an engineer helped</h3>
+  <p>I could not build the clever version, so every rule had to be one I could say in a sentence. Same network means we are together. If it looks like a password, it does not move. Product rules first, technical ones second.</p>
+
+  <p class="close">It saves me four steps, a few dozen times a day. What I actually care about is that nothing I copy ever leaves the room.</p>
+</section>
+
+<footer>Airclip · Self-initiated · 2026</footer>
+</div>
+</body>
+</html>

@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		57232E7C2F82524000626D59 /* Clibsodium in Frameworks */ = {isa = PBXBuildFile; productRef = 57232E7B2F82524000626D59 /* Clibsodium */; };
 		57232E7E2F82524000626D59 /* Sodium in Frameworks */ = {isa = PBXBuildFile; productRef = 57232E7D2F82524000626D59 /* Sodium */; };
+		57232E8C2F82524000626D59 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 57232E8B2F82524000626D59 /* Sparkle */; };
 		AA0200000000000000000023 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000023 /* Assets.xcassets */; };
 		AA0200000000000000000001 /* AirclipApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000001 /* AirclipApp.swift */; };
 		AA0200000000000000000002 /* AppConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000002 /* AppConfig.swift */; };
@@ -46,6 +47,9 @@
 		AA0200000000000000000035 /* DeviceDisplayText.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000035 /* DeviceDisplayText.swift */; };
 		AA0200000000000000000036 /* SensitiveContentRevealStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000036 /* SensitiveContentRevealStore.swift */; };
 		AA0200000000000000000037 /* AirclipDeviceIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000037 /* AirclipDeviceIcon.swift */; };
+		AA0200000000000000000038 /* AppUpdateController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000038 /* AppUpdateController.swift */; };
+		AA0200000000000000000039 /* PrivacyAnalytics.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000039 /* PrivacyAnalytics.swift */; };
+		AA0200000000000000000040 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000040 /* PrivacyInfo.xcprivacy */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -89,6 +93,9 @@
 		AA0100000000000000000035 /* DeviceDisplayText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceDisplayText.swift; sourceTree = "<group>"; };
 		AA0100000000000000000036 /* SensitiveContentRevealStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SensitiveContentRevealStore.swift; sourceTree = "<group>"; };
 		AA0100000000000000000037 /* AirclipDeviceIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AirclipDeviceIcon.swift; sourceTree = "<group>"; };
+		AA0100000000000000000038 /* AppUpdateController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppUpdateController.swift; sourceTree = "<group>"; };
+		AA0100000000000000000039 /* PrivacyAnalytics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivacyAnalytics.swift; sourceTree = "<group>"; };
+		AA0100000000000000000040 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -96,6 +103,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				57232E8C2F82524000626D59 /* Sparkle in Frameworks */,
 				57232E7C2F82524000626D59 /* Clibsodium in Frameworks */,
 				57232E7E2F82524000626D59 /* Sodium in Frameworks */,
 			);
@@ -166,6 +174,8 @@
 				AA0100000000000000000034 /* DeviceRemovalNotice.swift */,
 				AA0100000000000000000035 /* DeviceDisplayText.swift */,
 				AA0100000000000000000036 /* SensitiveContentRevealStore.swift */,
+				AA0100000000000000000038 /* AppUpdateController.swift */,
+				AA0100000000000000000039 /* PrivacyAnalytics.swift */,
 				AA0100000000000000000008 /* CryptoManager.swift */,
 				AA0100000000000000000009 /* SyncEngine.swift */,
 				AA010000000000000000000A /* LocalHistoryStore.swift */,
@@ -186,6 +196,7 @@
 			isa = PBXGroup;
 			children = (
 				AA010000000000000000000D /* Info.plist */,
+				AA0100000000000000000040 /* PrivacyInfo.xcprivacy */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -214,6 +225,9 @@
 			dependencies = (
 			);
 			name = Airclip;
+			packageProductDependencies = (
+				57232E8B2F82524000626D59 /* Sparkle */,
+			);
 			productName = Airclip;
 			productReference = AA010000000000000000000F /* Airclip.app */;
 			productType = "com.apple.product-type.application";
@@ -244,6 +258,7 @@
 			mainGroup = AA0300000000000000000001;
 			packageReferences = (
 				57232E7A2F82524000626D59 /* XCRemoteSwiftPackageReference "swift-sodium" */,
+				57232E8A2F82524000626D59 /* XCRemoteSwiftPackageReference "Sparkle" */,
 			);
 			productRefGroup = AA0300000000000000000007 /* Products */;
 			projectDirPath = "";
@@ -260,6 +275,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				AA0200000000000000000023 /* Assets.xcassets in Resources */,
+				AA0200000000000000000040 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -306,6 +322,8 @@
 				AA0200000000000000000034 /* DeviceRemovalNotice.swift in Sources */,
 				AA0200000000000000000035 /* DeviceDisplayText.swift in Sources */,
 				AA0200000000000000000036 /* SensitiveContentRevealStore.swift in Sources */,
+				AA0200000000000000000038 /* AppUpdateController.swift in Sources */,
+				AA0200000000000000000039 /* PrivacyAnalytics.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -439,6 +457,7 @@
 				COMBINE_HIDPI_IMAGES = YES;
 				DEAD_CODE_STRIPPING = YES;
 				ENABLE_APP_SANDBOX = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				INFOPLIST_FILE = Airclip/Resources/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -462,6 +481,7 @@
 				COMBINE_HIDPI_IMAGES = YES;
 				DEAD_CODE_STRIPPING = YES;
 				ENABLE_APP_SANDBOX = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				INFOPLIST_FILE = Airclip/Resources/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -508,6 +528,14 @@
 				minimumVersion = 0.10.0;
 			};
 		};
+		57232E8A2F82524000626D59 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.9.5;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -520,6 +548,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 57232E7A2F82524000626D59 /* XCRemoteSwiftPackageReference "swift-sodium" */;
 			productName = Sodium;
+		};
+		57232E8B2F82524000626D59 /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 57232E8A2F82524000626D59 /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

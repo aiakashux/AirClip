@@ -2,6 +2,15 @@ import Foundation
 import Network
 import Combine
 
+func isTrustedPeer(
+    theirAirclipId: String,
+    ourAirclipId: String?,
+    deviceId: String,
+    pairedDeviceIds: Set<String>
+) -> Bool {
+    theirAirclipId == ourAirclipId && pairedDeviceIds.contains(deviceId)
+}
+
 /// Owns all active peer connections.
 ///
 /// Trust model: a peer is trusted if its airclip_id matches ours and its device_id
@@ -27,8 +36,12 @@ final class PeerManager: ObservableObject {
     // MARK: - Trust
 
     func isTrusted(airClipId: String, deviceId: String) -> Bool {
-        guard let myAirclipId = AirclipIdentity.shared.airClipId else { return false }
-        return airClipId == myAirclipId
+        isTrustedPeer(
+            theirAirclipId: airClipId,
+            ourAirclipId: AirclipIdentity.shared.airClipId,
+            deviceId: deviceId,
+            pairedDeviceIds: Set(AirclipIdentity.shared.pairedDevices.keys)
+        )
     }
 
     // MARK: - Peer lifecycle
@@ -38,6 +51,7 @@ final class PeerManager: ObservableObject {
     }
 
     func connectIfNeeded(to endpoint: NWEndpoint, peerHint: String) {
+        guard AirclipIdentity.shared.pairedDevices[peerHint] != nil else { return }
         guard peers[peerHint] == nil else { return }
         guard !pendingHints.values.contains(peerHint) else { return }
 
@@ -54,6 +68,10 @@ final class PeerManager: ObservableObject {
 
     func registerPeer(_ peer: PeerConnection) {
         guard let deviceId = peer.deviceId else { return }
+        guard AirclipIdentity.shared.pairedDevices[deviceId] != nil else {
+            peer.close()
+            return
+        }
         pending.removeValue(forKey: peer.id)
         pendingHints.removeValue(forKey: peer.id)
 
@@ -164,7 +182,12 @@ final class PeerManager: ObservableObject {
 
     // MARK: - Broadcast
 
-    func broadcast(packet: ClipboardPacket) {
+    func broadcast(
+        packet: ClipboardPacket,
+        messageId: String,
+        timestampMs: Int64,
+        fromDeviceId: String
+    ) {
         let myId = AirclipIdentity.shared.deviceId ?? ""
         for (deviceId, peer) in peers where deviceId != myId {
             guard let pk = peer.publicKey else { continue }
@@ -175,9 +198,26 @@ final class PeerManager: ObservableObject {
                 )
                 peer.sendClip(
                     ciphertext: ct.base64EncodedString(),
-                    nonce: nonce.base64EncodedString()
+                    nonce: nonce.base64EncodedString(),
+                    messageId: messageId,
+                    timestampMs: timestampMs,
+                    fromDeviceId: fromDeviceId
                 )
             } catch {}
         }
+    }
+
+    func broadcastHistoryDelete(messageId: String, fromDeviceId: String, timestampMs: Int64) {
+        peers.values.forEach {
+            $0.sendHistoryDelete(
+                messageId: messageId,
+                fromDeviceId: fromDeviceId,
+                timestampMs: timestampMs
+            )
+        }
+    }
+
+    func broadcastHistoryClear(throughMs: Int64) {
+        peers.values.forEach { $0.sendHistoryClear(throughMs: throughMs) }
     }
 }

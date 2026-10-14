@@ -88,6 +88,9 @@ final class PeerConnection {
             switch type {
             case "clip":          handleClip(json)
             case "history_clip":  handleHistoryClip(json)
+            case "history_delete": handleHistoryDelete(json)
+            case "history_clear":  handleHistoryClear(json)
+            case "history_request": handleHistoryRequest()
             case "heartbeat":     handleHeartbeat(json)
             case "heartbeat_ack": handleHeartbeatAck(json)
             case DeviceRemovalNotice.type:
@@ -144,6 +147,7 @@ final class PeerConnection {
         sendJSON(reply)
         PeerManager.shared.registerPeer(self)
         AirclipIdentity.shared.touchDevice(peerId, wifiNetwork: json["ssid"] as? String)
+        pushHistoryMutationsToPeer()
         pushHistoryToPeer(publicKey: peerPubKey)
     }
 
@@ -153,8 +157,9 @@ final class PeerConnection {
         guard !isIncoming else { return }
         guard
             let peerId = json["device_id"]  as? String,
-            let peerPk = json["public_key"] as? String
-        else { return }
+            let peerPk = json["public_key"] as? String,
+            AirclipIdentity.shared.pairedDevices[peerId] != nil
+        else { close(); return }
         deviceId  = peerId
         publicKey = peerPk
         deviceName = json["device_name"] as? String
@@ -172,6 +177,7 @@ final class PeerConnection {
         )
         PeerManager.shared.registerPeer(self)
         AirclipIdentity.shared.touchDevice(peerId, wifiNetwork: json["ssid"] as? String)
+        pushHistoryMutationsToPeer()
         pushHistoryToPeer(publicKey: peerPk)
     }
 
@@ -232,6 +238,7 @@ final class PeerConnection {
         } else {
             AirclipIdentity.shared.addOrUpdateDevice(newDevice)
         }
+        PrivacyAnalytics.shared.record(.pairingSuccess)
         PairingSession.shared.onPairSuccess?()
         sendJSON(
             ["type": "pair_ok", "airclip_id": peerAirclipId, "space_name": AirclipIdentity.shared.spaceName, "all_devices": allDevices],
@@ -277,11 +284,40 @@ final class PeerConnection {
             let nonce  = json["nonce"]      as? String,
             let fromId = deviceId
         else { return }
+        let timestampMs = (json["ts"] as? String).flatMap(Int64.init)
+            ?? json["ts"] as? Int64
+            ?? Int64(Date().timeIntervalSince1970 * 1000)
+        let messageId = json["msg_id"] as? String ?? UUID().uuidString
+        let sourceDeviceId = json["from_device_id"] as? String ?? fromId
         Task {
             await SyncEngine.shared.processInboundClip(
-                ciphertextB64: ct, nonceB64: nonce, fromDeviceId: fromId
+                ciphertextB64: ct,
+                nonceB64: nonce,
+                fromDeviceId: sourceDeviceId,
+                timestampMs: timestampMs,
+                messageId: messageId
             )
         }
+    }
+
+    private func handleHistoryDelete(_ json: [String: Any]) {
+        let messageId = json["msg_id"] as? String ?? "legacy"
+        let fromDeviceId = json["from_device_id"] as? String ?? deviceId ?? "unknown"
+        let timestampMs = (json["ts"] as? String).flatMap(Int64.init)
+            ?? json["ts"] as? Int64
+            ?? 0
+        SyncEngine.shared.applyHistoryDelete(
+            messageId: messageId,
+            fromDeviceId: fromDeviceId,
+            timestampMs: timestampMs
+        )
+    }
+
+    private func handleHistoryClear(_ json: [String: Any]) {
+        let throughMs = (json["through_ms"] as? String).flatMap(Int64.init)
+            ?? json["through_ms"] as? Int64
+        guard let throughMs else { return }
+        SyncEngine.shared.applyHistoryClear(throughMs: throughMs)
     }
 
     private func handleHistoryClip(_ json: [String: Any]) {
@@ -339,7 +375,7 @@ final class PeerConnection {
 
     // MARK: - History push
 
-    /// Send up to 20 recent clipboard items to a newly authenticated peer.
+    /// Send the locally retained clipboard history to an authenticated peer.
     /// Each item is individually encrypted for the peer's public key.
     private func pushHistoryToPeer(publicKey: String) {
         let ctx = LocalHistoryStore.shared.container.mainContext
@@ -347,7 +383,7 @@ final class PeerConnection {
             sortBy: [SortDescriptor(\.receivedAt, order: .reverse)]
         )
         guard let items = try? ctx.fetch(descriptor) else { return }
-        for item in items.prefix(20) {
+        for item in items.prefix(LocalHistoryStore.maxItems) {
             guard let (ct, nonce) = try? CryptoManager.shared.encrypt(
                 plaintext: item.clipboardPacket.encodedJSONString() ?? item.text,
                 recipientPublicKeyBase64: publicKey
@@ -361,6 +397,30 @@ final class PeerConnection {
                 "msg_id":         item.id.uuidString,
                 "from_device_id": item.fromDeviceId,
             ])
+        }
+    }
+
+    private func handleHistoryRequest() {
+        guard let publicKey else { return }
+        pushHistoryMutationsToPeer()
+        pushHistoryToPeer(publicKey: publicKey)
+    }
+
+    private func pushHistoryMutationsToPeer() {
+        let throughMs = HistoryMutationStore.clearedThroughMs
+        if throughMs > 0 { sendHistoryClear(throughMs: throughMs) }
+        HistoryMutationStore.deletedMessageIds.forEach {
+            sendHistoryDelete(messageId: $0, fromDeviceId: "unknown", timestampMs: 0)
+        }
+        HistoryMutationStore.deletedSourceTimes.forEach { marker in
+            guard let separator = marker.lastIndex(of: "|"),
+                  let timestampMs = Int64(marker[marker.index(after: separator)...])
+            else { return }
+            sendHistoryDelete(
+                messageId: "legacy",
+                fromDeviceId: String(marker[..<separator]),
+                timestampMs: timestampMs
+            )
         }
     }
 
@@ -388,8 +448,34 @@ final class PeerConnection {
         CWWiFiClient.shared().interface()?.ssid()
     }
 
-    func sendClip(ciphertext: String, nonce: String) {
-        sendJSON(["type": "clip", "ciphertext": ciphertext, "nonce": nonce])
+    func sendClip(
+        ciphertext: String,
+        nonce: String,
+        messageId: String,
+        timestampMs: Int64,
+        fromDeviceId: String
+    ) {
+        sendJSON([
+            "type": "clip",
+            "ciphertext": ciphertext,
+            "nonce": nonce,
+            "msg_id": messageId,
+            "ts": "\(timestampMs)",
+            "from_device_id": fromDeviceId,
+        ])
+    }
+
+    func sendHistoryDelete(messageId: String, fromDeviceId: String, timestampMs: Int64) {
+        sendJSON([
+            "type": "history_delete",
+            "msg_id": messageId,
+            "from_device_id": fromDeviceId,
+            "ts": "\(timestampMs)",
+        ])
+    }
+
+    func sendHistoryClear(throughMs: Int64) {
+        sendJSON(["type": "history_clear", "through_ms": "\(throughMs)"])
     }
 
     func sendHeartbeat() {

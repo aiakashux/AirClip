@@ -34,5 +34,23 @@
 	<array>
 		<string>_airclip._tcp</string>
 	</array>
+	<key>SUFeedURL</key>
+	<string>https://airclip-silk.vercel.app/updates/mac/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>+PnDpgSdyqb5UfFSjn7U3Ox5RVzpFvQsoEov8znltN8=</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUScheduledCheckInterval</key>
+	<integer>86400</integer>
+	<key>SUAutomaticallyUpdate</key>
+	<false/>
+	<key>SUAllowsAutomaticUpdates</key>
+	<false/>
+	<key>SUShowReleaseNotes</key>
+	<true/>
+	<key>SUEnableSystemProfiling</key>
+	<false/>
+	<key>SUEnableInstallerLauncherService</key>
+	<true/>
 </dict>
 </plist>

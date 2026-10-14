@@ -40,6 +40,8 @@ object SyncEngine {
 
     private val _clipHistory = MutableStateFlow<List<ClipItemRecord>>(emptyList())
     val clipHistory: StateFlow<List<ClipItemRecord>> = _clipHistory
+    private val _remoteInsertionId = MutableStateFlow<String?>(null)
+    val remoteInsertionId: StateFlow<String?> = _remoteInsertionId
 
     val connectedPeerCount: StateFlow<Int> = PeerManager.connectedCount
 
@@ -68,6 +70,13 @@ object SyncEngine {
 
         PeerManager.onInboundClip  = ::processInboundClip
         PeerManager.onHistoryClip  = ::processHistoryClip
+        PeerManager.onHistoryDelete = ::processHistoryDelete
+        PeerManager.onHistoryClear = ::processHistoryClear
+        PeerManager.onHistoryRequest = { deviceId ->
+            PeerManager.connectedPeersSnapshot()
+                .firstOrNull { it.deviceId == deviceId }
+                ?.let(::pushHistoryToPeer)
+        }
         PeerManager.onPeerSeen = { deviceId, wifiNetwork ->
             appContext?.let { ctx ->
                 scope.launch { AirclipIdentity.touchDevice(ctx, deviceId, wifiNetwork) }
@@ -96,6 +105,7 @@ object SyncEngine {
                     )
                 }
             }
+            pushHistoryMutationsToPeer(peer)
             pushHistoryToPeer(peer)
             pushLocalActivityToPeer(peer)
         }
@@ -202,6 +212,7 @@ object SyncEngine {
     fun refreshHistorySync() {
         val ctx = appContext ?: return
         loadHistory(ctx)
+        PeerManager.requestHistoryFromPeers()
         PeerManager.connectedPeersSnapshot().forEach { peer ->
             pushHistoryToPeer(peer)
         }
@@ -250,7 +261,7 @@ object SyncEngine {
 
                 // Always persist locally
                 val record = ClipItemRecord(
-                    messageId    = "local-${UUID.randomUUID()}",
+                    messageId    = UUID.randomUUID().toString(),
                     seq          = 0L,
                     fromDeviceId = AirclipIdentity.deviceId ?: "self",
                     timestampMs  = System.currentTimeMillis(),
@@ -267,7 +278,7 @@ object SyncEngine {
                 // Broadcast to peers if any connected
                 val peers = PeerManager.connectedCount.value
                 if (peers > 0) {
-                    PeerManager.broadcast(plain)
+                    PeerManager.broadcast(plain, record.messageId, record.timestampMs, record.fromDeviceId)
                     appContext?.let { ctx ->
                         WidgetState.save(ctx, WidgetState.SYNCED)
                         WidgetState.notifyWidgets(ctx)
@@ -297,7 +308,7 @@ object SyncEngine {
                 recentHashes.record(hash)
 
                 val record = ClipItemRecord(
-                    messageId = "local-${UUID.randomUUID()}",
+                    messageId = UUID.randomUUID().toString(),
                     seq = 0L,
                     fromDeviceId = AirclipIdentity.deviceId ?: "self",
                     timestampMs = System.currentTimeMillis(),
@@ -315,7 +326,7 @@ object SyncEngine {
                 val peers = PeerManager.connectedCount.value
                 if (peers > 0) {
                     val plain = ClipboardWirePayload.encode(record).toByteArray(Charsets.UTF_8)
-                    PeerManager.broadcast(plain)
+                    PeerManager.broadcast(plain, record.messageId, record.timestampMs, record.fromDeviceId)
                     appContext?.let { ctx ->
                         WidgetState.save(ctx, WidgetState.SYNCED)
                         WidgetState.notifyWidgets(ctx)
@@ -332,7 +343,13 @@ object SyncEngine {
 
     // ── Receiving ─────────────────────────────────────────────────────────────
 
-    private fun processInboundClip(ciphertext: String, nonce: String, fromDeviceId: String) {
+    private fun processInboundClip(
+        ciphertext: String,
+        nonce: String,
+        fromDeviceId: String,
+        timestampMs: Long,
+        messageId: String,
+    ) {
         if (!Prefs.syncMode.keepsLanServiceRunning) {
             Log.d(TAG, "Inbound clip ignored while paused")
             return
@@ -360,10 +377,10 @@ object SyncEngine {
                 recentHashes.record(hash)
 
                 val record = ClipItemRecord(
-                    messageId    = "lan-${UUID.randomUUID()}",
+                    messageId    = messageId,
                     seq          = 0L,
                     fromDeviceId = fromDeviceId,
-                    timestampMs  = System.currentTimeMillis(),
+                    timestampMs  = timestampMs,
                     cipherHash   = hash.take(16),
                     preview      = text.take(40),
                     contentText  = text,
@@ -376,13 +393,20 @@ object SyncEngine {
                     cm.setPrimaryClip(clip)
                 }
                 val updated = ClipHistoryStore.merge(ctx, listOf(record))
+                _remoteInsertionId.value = messageId
                 _clipHistory.value = updated
+                scope.launch {
+                    delay(350)
+                    if (_remoteInsertionId.value == messageId) _remoteInsertionId.value = null
+                }
 
                 WidgetState.save(ctx, WidgetState.PENDING, preview = text.take(40), lastText = text)
                 WidgetState.notifyWidgets(ctx)
 
                 Log.d(TAG, "Inbound clip from ${fromDeviceId.take(8)} len=${text.length}")
+                PrivacyAnalytics.record(ctx, AnalyticsEvent.FIRST_TRANSFER)
             } catch (e: Exception) {
+                PrivacyAnalytics.record(ctx, AnalyticsEvent.TRANSFER_FAILURE)
                 Log.w(TAG, "processInboundClip error: ${e.message}")
             }
         }
@@ -429,11 +453,35 @@ object SyncEngine {
         }
     }
 
+    private fun processHistoryDelete(messageId: String, fromDeviceId: String, timestampMs: Long) {
+        val ctx = appContext ?: return
+        scope.launch {
+            HistoryMutationStore.recordDelete(ctx, messageId, fromDeviceId, timestampMs)
+            val matching = ClipHistoryStore.load(ctx).filter {
+                it.messageId == messageId ||
+                    (timestampMs > 0L && it.fromDeviceId == fromDeviceId &&
+                        kotlin.math.abs(it.timestampMs.toDouble() - timestampMs.toDouble()) <=
+                            ClipHistoryStore.RECONCILIATION_WINDOW_MS.toDouble())
+            }
+            var updated = ClipHistoryStore.load(ctx)
+            matching.forEach { updated = ClipHistoryStore.remove(ctx, it.messageId) }
+            _clipHistory.value = updated
+        }
+    }
+
+    private fun processHistoryClear(throughMs: Long) {
+        val ctx = appContext ?: return
+        scope.launch {
+            HistoryMutationStore.recordClear(ctx, throughMs)
+            _clipHistory.value = ClipHistoryStore.clearThrough(ctx, throughMs)
+        }
+    }
+
     private fun pushHistoryToPeer(peer: com.airclip.airclip.lan.Peer) {
         val ctx = appContext ?: return
         scope.launch {
             try {
-                val items = ClipHistoryStore.load(ctx).take(20)
+                val items = ClipHistoryStore.backfill(ClipHistoryStore.load(ctx))
                 for (record in items) {
                     val transferableRecord = ImageClipboard.withInlineData(ctx, record)
                     val plain = ClipboardWirePayload.encode(transferableRecord).toByteArray(Charsets.UTF_8)
@@ -454,6 +502,26 @@ object SyncEngine {
             } catch (e: Exception) {
                 Log.w(TAG, "pushHistoryToPeer error for ${peer.deviceId.take(8)}: ${e.message}")
             }
+        }
+    }
+
+    private fun pushHistoryMutationsToPeer(peer: com.airclip.airclip.lan.Peer) {
+        val ctx = appContext ?: return
+        val clearThrough = HistoryMutationStore.clearThroughMs(ctx)
+        if (clearThrough > 0L) {
+            peer.send(PeerManager.gson.toJson(mapOf("type" to "history_clear", "through_ms" to clearThrough.toString())))
+        }
+        HistoryMutationStore.deletedMessageIds(ctx).forEach { messageId ->
+            peer.send(PeerManager.gson.toJson(mapOf("type" to "history_delete", "msg_id" to messageId)))
+        }
+        HistoryMutationStore.deletedSourceTimes(ctx).forEach { marker ->
+            val split = marker.lastIndexOf('|')
+            if (split > 0) peer.send(PeerManager.gson.toJson(mapOf(
+                "type" to "history_delete",
+                "msg_id" to "legacy",
+                "from_device_id" to marker.substring(0, split),
+                "ts" to marker.substring(split + 1),
+            )))
         }
     }
 
@@ -491,15 +559,26 @@ object SyncEngine {
         }
     }
 
-    fun clearHistory(context: Context) {
+    fun deleteHistoryItem(context: Context, record: ClipItemRecord) {
         scope.launch {
-            ClipHistoryStore.clear(context)
-            _clipHistory.value = emptyList()
+            HistoryMutationStore.recordDelete(context, record.messageId, record.fromDeviceId, record.timestampMs)
+            _clipHistory.value = ClipHistoryStore.remove(context, record.messageId)
+            PeerManager.broadcastHistoryDelete(record.messageId, record.fromDeviceId, record.timestampMs)
+        }
+    }
+
+    fun clearHistory(context: Context) {
+        val throughMs = System.currentTimeMillis()
+        HistoryMutationStore.recordClear(context, throughMs)
+        scope.launch {
+            _clipHistory.value = ClipHistoryStore.clearThrough(context, throughMs)
+            PeerManager.broadcastHistoryClear(throughMs)
         }
     }
 
     suspend fun clearLocalSession(context: Context) {
         ClipHistoryStore.clear(context)
+        HistoryMutationStore.reset(context)
         recentHashes.clear()
         _clipHistory.value = emptyList()
     }

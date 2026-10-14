@@ -76,18 +76,25 @@ class SyncService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "Airclip Sync",
+                getString(R.string.sync_notification_channel),
                 NotificationManager.IMPORTANCE_LOW
-            ).apply { description = "LAN clipboard sync is active" }
+            ).apply {
+                description = getString(R.string.sync_notification_channel_description)
+                setShowBadge(false)
+            }
             val nm = getSystemService(NotificationManager::class.java)
             nm.createNotificationChannel(channel)
         }
     }
 
     private fun buildNotification() = NotificationCompat.Builder(this, CHANNEL_ID)
-        .setContentTitle("Airclip is syncing")
-        .setContentText("Clipboard sync is active on your local network")
-        .setSmallIcon(android.R.drawable.ic_menu_share)
+        .setContentTitle(getString(R.string.sync_notification_title))
+        .setContentText(getString(R.string.sync_notification_text))
+        .setSmallIcon(R.drawable.ic_notification_airclip)
+        .setColor(getColor(R.color.airclip_brand))
+        .setCategory(NotificationCompat.CATEGORY_SERVICE)
+        .setOnlyAlertOnce(true)
+        .setSilent(true)
         .setOngoing(true)
         .setContentIntent(
             PendingIntent.getActivity(

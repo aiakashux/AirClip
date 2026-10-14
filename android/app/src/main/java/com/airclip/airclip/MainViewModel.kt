@@ -37,6 +37,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
         .build()
+    private val updateManager = AppUpdateManager(app, httpClient)
 
     private val _uiState = MutableStateFlow(UiState())
     val uiState: StateFlow<UiState> = _uiState
@@ -51,7 +52,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 historyDepth = Prefs.historyDepth,
                 sensitiveMasterAction = Prefs.sensitiveMasterRule,
                 sensitiveRules = Prefs.sensitiveRules(),
+                analyticsEnabled = Prefs.analyticsEnabled,
             )
+        }
+
+        viewModelScope.launch(Dispatchers.IO) {
+            _uiState.update { it.copy(updateInfo = updateManager.check().update) }
+            PrivacyAnalytics.flushIfDue(app, httpClient)
         }
 
         // Load identity from disk on startup
@@ -83,6 +90,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             SyncEngine.clipHistory.collect { history ->
                 _uiState.update { it.copy(clipHistory = history) }
+            }
+        }
+        viewModelScope.launch {
+            SyncEngine.remoteInsertionId.collect { id ->
+                _uiState.update { it.copy(remoteInsertionId = id) }
             }
         }
 
@@ -139,6 +151,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             }
             initSync(app2)
             autoConnect()
+            PrivacyAnalytics.record(app2, AnalyticsEvent.PAIRING_SUCCESS)
         }
 
         LanServer.onPairSuccess = {
@@ -162,6 +175,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val pairedDevices: List<PairedDevice> = emptyList(),
         val connectedPeerCount: Int         = 0,
         val clipHistory: List<ClipItemRecord> = emptyList(),
+        val remoteInsertionId: String?        = null,
         val statusLog: List<String>         = emptyList(),
         val lastError: String?              = null,
         val isConnected: Boolean            = false,
@@ -177,6 +191,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val sensitiveBlockedNotice: SensitiveFinding? = null,
         val openDevicesOnFirstLaunch: Boolean = false,
         val showNetworkSwitchConfirmation: Boolean = false,
+        val updateInfo: UpdateInfo?                 = null,
+        val updateStatus: String?                   = null,
+        val analyticsEnabled: Boolean               = false,
         // Pairing UI state (shown on onboarding screen)
         val pairingQr: Bitmap?              = null,
         val pairingCode: String?            = null,
@@ -655,8 +672,48 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             }
             initSync(app)
             autoConnect()
+            PrivacyAnalytics.record(app, AnalyticsEvent.PAIRING_SUCCESS)
             log("Joined Airclip")
         }
+    }
+
+    fun onCheckForUpdates() {
+        _uiState.update { it.copy(updateStatus = "Checking…") }
+        viewModelScope.launch(Dispatchers.IO) {
+            val result = updateManager.check(force = true)
+            val info = result.update
+            _uiState.update {
+                it.copy(
+                    updateInfo = info,
+                    updateStatus = when {
+                        result.failed -> "Couldn’t check for updates"
+                        info == null -> "Airclip is up to date"
+                        else -> "Version ${info.versionName} available"
+                    },
+                )
+            }
+        }
+    }
+
+    fun onUpdateLater() {
+        _uiState.update { it.copy(updateInfo = null, updateStatus = null) }
+    }
+
+    fun onUpdateOpened() {
+        PrivacyAnalytics.record(getApplication(), AnalyticsEvent.UPDATE_OPENED)
+        _uiState.update { it.copy(updateInfo = null, updateStatus = null) }
+    }
+
+    fun onUpdateOpenFailed() {
+        PrivacyAnalytics.record(getApplication(), AnalyticsEvent.UPDATE_FAILURE)
+        _uiState.update { it.copy(updateStatus = "Couldn’t open the download page") }
+    }
+
+    fun onAnalyticsEnabledChanged(enabled: Boolean) {
+        val app = getApplication<Application>()
+        PrivacyAnalytics.setEnabled(app, enabled)
+        _uiState.update { it.copy(analyticsEnabled = enabled) }
+        if (enabled) viewModelScope.launch(Dispatchers.IO) { PrivacyAnalytics.flushIfDue(app, httpClient) }
     }
 
     // ── Main app: clipboard ───────────────────────────────────────────────────
@@ -673,6 +730,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
         if (!_uiState.value.syncMode.allowsAutomaticCapture) return
         captureCurrentClipboard()
+    }
+
+    fun onRefreshClipboard(onComplete: () -> Unit) {
+        if (_uiState.value.syncMode.allowsAutomaticCapture) {
+            onAppForegrounded()
+        } else {
+            onCaptureClipboard()
+        }
+        viewModelScope.launch {
+            delay(700)
+            onComplete()
+        }
     }
 
     fun onInitialDevicesTabShown() {
@@ -803,14 +872,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun onDeleteClip(item: ClipItemRecord, onComplete: () -> Unit = {}) = runAsync("deleteClip") {
-        val updated = ClipHistoryStore.remove(getApplication(), item.messageId)
-        _uiState.update { it.copy(clipHistory = updated) }
+        SyncEngine.deleteHistoryItem(getApplication(), item)
+        _uiState.update { it.copy(clipHistory = it.clipHistory.filterNot { clip -> clip.messageId == item.messageId }) }
         onComplete()
-    }
-
-    fun onRestoreClip(item: ClipItemRecord) = runAsync("restoreClip") {
-        val updated = ClipHistoryStore.merge(getApplication(), listOf(item))
-        _uiState.update { it.copy(clipHistory = updated) }
     }
 
     fun onClearHistory() {

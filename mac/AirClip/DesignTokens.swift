@@ -72,11 +72,25 @@ extension Color {
 
     static func parseHex(_ hex: String) -> Color? {
         var h = hex.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let range = h.range(of: #"#[0-9A-Fa-f]{3,8}\b"#, options: .regularExpression) {
-            h = String(h[range])
+        if let range = h.range(of: #"^rgba?\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}(?:\s*,\s*(?:0|1|0?\.\d+))?\s*\)$"#, options: .regularExpression) {
+            let values = h[range].drop { $0 != "(" }.dropFirst().dropLast()
+                .split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
+            guard values.count == (h.hasPrefix("rgba") ? 4 : 3), values.prefix(3).allSatisfy({ (0...255).contains($0) }) else {
+                return nil
+            }
+            return Color(
+                red: values[0] / 255,
+                green: values[1] / 255,
+                blue: values[2] / 255,
+                opacity: values.count == 4 ? values[3] : 1
+            )
         }
-        guard h.hasPrefix("#") else { return nil }
-        h = String(h.dropFirst())
+        if !h.hasPrefix("#") {
+            guard h.count == 6, h.allSatisfy(\.isHexDigit), h.contains(where: ("A"..."F").contains), h == h.uppercased() else {
+                return nil
+            }
+        }
+        if h.hasPrefix("#") { h = String(h.dropFirst()) }
         if h.count == 3 || h.count == 4 { h = h.map { "\($0)\($0)" }.joined() }
         guard h.count == 6 || h.count == 8 else { return nil }
         var rgb: UInt64 = 0

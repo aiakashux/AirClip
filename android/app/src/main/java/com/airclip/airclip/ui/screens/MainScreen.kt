@@ -65,6 +65,7 @@ private val navItems = listOf(
 data class ClipboardTabUiState(
     val clipHistory: List<ClipItemRecord>,
     val syncMode: SyncMode,
+    val remoteInsertionId: String?,
 )
 
 @Immutable
@@ -85,6 +86,8 @@ data class SettingsTabUiState(
     val syncMode: SyncMode,
     val sensitiveMasterAction: SensitiveRuleAction,
     val sensitiveRules: Map<SensitiveCategory, SensitiveRuleAction>,
+    val analyticsEnabled: Boolean,
+    val updateStatus: String?,
 )
 
 @Composable
@@ -101,6 +104,7 @@ fun MainScreen(viewModel: MainViewModel, uiState: MainViewModel.UiState) {
         ClipboardTabUiState(
             clipHistory = uiState.clipHistory,
             syncMode = uiState.syncMode,
+            remoteInsertionId = uiState.remoteInsertionId,
         )
     }
     val devicesTabState = remember(
@@ -128,6 +132,8 @@ fun MainScreen(viewModel: MainViewModel, uiState: MainViewModel.UiState) {
         uiState.syncMode,
         uiState.sensitiveMasterAction,
         uiState.sensitiveRules,
+        uiState.analyticsEnabled,
+        uiState.updateStatus,
     ) {
         SettingsTabUiState(
             appearanceSetting = uiState.appearanceSetting,
@@ -135,6 +141,8 @@ fun MainScreen(viewModel: MainViewModel, uiState: MainViewModel.UiState) {
             syncMode = uiState.syncMode,
             sensitiveMasterAction = uiState.sensitiveMasterAction,
             sensitiveRules = uiState.sensitiveRules,
+            analyticsEnabled = uiState.analyticsEnabled,
+            updateStatus = uiState.updateStatus,
         )
     }
     LaunchedEffect(uiState.openDevicesOnFirstLaunch) {

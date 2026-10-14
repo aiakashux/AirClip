@@ -9,6 +9,8 @@ import androidx.datastore.preferences.preferencesDataStore
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -17,6 +19,80 @@ private val Context.clipHistoryDataStore: DataStore<Preferences>
     by preferencesDataStore(name = "airclip_history")
 
 private val KEY_HISTORY = stringPreferencesKey("history_json")
+
+internal fun shouldAcceptHistoryItem(
+    messageId: String,
+    fromDeviceId: String,
+    timestampMs: Long,
+    clearedThroughMs: Long,
+    deletedMessageIds: Set<String>,
+    deletedSourceTimes: Set<String> = emptySet(),
+): Boolean = timestampMs > clearedThroughMs &&
+    messageId !in deletedMessageIds &&
+    deletedSourceTimes.none { marker ->
+        val split = marker.lastIndexOf('|')
+        split > 0 && marker.substring(0, split) == fromDeviceId &&
+            kotlin.math.abs((marker.substring(split + 1).toLongOrNull() ?: Long.MIN_VALUE).toDouble() - timestampMs.toDouble()) <=
+            ClipHistoryStore.RECONCILIATION_WINDOW_MS.toDouble()
+    }
+
+object HistoryMutationStore {
+    private const val PREFS = "airclip_history_mutations"
+    private const val CLEAR_THROUGH = "clear_through_ms"
+    private const val DELETED_IDS = "deleted_message_ids"
+    private const val DELETED_SOURCE_TIMES = "deleted_source_times"
+    private const val MAX_DELETED_IDS = 500
+
+    fun clearThroughMs(context: Context): Long =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getLong(CLEAR_THROUGH, 0L)
+
+    fun deletedMessageIds(context: Context): Set<String> =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getStringSet(DELETED_IDS, emptySet())
+            ?.toSet()
+            .orEmpty()
+
+    fun deletedSourceTimes(context: Context): Set<String> =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getStringSet(DELETED_SOURCE_TIMES, emptySet())
+            ?.toSet()
+            .orEmpty()
+
+    fun accepts(context: Context, record: ClipItemRecord): Boolean = shouldAcceptHistoryItem(
+        record.messageId,
+        record.fromDeviceId,
+        record.timestampMs,
+        clearThroughMs(context),
+        deletedMessageIds(context),
+        deletedSourceTimes(context),
+    )
+
+    @Synchronized
+    fun recordDelete(context: Context, messageId: String, fromDeviceId: String, timestampMs: Long) {
+        val ids = (deletedMessageIds(context) + messageId).toList().takeLast(MAX_DELETED_IDS).toSet()
+        val sourceTimes = (deletedSourceTimes(context) + "$fromDeviceId|$timestampMs")
+            .toList().takeLast(MAX_DELETED_IDS).toSet()
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putStringSet(DELETED_IDS, ids)
+            .putStringSet(DELETED_SOURCE_TIMES, sourceTimes)
+            .apply()
+    }
+
+    @Synchronized
+    fun recordClear(context: Context, throughMs: Long) {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        prefs.edit()
+            .putLong(CLEAR_THROUGH, maxOf(prefs.getLong(CLEAR_THROUGH, 0L), throughMs))
+            .remove(DELETED_IDS)
+            .remove(DELETED_SOURCE_TIMES)
+            .apply()
+    }
+
+    fun reset(context: Context) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().clear().apply()
+    }
+}
 
 enum class ClipKind {
     URL, CODE, COLOR, EMAIL, IMAGE, TEXT
@@ -134,6 +210,7 @@ data class ClipItemRecord(
 object ClipHistoryStore {
     private val gson     = Gson()
     private val listType = object : TypeToken<List<ClipItemRecord>>() {}.type
+    private val mergeMutex = Mutex()
 
     const val MAX_ITEMS = 500
     internal const val RECONCILIATION_WINDOW_MS = 2_000L
@@ -231,7 +308,9 @@ object ClipHistoryStore {
             emptyList()
         }
         val loaded = runCatching {
-            prepareForStorage(prune(deduplicate(raw.mapNotNull(::sanitize))))
+            prepareForStorage(prune(deduplicate(raw.mapNotNull(::sanitize).filter {
+                HistoryMutationStore.accepts(context, it)
+            })))
         }.getOrDefault(emptyList())
         ImageClipboard.prunePersisted(context, loaded)
         return loaded
@@ -248,24 +327,30 @@ object ClipHistoryStore {
      *
      * Returns the updated list.
      */
-    suspend fun merge(context: Context, newItems: List<ClipItemRecord>): List<ClipItemRecord> {
-        val existing = load(context)
-        val savedById = existing.associateBy { it.messageId }.mapValues { it.value.isSaved }
-        val persistedNewItems = newItems.map { ImageClipboard.persist(context, it) }
-        val merged = prepareForStorage(
-            prune(
-                deduplicate(existing + persistedNewItems)
-                    .map { record ->
-                        record.copy(isSaved = savedById[record.messageId] == true || record.isSaved)
-                    }
+    suspend fun merge(context: Context, newItems: List<ClipItemRecord>): List<ClipItemRecord> =
+        mergeMutex.withLock {
+            val existing = load(context)
+            val savedById = existing.associateBy { it.messageId }.mapValues { it.value.isSaved }
+            val persistedNewItems = newItems
+                .filter { HistoryMutationStore.accepts(context, it) }
+                .map { ImageClipboard.persist(context, it) }
+            val merged = prepareForStorage(
+                prune(
+                    deduplicate(existing + persistedNewItems)
+                        .map { record ->
+                            record.copy(isSaved = savedById[record.messageId] == true || record.isSaved)
+                        }
+                )
             )
-        )
-        context.clipHistoryDataStore.edit { prefs ->
-            prefs[KEY_HISTORY] = gson.toJson(merged)
+            context.clipHistoryDataStore.edit { prefs ->
+                prefs[KEY_HISTORY] = gson.toJson(merged)
+            }
+            ImageClipboard.prunePersisted(context, merged)
+            merged
         }
-        ImageClipboard.prunePersisted(context, merged)
-        return merged
-    }
+
+    internal fun <T> backfill(items: List<T>): List<T> =
+        items.take(MAX_ITEMS)
 
     /** Toggle saved state for a single item. */
     suspend fun setSaved(context: Context, messageId: String, saved: Boolean): List<ClipItemRecord> {
@@ -288,6 +373,16 @@ object ClipHistoryStore {
         val existing = load(context)
         val updated  = existing.filter { it.messageId != messageId }
         if (updated.size == existing.size) return existing  // nothing changed
+        context.clipHistoryDataStore.edit { prefs ->
+            if (updated.isEmpty()) prefs.remove(KEY_HISTORY)
+            else prefs[KEY_HISTORY] = gson.toJson(updated)
+        }
+        ImageClipboard.prunePersisted(context, updated)
+        return updated
+    }
+
+    suspend fun clearThrough(context: Context, timestampMs: Long): List<ClipItemRecord> {
+        val updated = load(context).filter { it.timestampMs > timestampMs }
         context.clipHistoryDataStore.edit { prefs ->
             if (updated.isEmpty()) prefs.remove(KEY_HISTORY)
             else prefs[KEY_HISTORY] = gson.toJson(updated)

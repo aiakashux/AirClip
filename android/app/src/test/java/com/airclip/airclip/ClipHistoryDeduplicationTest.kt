@@ -6,6 +6,13 @@ import org.junit.Test
 class ClipHistoryDeduplicationTest {
 
     @Test
+    fun `history backfill is not truncated at the legacy twenty item limit`() {
+        val retained = (1..21).toList()
+
+        assertEquals(retained, ClipHistoryStore.backfill(retained))
+    }
+
+    @Test
     fun `code-like text stays regular text`() {
         assertEquals(ClipKind.TEXT, detectClipKind("fun copy() { return true }"))
     }

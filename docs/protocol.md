@@ -69,7 +69,14 @@ or `{ "type": "pair_reject", "reason": "invalid_code" }`
 ## Clip Message
 
 ```json
-{ "type": "clip", "ciphertext": "base64", "nonce": "base64" }
+{
+  "type": "clip",
+  "ciphertext": "base64",
+  "nonce": "base64",
+  "ts": "1760000000000",
+  "msg_id": "...",
+  "from_device_id": "..."
+}
 ```
 
 Decrypted payload shape:
@@ -81,7 +88,7 @@ Encryption: NaCl sealed box with recipient public key. `nonce` field is a sentin
 
 ## History Backfill
 
-Sent after `auth_ok`. Up to 20 recent items per peer.
+Sent after `auth_ok`. Up to the local retained-history limit (currently 500 items) per peer.
 
 ```json
 {
@@ -95,6 +102,28 @@ Sent after `auth_ok`. Up to 20 recent items per peer.
 ```
 
 Receiver merges into local history only. Never writes to system clipboard.
+
+A connected peer can request another backfill without reconnecting:
+
+```json
+{ "type": "history_request" }
+```
+
+## History Mutations
+
+Deletion state is persisted locally and replayed before history backfill when a peer reconnects.
+
+```json
+{ "type": "history_delete", "msg_id": "...", "from_device_id": "...", "ts": "1760000000000" }
+```
+
+`from_device_id` and `ts` let upgraded clients remove legacy live-sync copies that were assigned different IDs on each device.
+
+```json
+{ "type": "history_clear", "through_ms": "1760000000000" }
+```
+
+Receivers persist these tombstones so an offline device cannot restore deleted history during a later backfill.
 
 ## Heartbeat
 

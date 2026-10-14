@@ -53,6 +53,7 @@ final class PeerConnection {
     func close() { closed = true }
     func sendJSON(_ json: [String: Any]) { replied = true }
     func currentSSID() -> String? { nil }
+    func pushHistoryMutationsToPeer() {}
     func pushHistoryToPeer(publicKey: String) {}
 HANDLER
 }

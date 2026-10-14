@@ -133,6 +133,7 @@ final class AirclipIdentity: ObservableObject {
         LocalHistoryStore.shared.clearAll()
         UnreadStore.shared.markRead()
         CryptoManager.shared.clearKeys()
+        HistoryMutationStore.reset()
     }
 
     func leaveNetwork() {

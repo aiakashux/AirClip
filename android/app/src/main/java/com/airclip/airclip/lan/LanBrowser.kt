@@ -283,7 +283,15 @@ object LanBrowser {
                     "clip" -> {
                         val ciphertext = msg["ciphertext"] ?: return
                         val nonce      = msg["nonce"]      ?: return
-                        PeerManager.dispatchInboundClip(ciphertext, nonce, peerHint)
+                        val timestampMs = msg["ts"]?.toLongOrNull() ?: System.currentTimeMillis()
+                        val messageId = msg["msg_id"] ?: java.util.UUID.randomUUID().toString()
+                        PeerManager.dispatchInboundClip(
+                            ciphertext,
+                            nonce,
+                            msg["from_device_id"] ?: peerHint,
+                            timestampMs,
+                            messageId,
+                        )
                     }
                     "history_clip" -> {
                         val ciphertext   = msg["ciphertext"]         ?: return
@@ -293,6 +301,13 @@ object LanBrowser {
                         val fromDeviceId = msg["from_device_id"]     ?: peerHint
                         PeerManager.dispatchHistoryClip(ciphertext, nonce, ts, msgId, fromDeviceId)
                     }
+                    "history_delete" -> PeerManager.dispatchHistoryDelete(
+                        msg["msg_id"] ?: "legacy",
+                        msg["from_device_id"] ?: (authenticatedPeerId ?: peerHint),
+                        msg["ts"]?.toLongOrNull() ?: Long.MIN_VALUE,
+                    )
+                    "history_clear" -> msg["through_ms"]?.toLongOrNull()?.let(PeerManager::dispatchHistoryClear)
+                    "history_request" -> PeerManager.dispatchHistoryRequest(authenticatedPeerId ?: peerHint)
                     "heartbeat" -> {
                         val fromId = authenticatedPeerId ?: peerHint
                         PeerManager.markPeerSeen(fromId, msg["ssid"])

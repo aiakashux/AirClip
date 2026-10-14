@@ -1,18 +1,99 @@
 import Foundation
 import SwiftData
 
+enum HistoryMutationPolicy {
+    static func accepts(
+        messageId: String,
+        fromDeviceId: String,
+        timestampMs: Int64,
+        clearedThroughMs: Int64,
+        deletedMessageIds: Set<String>,
+        deletedSourceTimes: Set<String> = []
+    ) -> Bool {
+        timestampMs > clearedThroughMs &&
+            !deletedMessageIds.contains(messageId) &&
+            !deletedSourceTimes.contains { marker in
+                guard let separator = marker.lastIndex(of: "|"),
+                      marker[..<separator] == fromDeviceId,
+                      let deletedAt = Int64(marker[marker.index(after: separator)...])
+                else { return false }
+                return abs(Double(deletedAt) - Double(timestampMs)) <= 2_000
+            }
+    }
+}
+
+enum HistoryMutationStore {
+    private static let clearKey = "historyClearThroughMs"
+    private static let deletedKey = "historyDeletedMessageIds"
+    private static let deletedSourceTimesKey = "historyDeletedSourceTimes"
+    private static let maxDeletedIds = 500
+
+    static var clearedThroughMs: Int64 {
+        Int64(UserDefaults.standard.double(forKey: clearKey))
+    }
+
+    static var deletedMessageIds: Set<String> {
+        Set(UserDefaults.standard.stringArray(forKey: deletedKey) ?? [])
+    }
+
+    static var deletedSourceTimes: Set<String> {
+        Set(UserDefaults.standard.stringArray(forKey: deletedSourceTimesKey) ?? [])
+    }
+
+    static func accepts(messageId: String, fromDeviceId: String, timestampMs: Int64) -> Bool {
+        HistoryMutationPolicy.accepts(
+            messageId: messageId,
+            fromDeviceId: fromDeviceId,
+            timestampMs: timestampMs,
+            clearedThroughMs: clearedThroughMs,
+            deletedMessageIds: deletedMessageIds,
+            deletedSourceTimes: deletedSourceTimes
+        )
+    }
+
+    static func recordDelete(messageId: String, fromDeviceId: String, timestampMs: Int64) {
+        var ids = Array(deletedMessageIds)
+        ids.removeAll { $0 == messageId }
+        ids.append(messageId)
+        UserDefaults.standard.set(Array(ids.suffix(maxDeletedIds)), forKey: deletedKey)
+        var sourceTimes = Array(deletedSourceTimes)
+        let marker = "\(fromDeviceId)|\(timestampMs)"
+        sourceTimes.removeAll { $0 == marker }
+        sourceTimes.append(marker)
+        UserDefaults.standard.set(Array(sourceTimes.suffix(maxDeletedIds)), forKey: deletedSourceTimesKey)
+    }
+
+    static func recordClear(throughMs: Int64) {
+        UserDefaults.standard.set(Double(max(clearedThroughMs, throughMs)), forKey: clearKey)
+        UserDefaults.standard.removeObject(forKey: deletedKey)
+        UserDefaults.standard.removeObject(forKey: deletedSourceTimesKey)
+    }
+
+    static func reset() {
+        UserDefaults.standard.removeObject(forKey: clearKey)
+        UserDefaults.standard.removeObject(forKey: deletedKey)
+        UserDefaults.standard.removeObject(forKey: deletedSourceTimesKey)
+    }
+}
+
 enum HistoryRetentionPolicy {
     static let labels = ["1 day", "3 days", "7 days", "15 days", "30 days", "No time limit (500)"]
     static let days = [1, 3, 7, 15, 30, 0]
     static let maxItems = 500
+    private static let currentVersion = 3
+    private static let defaultIndex = 2
 
     static func selectedIndex(defaults: UserDefaults = .standard) -> Int {
         guard let stored = defaults.object(forKey: "historyDepth") as? Int else {
-            setSelectedIndex(4, defaults: defaults)
-            return 4
+            setSelectedIndex(defaultIndex, defaults: defaults)
+            return defaultIndex
         }
-        guard defaults.integer(forKey: "historyDepthVersion") >= 2 else {
-            let migrated = [2, 4, 4, 5][min(max(stored, 0), 3)]
+        let version = defaults.integer(forKey: "historyDepthVersion")
+        guard version >= currentVersion else {
+            let previousValue = version < 2
+                ? [2, 4, 4, 5][min(max(stored, 0), 3)]
+                : min(max(stored, 0), days.count - 1)
+            let migrated = previousValue == 4 ? defaultIndex : previousValue
             setSelectedIndex(migrated, defaults: defaults)
             return migrated
         }
@@ -21,7 +102,7 @@ enum HistoryRetentionPolicy {
 
     static func setSelectedIndex(_ index: Int, defaults: UserDefaults = .standard) {
         defaults.set(min(max(index, 0), days.count - 1), forKey: "historyDepth")
-        defaults.set(2, forKey: "historyDepthVersion")
+        defaults.set(currentVersion, forKey: "historyDepthVersion")
     }
 }
 
@@ -113,28 +194,6 @@ enum ClipboardMigrationPlan: SchemaMigrationPlan {
 
 typealias ClipboardItem = ClipboardSchemaV2.ClipboardItem
 
-struct ClipboardItemSnapshot {
-    let id: UUID
-    let text: String
-    let kindRaw: String
-    let imageData: Data?
-    let receivedAt: Date
-    let fromDeviceId: String
-    let isLocal: Bool
-    let isSaved: Bool
-
-    init(_ item: ClipboardItem) {
-        id = item.id
-        text = item.text
-        kindRaw = item.kindRaw
-        imageData = item.imageData
-        receivedAt = item.receivedAt
-        fromDeviceId = item.fromDeviceId
-        isLocal = item.isLocal
-        isSaved = item.isSaved
-    }
-}
-
 @MainActor
 final class LocalHistoryStore {
     static let shared = LocalHistoryStore()
@@ -189,8 +248,20 @@ final class LocalHistoryStore {
         )
     }
 
-    func insert(_ packet: ClipboardPacket, fromDeviceId: String, isLocal: Bool) {
+    func insert(
+        _ packet: ClipboardPacket,
+        fromDeviceId: String,
+        isLocal: Bool,
+        id: UUID = UUID(),
+        receivedAt: Date = Date()
+    ) {
         let ctx = container.mainContext
+        let timestampMs = Int64(receivedAt.timeIntervalSince1970 * 1000)
+        guard HistoryMutationStore.accepts(
+            messageId: id.uuidString,
+            fromDeviceId: fromDeviceId,
+            timestampMs: timestampMs
+        ) else { return }
         if packet.kind == .image {
             let imageData = packet.imageData
             let imageKind = ClipboardKind.image.rawValue
@@ -203,9 +274,11 @@ final class LocalHistoryStore {
         }
 
         let item = ClipboardItem(
+            id: id,
             text: packet.text,
             kindRaw: packet.kind.rawValue,
             imageData: packet.imageData,
+            receivedAt: receivedAt,
             fromDeviceId: fromDeviceId,
             isLocal: isLocal
         )
@@ -224,6 +297,12 @@ final class LocalHistoryStore {
         messageId: String
     ) {
         let ctx = container.mainContext
+        let timestampMs = Int64(receivedAt.timeIntervalSince1970 * 1000)
+        guard HistoryMutationStore.accepts(
+            messageId: messageId,
+            fromDeviceId: fromDeviceId,
+            timestampMs: timestampMs
+        ) else { return }
         if let uuid = UUID(uuidString: messageId) {
             let descriptor = FetchDescriptor<ClipboardItem>(
                 predicate: #Predicate { $0.id == uuid }
@@ -278,30 +357,36 @@ final class LocalHistoryStore {
         try? ctx.save()
     }
 
+    func delete(messageId: String, fromDeviceId: String, timestampMs: Int64) {
+        let ctx = container.mainContext
+        let timestamp = TimeInterval(timestampMs) / 1000
+        let cutoffStart = Date(timeIntervalSince1970: timestamp - 2)
+        let cutoffEnd = Date(timeIntervalSince1970: timestamp + 2)
+        let descriptor = FetchDescriptor<ClipboardItem>()
+        if let items = try? ctx.fetch(descriptor) {
+            items.filter {
+                $0.id.uuidString == messageId ||
+                    (timestampMs > 0 && $0.fromDeviceId == fromDeviceId &&
+                        $0.receivedAt >= cutoffStart && $0.receivedAt <= cutoffEnd)
+            }.forEach { ctx.delete($0) }
+        }
+        try? ctx.save()
+    }
+
+    func clear(throughMs: Int64) {
+        let cutoff = Date(timeIntervalSince1970: TimeInterval(throughMs) / 1000)
+        let ctx = container.mainContext
+        let descriptor = FetchDescriptor<ClipboardItem>(predicate: #Predicate { $0.receivedAt <= cutoff })
+        if let items = try? ctx.fetch(descriptor) { items.forEach { ctx.delete($0) } }
+        try? ctx.save()
+    }
+
     func latestPacket() -> ClipboardPacket? {
         var descriptor = FetchDescriptor<ClipboardItem>(
             sortBy: [SortDescriptor(\.receivedAt, order: .reverse)]
         )
         descriptor.fetchLimit = 1
         return try? container.mainContext.fetch(descriptor).first?.clipboardPacket
-    }
-
-    func restore(_ snapshot: ClipboardItemSnapshot) {
-        let ctx = container.mainContext
-        let id = snapshot.id
-        let descriptor = FetchDescriptor<ClipboardItem>(predicate: #Predicate { $0.id == id })
-        guard ((try? ctx.fetchCount(descriptor)) ?? 0) == 0 else { return }
-        ctx.insert(ClipboardItem(
-            id: snapshot.id,
-            text: snapshot.text,
-            kindRaw: snapshot.kindRaw,
-            imageData: snapshot.imageData,
-            receivedAt: snapshot.receivedAt,
-            fromDeviceId: snapshot.fromDeviceId,
-            isLocal: snapshot.isLocal,
-            isSaved: snapshot.isSaved
-        ))
-        try? ctx.save()
     }
 
     /// Prune unsaved items older than `days` days. Saved items are retained until the user removes them.

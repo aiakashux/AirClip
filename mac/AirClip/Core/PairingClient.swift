@@ -219,6 +219,7 @@ final class PairingClient {
                 let airClipId = resp["airclip_id"] as? String
             else {
                 let reason = (response?["reason"] as? String) ?? "Unexpected response"
+                PrivacyAnalytics.shared.record(.pairingFailure)
                 onError("Pairing failed: \(reason)")
                 return
             }
@@ -235,6 +236,7 @@ final class PairingClient {
                 publicKey: targetPubKey, platform: "android"
             )
             let allDevices = devices.filter { $0.deviceId != targetId && $0.deviceId != myId } + [newPeer]
+            PrivacyAnalytics.shared.record(.pairingSuccess)
             onSuccess(airClipId, resp["space_name"] as? String, allDevices)
         }
     }

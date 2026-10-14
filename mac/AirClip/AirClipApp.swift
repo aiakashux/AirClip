@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import UserNotifications
+import Sparkle
 
 @main
 struct AirclipApp: App {
@@ -24,6 +25,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ClipboardMonitor.shared.syncEngine = SyncEngine.shared
         SyncEngine.shared.clipboardMonitor = ClipboardMonitor.shared
         DeviceNotificationCoordinator.shared.configure()
+        _ = AppUpdateController.shared
+        PrivacyAnalytics.shared.flushIfDue()
 
         // Build the menu bar
         StatusBarController.shared.setup()

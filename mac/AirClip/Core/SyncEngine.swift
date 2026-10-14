@@ -70,8 +70,21 @@ final class SyncEngine: ObservableObject {
             }
         }
         let myId = AirclipIdentity.shared.deviceId ?? ""
-        LocalHistoryStore.shared.insert(packet, fromDeviceId: myId, isLocal: true)
-        PeerManager.shared.broadcast(packet: packet)
+        let messageId = UUID()
+        let timestamp = Date()
+        LocalHistoryStore.shared.insert(
+            packet,
+            fromDeviceId: myId,
+            isLocal: true,
+            id: messageId,
+            receivedAt: timestamp
+        )
+        PeerManager.shared.broadcast(
+            packet: packet,
+            messageId: messageId.uuidString,
+            timestampMs: Int64(timestamp.timeIntervalSince1970 * 1000),
+            fromDeviceId: myId
+        )
     }
 
     // MARK: - Inbound
@@ -79,7 +92,9 @@ final class SyncEngine: ObservableObject {
     func processInboundClip(
         ciphertextB64: String,
         nonceB64: String,
-        fromDeviceId: String
+        fromDeviceId: String,
+        timestampMs: Int64,
+        messageId: String
     ) async {
         guard SyncModeStore.shared.mode.keepsLanServiceRunning else { return }
         do {
@@ -101,11 +116,20 @@ final class SyncEngine: ObservableObject {
             // between the write and the next run-loop tick sees it as known.
             clipboardMonitor?.addHash(hash)
 
-            LocalHistoryStore.shared.insert(packet, fromDeviceId: fromDeviceId, isLocal: false)
+            LocalHistoryStore.shared.insert(
+                packet,
+                fromDeviceId: fromDeviceId,
+                isLocal: false,
+                id: UUID(uuidString: messageId) ?? UUID(),
+                receivedAt: Date(timeIntervalSince1970: TimeInterval(timestampMs) / 1000)
+            )
 
             clipboardMonitor?.markRemoteUpdateStart()
             ClipboardCapture.write(packet, to: NSPasteboard.general)
-        } catch {}
+            PrivacyAnalytics.shared.record(.firstTransfer)
+        } catch {
+            PrivacyAnalytics.shared.record(.transferFailure)
+        }
     }
 
     func processHistoryClip(
@@ -134,6 +158,51 @@ final class SyncEngine: ObservableObject {
                 messageId: messageId
             )
         } catch {}
+    }
+
+    func deleteHistoryItem(_ item: ClipboardItem) {
+        let messageId = item.id.uuidString
+        let timestampMs = Int64(item.receivedAt.timeIntervalSince1970 * 1000)
+        HistoryMutationStore.recordDelete(
+            messageId: messageId,
+            fromDeviceId: item.fromDeviceId,
+            timestampMs: timestampMs
+        )
+        LocalHistoryStore.shared.delete(
+            messageId: messageId,
+            fromDeviceId: item.fromDeviceId,
+            timestampMs: timestampMs
+        )
+        PeerManager.shared.broadcastHistoryDelete(
+            messageId: messageId,
+            fromDeviceId: item.fromDeviceId,
+            timestampMs: timestampMs
+        )
+    }
+
+    func clearHistory() {
+        let throughMs = Int64(Date().timeIntervalSince1970 * 1000)
+        HistoryMutationStore.recordClear(throughMs: throughMs)
+        LocalHistoryStore.shared.clear(throughMs: throughMs)
+        PeerManager.shared.broadcastHistoryClear(throughMs: throughMs)
+    }
+
+    func applyHistoryDelete(messageId: String, fromDeviceId: String, timestampMs: Int64) {
+        HistoryMutationStore.recordDelete(
+            messageId: messageId,
+            fromDeviceId: fromDeviceId,
+            timestampMs: timestampMs
+        )
+        LocalHistoryStore.shared.delete(
+            messageId: messageId,
+            fromDeviceId: fromDeviceId,
+            timestampMs: timestampMs
+        )
+    }
+
+    func applyHistoryClear(throughMs: Int64) {
+        HistoryMutationStore.recordClear(throughMs: throughMs)
+        LocalHistoryStore.shared.clear(throughMs: throughMs)
     }
 }
 
