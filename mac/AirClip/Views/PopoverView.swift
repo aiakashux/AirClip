@@ -10,7 +10,7 @@ private enum PopoverMetrics {
     static let width: CGFloat = 372
     static let outerPadding: CGFloat = 24
     static let topPadding: CGFloat = 8
-    static let cardSpacing: CGFloat = 8
+    static let cardSpacing: CGFloat = 6
     static let cardRadius: CGFloat = 16
     static let cardPaddingHorizontal: CGFloat = 12.5
     static let cardPaddingVertical: CGFloat = 12.5
