@@ -28,7 +28,6 @@ Alerts dismiss automatically after 2.8 seconds. Danger alerts remain for 4.5 sec
 | Clip copied from the macOS list or preview | `Copied to clipboard` | Success | macOS |
 | Clip saved | `Saved` | Success | macOS |
 | Clip deleted | `Deleted` + **Undo** | Regular | macOS, Android |
-| Manual sync blocks sensitive content | `Sensitive item wasn’t shared` | Danger | macOS, Android |
 
 Android’s bottom-sheet copy control keeps its existing copy-to-check icon morph rather than adding a second alert.
 

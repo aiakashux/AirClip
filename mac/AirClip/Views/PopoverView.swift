@@ -12,8 +12,8 @@ private enum PopoverMetrics {
     static let topPadding: CGFloat = 8
     static let cardSpacing: CGFloat = 8
     static let cardRadius: CGFloat = 16
-    static let cardPaddingHorizontal: CGFloat = 16
-    static let cardPaddingVertical: CGFloat = 20
+    static let cardPaddingHorizontal: CGFloat = 12.5
+    static let cardPaddingVertical: CGFloat = 12.5
     static let footerTopPadding: CGFloat = 8
     static let footerHeight: CGFloat = 36
     static let emptyHeight: CGFloat = 132
@@ -253,6 +253,10 @@ struct PopoverView: View {
     }
 
     private func handleCardTap(item: ClipboardItem) {
+        if item.clipType == .file {
+            dismissWithAnimation { NotificationCenter.default.post(name: .openMainWindow, object: nil) }
+            return
+        }
         if item.clipType == .url {
             guard let url = URL(string: item.text.trimmingCharacters(in: .whitespacesAndNewlines)) else { return }
             dismissWithAnimation { NSWorkspace.shared.open(url) }
@@ -263,6 +267,7 @@ struct PopoverView: View {
     }
 
     private func handleCardCopy(_ item: ClipboardItem) {
+        guard item.clipType != .file else { handleCardTap(item: item); return }
 
         copyFlowSession &+= 1
         let activeCopyFlow = copyFlowSession
@@ -398,23 +403,23 @@ private struct ClipCard: View {
     let onCopy: () -> Void
     let onTap: () -> Void
 
-    @ObservedObject private var revealStore = SensitiveContentRevealStore.shared
+    @ObservedObject private var syncEngine = SyncEngine.shared
+    @Environment(\.colorScheme) private var colorScheme
     @State private var isHovered = false
     @State private var isOpenActionHovered = false
     @State private var isCopyActionHovered = false
     @State private var linkPreview: LinkPreviewMetadata?
 
     private var type: ClipType { item.clipType }
-    private var shouldRedact: Bool {
-        item.clipType != .image
-            && SensitiveClipboardClassifier.classify(item.text).isSensitive
-            && !revealStore.isRevealed(item.id)
+    private var isFileDownloaded: Bool { syncEngine.availableFileURL(for: item) != nil }
+    private var isFileDownloading: Bool {
+        guard let id = item.fileMetadata?.id else { return false }
+        return syncEngine.fileTransfers[id]?.phase == .downloading
     }
 
     var body: some View {
         Button(action: onTap) {
             contentView
-                .blur(radius: isHovered ? 6 : 0)
                 .padding(.horizontal, PopoverMetrics.cardPaddingHorizontal)
                 .padding(.vertical, PopoverMetrics.cardPaddingVertical)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -438,7 +443,7 @@ private struct ClipCard: View {
             if isHovered { actionOverlay }
         }
         .animation(.easeOut(duration: 0.16), value: isHovered)
-        .accessibilityLabel(type == .url ? "Open link from \(deviceName)" : "Copy \(type.rawValue) from \(deviceName)")
+        .accessibilityLabel(type == .file ? "Open file in Airclip" : type == .url ? "Open link from \(deviceName)" : "Copy \(type.rawValue) from \(deviceName)")
         .accessibilityHint(type == .url ? "Opens this link in your browser" : "Copies this item and closes Airclip")
         .onHover { hovering in
             isHovered = hovering
@@ -451,9 +456,11 @@ private struct ClipCard: View {
     }
 
     private var actionOverlay: some View {
-        RoundedRectangle(cornerRadius: PopoverMetrics.cardRadius, style: .continuous)
-            .fill(Color.bgElevated.opacity(0.75))
-            .overlay {
+        ZStack {
+            RoundedRectangle(cornerRadius: PopoverMetrics.cardRadius, style: .continuous)
+                .fill(.ultraThinMaterial)
+            RoundedRectangle(cornerRadius: PopoverMetrics.cardRadius, style: .continuous)
+                .fill(colorScheme == .dark ? Color.bgElevated.opacity(0.76) : Color.white.opacity(0.65))
                 HStack(spacing: 0) {
                     if type == .url {
                         Button(action: onTap) {
@@ -465,27 +472,38 @@ private struct ClipCard: View {
                                 shimmer: isOpenActionHovered
                             )
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(PopoverActionButtonStyle(isHovered: isOpenActionHovered))
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .onHover { isOpenActionHovered = $0 }
                     }
-                    Button(action: onCopy) {
-                        actionLabel(
-                            icon: .copy,
-                            title: "Click to Copy",
-                            color: isCopyActionHovered ? .accentDeep : .accent,
-                            shimmer: isCopyActionHovered
-                        )
+                    Button(action: type == .file ? performFileAction : onCopy) {
+                        if type == .file {
+                            fileActionLabel
+                        } else {
+                            actionLabel(
+                                icon: .copy,
+                                title: "Click to Copy",
+                                color: isCopyActionHovered ? .accentDeep : .accent,
+                                shimmer: isCopyActionHovered
+                            )
+                        }
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(PopoverActionButtonStyle(isHovered: isCopyActionHovered))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .disabled(type == .file && isFileDownloading)
                     .onHover { isCopyActionHovered = $0 }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-            }
+                .padding(1)
+        }
             .clipShape(RoundedRectangle(cornerRadius: PopoverMetrics.cardRadius, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: PopoverMetrics.cardRadius, style: .continuous)
-                .strokeBorder(Color.borderDefault, lineWidth: 0.5))
+            .overlay {
+                RoundedRectangle(cornerRadius: PopoverMetrics.cardRadius, style: .continuous)
+                    .strokeBorder(
+                        colorScheme == .dark ? Color.borderDefault : Color(hex: "#E1E4EA"),
+                        lineWidth: 1
+                    )
+            }
         .transition(.opacity)
     }
 
@@ -503,16 +521,45 @@ private struct ClipCard: View {
         .font(.system(size: 13, weight: .medium))
         .foregroundColor(color)
         .singleShimmer(isActive: shimmer)
+        .padding(.horizontal, 8)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .contentShape(Rectangle())
     }
 
+    private var fileActionLabel: some View {
+        HStack(spacing: 8) {
+            if isFileDownloaded {
+                AirclipIcon(.arrowUpRight, size: 16)
+            } else if isFileDownloading {
+                ProgressView().controlSize(.small)
+            } else {
+                Image(systemName: "arrow.down.to.line")
+                    .font(.system(size: 16, weight: .medium))
+            }
+            Text(isFileDownloaded ? "Open" : isFileDownloading ? "Downloading…" : "Download")
+        }
+        .font(.system(size: 13, weight: .medium))
+        .foregroundColor(isCopyActionHovered ? .accentDeep : .accent)
+        .singleShimmer(isActive: isCopyActionHovered && !isFileDownloading)
+        .padding(.horizontal, 8)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .contentShape(Rectangle())
+    }
+
+    private func performFileAction() {
+        if let url = syncEngine.availableFileURL(for: item) {
+            NSWorkspace.shared.open(url)
+        } else if !isFileDownloading {
+            syncEngine.downloadFile(item)
+        }
+    }
+
     private var primaryTextColor: Color {
-        .textPrimary
+        colorScheme == .dark ? .textPrimary : Color(hex: "#232E43")
     }
 
     private var metaTextColor: Color {
-        .textSecondary
+        colorScheme == .dark ? .textSecondary : Color(hex: "#6A7282")
     }
 
     private var linkTextColor: Color {
@@ -534,6 +581,35 @@ private struct ClipCard: View {
     @ViewBuilder
     private var contentView: some View {
         switch type {
+        case .file:
+            HStack(spacing: 10) {
+                if item.fileMetadata?.isImage == true,
+                   let thumbnail = item.fileMetadata?.thumbnailImage {
+                    Image(nsImage: thumbnail)
+                        .resizable().aspectRatio(contentMode: .fill)
+                        .frame(width: 24, height: 24)
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .frame(width: 28, height: 28)
+                } else if item.fileMetadata?.isImage == true {
+                    AirclipIcon(.image, size: 16)
+                        .foregroundColor(Color.textSecondary)
+                        .frame(width: 28, height: 28)
+                } else {
+                    fileTypeIconBadge(
+                        iconName: item.fileMetadata?.iconAssetName ?? "FileIconDocument",
+                        accent: item.fileMetadata?.iconAccentColor ?? Color(hex: "#33A1FE"),
+                        iconSize: 16,
+                        containerSize: 28
+                    )
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(item.fileMetadata?.name ?? item.text)
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(primaryTextColor)
+                        .lineLimit(1)
+                    metaRowJustified
+                }
+            }
         case .url:
             HStack(alignment: .top, spacing: 12) {
                 typeBadge(background: Color.accent.opacity(0.16)) {
@@ -547,7 +623,6 @@ private struct ClipCard: View {
                         .underline()
                         .lineLimit(1)
                         .truncationMode(.tail)
-                        .blur(radius: shouldRedact ? 4 : 0)
                         .frame(minHeight: 19.5, alignment: .top)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     metaRowJustified
@@ -571,7 +646,6 @@ private struct ClipCard: View {
                         .lineSpacing(4.5)
                         .lineLimit(2)
                         .truncationMode(.tail)
-                        .blur(radius: shouldRedact ? 4 : 0)
                         .frame(minHeight: 19.5, alignment: .top)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     metaRowJustified
@@ -630,7 +704,6 @@ private struct ClipCard: View {
                         .lineSpacing(4.5)
                         .lineLimit(2)
                         .truncationMode(.tail)
-                        .blur(radius: shouldRedact ? 4 : 0)
                         .frame(minHeight: 19.5, alignment: .top)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     metaRowJustified
@@ -651,7 +724,6 @@ private struct ClipCard: View {
                         .lineSpacing(4.5)
                         .lineLimit(2)
                         .truncationMode(.tail)
-                        .blur(radius: shouldRedact ? 4 : 0)
                         .frame(minHeight: 19.5, alignment: .top)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     metaRowJustified
@@ -761,6 +833,37 @@ private struct ClipCard: View {
         .frame(width: 28, height: 28)
     }
 
+    private func fileTypeIconBadge(
+        iconName: String,
+        accent: Color,
+        iconSize: CGFloat,
+        containerSize: CGFloat
+    ) -> some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(accent.opacity(0.07))
+            Image(iconName)
+                .resizable()
+                .interpolation(.high)
+                .frame(width: iconSize, height: iconSize)
+        }
+        .frame(width: containerSize, height: containerSize)
+    }
+
+}
+
+private struct PopoverActionButtonStyle: ButtonStyle {
+    let isHovered: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(
+                Color(hex: "#6C3EC6").opacity(
+                    configuration.isPressed ? 0.08 : isHovered ? 0.05 : 0
+                )
+            )
+            .contentShape(Rectangle())
+    }
 }
 
 // MARK: - Card press style (spring scale + brightness, not opacity)

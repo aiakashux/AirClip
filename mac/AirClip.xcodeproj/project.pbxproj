@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		BB0200000000000000000001 /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0100000000000000000001 /* ShareViewController.swift */; };
+		BB0200000000000000000002 /* AirclipShare.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = BB0100000000000000000003 /* AirclipShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		57232E7C2F82524000626D59 /* Clibsodium in Frameworks */ = {isa = PBXBuildFile; productRef = 57232E7B2F82524000626D59 /* Clibsodium */; };
 		57232E7E2F82524000626D59 /* Sodium in Frameworks */ = {isa = PBXBuildFile; productRef = 57232E7D2F82524000626D59 /* Sodium */; };
 		57232E8C2F82524000626D59 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 57232E8B2F82524000626D59 /* Sparkle */; };
@@ -37,15 +39,12 @@
 		AA020000000000000000001E /* AppAppearanceStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA010000000000000000001E /* AppAppearanceStore.swift */; };
 		AA020000000000000000001F /* SyncMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA010000000000000000001F /* SyncMode.swift */; };
 		AA0200000000000000000020 /* SyncModeStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000020 /* SyncModeStore.swift */; };
-		AA0200000000000000000021 /* SensitiveClipboardPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000021 /* SensitiveClipboardPolicy.swift */; };
-		AA0200000000000000000022 /* SensitiveClipboardProtectionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000022 /* SensitiveClipboardProtectionStore.swift */; };
 		AA0200000000000000000030 /* UnreadStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000030 /* UnreadStore.swift */; };
 		AA0200000000000000000031 /* AddDevicePairingSheetController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000031 /* AddDevicePairingSheetController.swift */; };
 		AA0200000000000000000032 /* DeviceConnectionStatusText.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000032 /* DeviceConnectionStatusText.swift */; };
 		AA0200000000000000000033 /* CurrentWiFiNetwork.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000033 /* CurrentWiFiNetwork.swift */; };
 		AA0200000000000000000034 /* DeviceRemovalNotice.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000034 /* DeviceRemovalNotice.swift */; };
 		AA0200000000000000000035 /* DeviceDisplayText.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000035 /* DeviceDisplayText.swift */; };
-		AA0200000000000000000036 /* SensitiveContentRevealStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000036 /* SensitiveContentRevealStore.swift */; };
 		AA0200000000000000000037 /* AirclipDeviceIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000037 /* AirclipDeviceIcon.swift */; };
 		AA0200000000000000000038 /* AppUpdateController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000038 /* AppUpdateController.swift */; };
 		AA0200000000000000000039 /* PrivacyAnalytics.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000039 /* PrivacyAnalytics.swift */; };
@@ -53,6 +52,10 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		BB0100000000000000000001 /* ShareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
+		BB0100000000000000000002 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		BB0100000000000000000004 /* AirclipShare.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AirclipShare.entitlements; sourceTree = "<group>"; };
+		BB0100000000000000000003 /* AirclipShare.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = AirclipShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA0100000000000000000001 /* AirclipApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AirclipApp.swift; sourceTree = "<group>"; };
 		AA0100000000000000000002 /* AppConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfig.swift; sourceTree = "<group>"; };
 		AA0100000000000000000003 /* StatusBarController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusBarController.swift; sourceTree = "<group>"; };
@@ -83,20 +86,39 @@
 		AA010000000000000000001E /* AppAppearanceStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppAppearanceStore.swift; sourceTree = "<group>"; };
 		AA010000000000000000001F /* SyncMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncMode.swift; sourceTree = "<group>"; };
 		AA0100000000000000000020 /* SyncModeStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncModeStore.swift; sourceTree = "<group>"; };
-		AA0100000000000000000021 /* SensitiveClipboardPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SensitiveClipboardPolicy.swift; sourceTree = "<group>"; };
-		AA0100000000000000000022 /* SensitiveClipboardProtectionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SensitiveClipboardProtectionStore.swift; sourceTree = "<group>"; };
 		AA0100000000000000000030 /* UnreadStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnreadStore.swift; sourceTree = "<group>"; };
 		AA0100000000000000000031 /* AddDevicePairingSheetController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddDevicePairingSheetController.swift; sourceTree = "<group>"; };
 		AA0100000000000000000032 /* DeviceConnectionStatusText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceConnectionStatusText.swift; sourceTree = "<group>"; };
 		AA0100000000000000000033 /* CurrentWiFiNetwork.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CurrentWiFiNetwork.swift; sourceTree = "<group>"; };
 		AA0100000000000000000034 /* DeviceRemovalNotice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceRemovalNotice.swift; sourceTree = "<group>"; };
 		AA0100000000000000000035 /* DeviceDisplayText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceDisplayText.swift; sourceTree = "<group>"; };
-		AA0100000000000000000036 /* SensitiveContentRevealStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SensitiveContentRevealStore.swift; sourceTree = "<group>"; };
 		AA0100000000000000000037 /* AirclipDeviceIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AirclipDeviceIcon.swift; sourceTree = "<group>"; };
 		AA0100000000000000000038 /* AppUpdateController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppUpdateController.swift; sourceTree = "<group>"; };
 		AA0100000000000000000039 /* PrivacyAnalytics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivacyAnalytics.swift; sourceTree = "<group>"; };
 		AA0100000000000000000040 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 /* End PBXFileReference section */
+
+/* Begin PBXContainerItemProxy section */
+		BB0900000000000000000001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = AA0600000000000000000002 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = BB0600000000000000000001;
+			remoteInfo = AirclipShare;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		BB0400000000000000000001 /* Embed App Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (BB0200000000000000000002 /* AirclipShare.appex in Embed App Extensions */, );
+			name = "Embed App Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		AA0400000000000000000002 /* Frameworks */ = {
@@ -116,6 +138,7 @@
 			isa = PBXGroup;
 			children = (
 				AA0300000000000000000002 /* Airclip */,
+				BB0300000000000000000001 /* AirclipShare */,
 				AA0300000000000000000007 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -165,15 +188,12 @@
 				AA010000000000000000001E /* AppAppearanceStore.swift */,
 				AA010000000000000000001F /* SyncMode.swift */,
 				AA0100000000000000000020 /* SyncModeStore.swift */,
-				AA0100000000000000000021 /* SensitiveClipboardPolicy.swift */,
-				AA0100000000000000000022 /* SensitiveClipboardProtectionStore.swift */,
 				AA0100000000000000000030 /* UnreadStore.swift */,
 				AA0100000000000000000031 /* AddDevicePairingSheetController.swift */,
 				AA0100000000000000000032 /* DeviceConnectionStatusText.swift */,
 				AA0100000000000000000033 /* CurrentWiFiNetwork.swift */,
 				AA0100000000000000000034 /* DeviceRemovalNotice.swift */,
 				AA0100000000000000000035 /* DeviceDisplayText.swift */,
-				AA0100000000000000000036 /* SensitiveContentRevealStore.swift */,
 				AA0100000000000000000038 /* AppUpdateController.swift */,
 				AA0100000000000000000039 /* PrivacyAnalytics.swift */,
 				AA0100000000000000000008 /* CryptoManager.swift */,
@@ -205,8 +225,19 @@
 			isa = PBXGroup;
 			children = (
 				AA010000000000000000000F /* Airclip.app */,
+				BB0100000000000000000003 /* AirclipShare.appex */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		BB0300000000000000000001 /* AirclipShare */ = {
+			isa = PBXGroup;
+			children = (
+				BB0100000000000000000001 /* ShareViewController.swift */,
+				BB0100000000000000000002 /* Info.plist */,
+				BB0100000000000000000004 /* AirclipShare.entitlements */,
+			);
+			path = AirclipShare;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -219,11 +250,11 @@
 				AA0400000000000000000001 /* Sources */,
 				AA0400000000000000000002 /* Frameworks */,
 				AA0400000000000000000003 /* Resources */,
+				BB0400000000000000000001 /* Embed App Extensions */,
 			);
 			buildRules = (
 			);
-			dependencies = (
-			);
+			dependencies = (BB0A00000000000000000001 /* PBXTargetDependency */, );
 			name = Airclip;
 			packageProductDependencies = (
 				57232E8B2F82524000626D59 /* Sparkle */,
@@ -231,6 +262,17 @@
 			productName = Airclip;
 			productReference = AA010000000000000000000F /* Airclip.app */;
 			productType = "com.apple.product-type.application";
+		};
+		BB0600000000000000000001 /* AirclipShare */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = BB0500000000000000000003 /* Build configuration list for PBXNativeTarget "AirclipShare" */;
+			buildPhases = (BB0400000000000000000002 /* Sources */, );
+			buildRules = ();
+			dependencies = ();
+			name = AirclipShare;
+			productName = AirclipShare;
+			productReference = BB0100000000000000000003 /* AirclipShare.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -245,6 +287,7 @@
 					AA0600000000000000000001 = {
 						CreatedOnToolsVersion = 15.0;
 					};
+					BB0600000000000000000001 = {CreatedOnToolsVersion = 15.0; };
 				};
 			};
 			buildConfigurationList = AA0500000000000000000005 /* Build configuration list for PBXProject "Airclip" */;
@@ -265,9 +308,18 @@
 			projectRoot = "";
 			targets = (
 				AA0600000000000000000001 /* Airclip */,
+				BB0600000000000000000001 /* AirclipShare */,
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXTargetDependency section */
+		BB0A00000000000000000001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = BB0600000000000000000001 /* AirclipShare */;
+			targetProxy = BB0900000000000000000001 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin PBXResourcesBuildPhase section */
 		AA0400000000000000000003 /* Resources */ = {
@@ -282,6 +334,12 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		BB0400000000000000000002 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (BB0200000000000000000001 /* ShareViewController.swift in Sources */, );
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		AA0400000000000000000001 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -313,15 +371,12 @@
 				AA020000000000000000001E /* AppAppearanceStore.swift in Sources */,
 				AA020000000000000000001F /* SyncMode.swift in Sources */,
 				AA0200000000000000000020 /* SyncModeStore.swift in Sources */,
-				AA0200000000000000000021 /* SensitiveClipboardPolicy.swift in Sources */,
-				AA0200000000000000000022 /* SensitiveClipboardProtectionStore.swift in Sources */,
 				AA0200000000000000000030 /* UnreadStore.swift in Sources */,
 				AA0200000000000000000031 /* AddDevicePairingSheetController.swift in Sources */,
 				AA0200000000000000000032 /* DeviceConnectionStatusText.swift in Sources */,
 				AA0200000000000000000033 /* CurrentWiFiNetwork.swift in Sources */,
 				AA0200000000000000000034 /* DeviceRemovalNotice.swift in Sources */,
 				AA0200000000000000000035 /* DeviceDisplayText.swift in Sources */,
-				AA0200000000000000000036 /* SensitiveContentRevealStore.swift in Sources */,
 				AA0200000000000000000038 /* AppUpdateController.swift in Sources */,
 				AA0200000000000000000039 /* PrivacyAnalytics.swift in Sources */,
 			);
@@ -330,6 +385,40 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
+		BB0500000000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = AirclipShare/AirclipShare.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				ENABLE_APP_SANDBOX = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = AirclipShare/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/../Frameworks", "@executable_path/../../../../Frameworks", );
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.airclip.airclip.share;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.9;
+			};
+			name = Debug;
+		};
+		BB0500000000000000000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = AirclipShare/AirclipShare.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				ENABLE_APP_SANDBOX = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = AirclipShare/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/../Frameworks", "@executable_path/../../../../Frameworks", );
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.airclip.airclip.share;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.9;
+			};
+			name = Release;
+		};
 		AA0500000000000000000001 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -499,6 +588,12 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		BB0500000000000000000003 /* Build configuration list for PBXNativeTarget "AirclipShare" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (BB0500000000000000000001 /* Debug */, BB0500000000000000000002 /* Release */, );
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		AA0500000000000000000005 /* Build configuration list for PBXProject "Airclip" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

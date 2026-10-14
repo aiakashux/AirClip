@@ -7,7 +7,6 @@ Airclip syncs clipboard content directly between paired devices over the local n
 ```
 Mac app                              Android app
   ├─ Clipboard monitor                 ├─ Foreground sync service
-  ├─ Sensitive content policy          ├─ Sensitive content policy
   ├─ NaCl sealed-box encryption        ├─ NaCl sealed-box encryption
   ├─ Bonjour advertise/browse          ├─ Android NSD advertise/discover
   └─ LAN WebSocket peer ◄────────────► └─ LAN WebSocket peer
@@ -19,7 +18,7 @@ Mac app                              Android app
 ### macOS App (`mac/`)
 - Swift + SwiftUI menu bar app
 - `ClipboardMonitor` — watches system clipboard
-- `SyncEngine` — applies sync mode and sensitive policy, drives sends
+- `SyncEngine` — applies sync mode and coordinates sends
 - `LanServer` / `LanBrowser` / `PeerManager` — LAN discovery and WebSocket peers
 - `LocalHistoryStore` — SwiftData-backed local history
 - `PairingSession` — QR/code pairing flow
@@ -27,7 +26,7 @@ Mac app                              Android app
 ### Android App (`android/`)
 - Kotlin + Jetpack Compose
 - `SyncService` — foreground service, keeps LAN runtime alive
-- `SyncEngine` — same role as Mac: policy gating, send coordination
+- `SyncEngine` — same role as Mac: sync-mode gating and send coordination
 - `LanServer` / `LanBrowser` / `PeerManager` — NSD discovery and WebSocket peers
 - `ClipHistoryStore` — local history with full-text storage
 - `AirclipCaptureActivity` / `AirclipWidget` — manual send entry points
@@ -61,11 +60,10 @@ Each device generates locally:
 ## Clipboard Sync Flow
 
 1. Clipboard change detected
-2. Sensitive content policy applied (Block / Ask / Allow)
-3. Payload serialized to JSON `{ kindRaw, text, imageDataBase64 }`
-4. Encrypted with recipient's public key (NaCl sealed box)
-5. Sent with a stable message ID, source device, and timestamp over the authenticated WebSocket
-6. Receiver decrypts, deduplicates, stores in history, writes to system clipboard
+2. Payload serialized to JSON `{ kindRaw, text, imageDataBase64 }`
+3. Encrypted with recipient's public key (NaCl sealed box)
+4. Sent with a stable message ID, source device, and timestamp over the authenticated WebSocket
+5. Receiver decrypts, deduplicates, stores in history, writes to system clipboard
 
 ## History Backfill
 

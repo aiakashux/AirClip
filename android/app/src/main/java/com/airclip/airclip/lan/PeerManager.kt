@@ -70,6 +70,7 @@ object PeerManager {
     var onHistoryDelete: ((messageId: String, fromDeviceId: String, timestampMs: Long) -> Unit)? = null
     var onHistoryClear: ((throughMs: Long) -> Unit)? = null
     var onHistoryRequest: ((deviceId: String) -> Unit)? = null
+    var onFileMessage: ((deviceId: String, message: Map<String, String>) -> Unit)? = null
 
     /** Callback invoked when a peer proves it is still reachable. Set by SyncEngine. */
     var onPeerSeen: ((deviceId: String, wifiNetwork: String?) -> Unit)? = null
@@ -173,12 +174,13 @@ object PeerManager {
      * Encrypt [plaintext] for each authenticated peer's public key and broadcast.
      * Per-peer failures are logged and skipped — other peers still receive.
      */
-    fun broadcast(plaintext: ByteArray, messageId: String, timestampMs: Long, fromDeviceId: String) {
+    fun broadcast(plaintext: ByteArray, messageId: String, timestampMs: Long, fromDeviceId: String,
+                  type: String = "clip") {
         peers.values.forEach { peer ->
             try {
                 val enc  = SealedBox.encryptForRecipient(plaintext, peer.publicKey)
                 val json = gson.toJson(mapOf(
-                    "type"       to "clip",
+                    "type"       to type,
                     "ciphertext" to enc.ciphertextBase64,
                     "nonce"      to enc.nonce,
                     "msg_id"     to messageId,
@@ -254,6 +256,7 @@ object PeerManager {
         onHistoryDelete?.invoke(messageId, fromDeviceId, timestampMs)
     fun dispatchHistoryClear(throughMs: Long) = onHistoryClear?.invoke(throughMs)
     fun dispatchHistoryRequest(deviceId: String) = onHistoryRequest?.invoke(deviceId)
+    fun dispatchFileMessage(deviceId: String, message: Map<String, String>) = onFileMessage?.invoke(deviceId, message)
 
     fun markPeerSeen(deviceId: String, wifiNetwork: String? = null) {
         onPeerSeen?.invoke(deviceId, wifiNetwork)

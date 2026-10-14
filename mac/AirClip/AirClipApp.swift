@@ -18,6 +18,11 @@ struct AirclipApp: App {
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
+        let defaults = UserDefaults.standard
+        defaults.dictionaryRepresentation().keys
+            .filter { $0.hasPrefix("sensitiveClipboardRule.") }
+            .forEach(defaults.removeObject(forKey:))
+
         // Belt-and-suspenders alongside LSUIElement=YES
         NSApp.setActivationPolicy(.accessory)
 

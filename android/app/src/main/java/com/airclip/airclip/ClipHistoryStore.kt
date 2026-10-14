@@ -95,8 +95,22 @@ object HistoryMutationStore {
 }
 
 enum class ClipKind {
-    URL, CODE, COLOR, EMAIL, IMAGE, TEXT
+    URL, CODE, COLOR, EMAIL, IMAGE, FILE, TEXT
 }
+
+data class FileClipMetadata(
+    val id: String,
+    val name: String,
+    val size: Long,
+    val mimeType: String,
+    val modifiedAtMs: Long? = null,
+    val thumbnailBase64: String? = null,
+    val durationMs: Long? = null,
+    val width: Int? = null,
+    val height: Int? = null,
+    val artist: String? = null,
+    val album: String? = null,
+)
 
 fun detectClipKind(text: String): ClipKind {
     val t = text.trim()
@@ -195,6 +209,9 @@ data class ClipItemRecord(
     val kind: String = ClipKind.TEXT.name,
     val imageDataBase64: String? = null,
     val imageFileName: String? = null,
+    val file: FileClipMetadata? = null,
+    val sourceFilePath: String? = null,
+    val downloadedFilePath: String? = null,
     val isSaved: Boolean = false,
 ) {
     val displayText: String
@@ -240,12 +257,17 @@ object ClipHistoryStore {
                 val shouldPreserveSaved = record.isSaved && !existing.isSaved
                 val shouldPreserveFullText = existing.contentText == null && record.contentText != null
                 val shouldPreserveImage = existing.imageFileName == null && record.imageFileName != null
-                if (shouldPreserveSaved || shouldPreserveFullText || shouldPreserveImage) {
+                val shouldPreserveFile = existing.file == null && record.file != null
+                val shouldPreserveSource = existing.sourceFilePath == null && record.sourceFilePath != null
+                if (shouldPreserveSaved || shouldPreserveFullText || shouldPreserveImage || shouldPreserveFile || shouldPreserveSource) {
                     deduplicated[existingIndex] = existing.copy(
                         isSaved = existing.isSaved || record.isSaved,
                         contentText = existing.contentText ?: record.contentText,
                         imageDataBase64 = existing.imageDataBase64 ?: record.imageDataBase64,
                         imageFileName = existing.imageFileName ?: record.imageFileName,
+                        file = existing.file ?: record.file,
+                        sourceFilePath = existing.sourceFilePath ?: record.sourceFilePath,
+                        downloadedFilePath = existing.downloadedFilePath ?: record.downloadedFilePath,
                     )
                 }
             }
@@ -346,6 +368,7 @@ object ClipHistoryStore {
                 prefs[KEY_HISTORY] = gson.toJson(merged)
             }
             ImageClipboard.prunePersisted(context, merged)
+            pruneManagedFiles(context, merged)
             merged
         }
 
@@ -361,6 +384,7 @@ object ClipHistoryStore {
         }
         val pruned = prune(updated)
         ImageClipboard.prunePersisted(context, pruned)
+        pruneManagedFiles(context, pruned)
         return pruned
     }
 
@@ -378,6 +402,7 @@ object ClipHistoryStore {
             else prefs[KEY_HISTORY] = gson.toJson(updated)
         }
         ImageClipboard.prunePersisted(context, updated)
+        pruneManagedFiles(context, updated)
         return updated
     }
 
@@ -388,6 +413,7 @@ object ClipHistoryStore {
             else prefs[KEY_HISTORY] = gson.toJson(updated)
         }
         ImageClipboard.prunePersisted(context, updated)
+        pruneManagedFiles(context, updated)
         return updated
     }
 
@@ -402,6 +428,7 @@ object ClipHistoryStore {
             else prefs[KEY_HISTORY] = gson.toJson(updated)
         }
         ImageClipboard.prunePersisted(context, updated)
+        pruneManagedFiles(context, updated)
         return updated
     }
 
@@ -409,6 +436,18 @@ object ClipHistoryStore {
     suspend fun clear(context: Context) {
         context.clipHistoryDataStore.edit { it.remove(KEY_HISTORY) }
         ImageClipboard.clearPersisted(context)
+        pruneManagedFiles(context, emptyList())
+    }
+
+    private fun pruneManagedFiles(context: Context, retained: List<ClipItemRecord>) {
+        val sourcePaths = retained.mapNotNull { it.sourceFilePath }.toSet()
+        java.io.File(context.filesDir, "shared-file-sources").listFiles()?.forEach { file ->
+            if (file.isFile && file.absolutePath !in sourcePaths) file.delete()
+        }
+        val ids = retained.mapNotNull { it.file?.id }.toSet()
+        java.io.File(context.filesDir, "downloaded-files").listFiles()?.forEach { file ->
+            if (file.isFile && ids.none { id -> file.name == id || file.name.startsWith("$id.") }) file.delete()
+        }
     }
 
     private fun sanitize(record: ClipItemRecord): ClipItemRecord? = runCatching {

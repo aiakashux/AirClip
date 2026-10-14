@@ -7,6 +7,7 @@ internal data class DecodedClipboardPayload(
     val text: String,
     val kind: ClipKind,
     val imageDataBase64: String? = null,
+    val file: FileClipMetadata? = null,
 )
 
 internal object ClipboardWirePayload {
@@ -18,6 +19,7 @@ internal object ClipboardWirePayload {
                 "kindRaw" to record.kind.lowercase(),
                 "text" to record.displayText,
                 "imageDataBase64" to record.imageDataBase64,
+                "file" to record.file,
             )
         )
 
@@ -31,6 +33,9 @@ internal object ClipboardWirePayload {
         val imageDataBase64 = packet?.get("imageDataBase64")
             ?.takeIf { it.isJsonPrimitive }
             ?.asString
+        val file = packet?.get("file")?.takeIf { it.isJsonObject }?.let {
+            runCatching { gson.fromJson(it, FileClipMetadata::class.java) }.getOrNull()
+        }
 
         if (kindRaw != null && text != null) {
             val kind = runCatching { ClipKind.valueOf(kindRaw.uppercase()) }
@@ -39,6 +44,7 @@ internal object ClipboardWirePayload {
                 text = text,
                 kind = kind,
                 imageDataBase64 = imageDataBase64,
+                file = file,
             )
         }
 

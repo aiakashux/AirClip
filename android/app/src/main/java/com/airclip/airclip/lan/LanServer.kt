@@ -273,7 +273,7 @@ object LanServer {
                 val msg = gson.fromJson(message, Map::class.java) as? Map<String, String>
                     ?: return
                 when (msg["type"]) {
-                    "clip" -> {
+                    "clip", "file_clip" -> {
                         val ciphertext = msg["ciphertext"] ?: return
                         val nonce      = msg["nonce"]      ?: return
                         val timestampMs = msg["ts"]?.toLongOrNull() ?: System.currentTimeMillis()
@@ -286,7 +286,7 @@ object LanServer {
                             messageId,
                         )
                     }
-                    "history_clip" -> {
+                    "history_clip", "history_file_clip" -> {
                         val ciphertext   = msg["ciphertext"]         ?: return
                         val nonce        = msg["nonce"]              ?: return
                         val ts           = msg["ts"]?.toLongOrNull() ?: System.currentTimeMillis()
@@ -301,6 +301,7 @@ object LanServer {
                     )
                     "history_clear" -> msg["through_ms"]?.toLongOrNull()?.let(PeerManager::dispatchHistoryClear)
                     "history_request" -> PeerManager.dispatchHistoryRequest(fromId)
+                    "file_request", "file_chunk" -> PeerManager.dispatchFileMessage(fromId, msg)
                     "heartbeat" -> {
                         PeerManager.markPeerSeen(fromId, msg["ssid"])
                         val ack = mutableMapOf(

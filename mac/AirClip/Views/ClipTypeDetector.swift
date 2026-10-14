@@ -1,8 +1,12 @@
 import Foundation
 import AppKit
+import SwiftUI
+import UniformTypeIdentifiers
+import QuickLookThumbnailing
+import AVFoundation
 
 enum ClipboardKind: String, Codable, CaseIterable {
-    case url, code, color, email, image, text
+    case url, code, color, email, image, file, text
 
     var displayName: String {
         switch self {
@@ -11,8 +15,71 @@ enum ClipboardKind: String, Codable, CaseIterable {
         case .color: return "Color"
         case .email: return "Email"
         case .image: return "Image"
+        case .file: return "File"
         case .text: return "Text"
         }
+    }
+}
+
+struct FileClipMetadata: Codable, Hashable {
+    var id: String
+    var name: String
+    var size: Int64
+    var mimeType: String
+    var modifiedAtMs: Int64?
+    var thumbnailBase64: String?
+    var durationMs: Int64?
+    var width: Int?
+    var height: Int?
+    var artist: String?
+    var album: String?
+
+    var iconAssetName: String {
+        let ext = (name as NSString).pathExtension.lowercased()
+        switch ext {
+        case "pdf": return "FileIconPDF"
+        case "ppt", "pptx", "key": return "FileIconPresentation"
+        case "exe", "msi", "msix": return "FileIconWindowsInstaller"
+        case "dmg", "ipa", "pkg", "app": return "FileIconAppleInstaller"
+        case "apk", "aab": return "FileIconAndroidInstaller"
+        case "zip", "7z", "tar", "gz", "bz2": return "FileIconZip"
+        case "rar": return "FileIconRar"
+        case "mp3", "m4a", "aac", "wav", "flac", "ogg", "opus", "aiff": return "FileIconAudio"
+        case "mp4", "m4v", "mov", "mkv", "avi", "webm", "wmv": return "FileIconVideo"
+        case "html", "htm", "css", "js", "ts", "jsx", "tsx", "json", "xml", "py", "swift", "kt", "java", "c", "cpp", "h", "rs", "go", "sh", "sql": return "FileIconCode"
+        default: break
+        }
+        if mimeType == "application/pdf" { return "FileIconPDF" }
+        if mimeType.hasPrefix("audio/") { return "FileIconAudio" }
+        if mimeType.hasPrefix("video/") { return "FileIconVideo" }
+        if mimeType.hasPrefix("text/") && ext != "txt" { return "FileIconCode" }
+        return "FileIconDocument"
+    }
+
+    var iconAccentColor: Color {
+        switch iconAssetName {
+        case "FileIconPDF": return Color(hex: "#DC0C11")
+        case "FileIconPresentation": return Color(hex: "#FC6F40")
+        case "FileIconWindowsInstaller", "FileIconAppleInstaller": return Color(hex: "#33A1FE")
+        case "FileIconAndroidInstaller": return Color(hex: "#50DA8C")
+        case "FileIconZip": return Color(hex: "#FFBA02")
+        case "FileIconRar": return Color(hex: "#A79455")
+        case "FileIconAudio": return Color(hex: "#ED144E")
+        case "FileIconVideo": return Color(hex: "#ED144E")
+        case "FileIconCode": return Color(hex: "#DF53E3")
+        default: return Color(hex: "#33A1FE")
+        }
+    }
+
+    var thumbnailImage: NSImage? {
+        guard let thumbnailBase64,
+              let data = Data(base64Encoded: thumbnailBase64) else { return nil }
+        return NSImage(data: data)
+    }
+
+    var isImage: Bool {
+        mimeType.hasPrefix("image/") || ["png", "jpg", "jpeg", "gif", "webp", "heic", "heif", "bmp", "tif", "tiff"]
+            .contains((name as NSString).pathExtension.lowercased())
     }
 }
 
@@ -20,12 +87,14 @@ struct ClipboardPacket: Codable, Hashable {
     var kindRaw: String
     var text: String
     var imageDataBase64: String?
+    var file: FileClipMetadata?
 
-    init(kind: ClipboardKind, text: String, imageData: Data? = nil) {
+    init(kind: ClipboardKind, text: String, imageData: Data? = nil, file: FileClipMetadata? = nil) {
         self.kindRaw = kind.rawValue
         self.text = text
         let wireImageData = imageData.flatMap(Self.pngData) ?? imageData
         self.imageDataBase64 = wireImageData?.base64EncodedString()
+        self.file = file
     }
 
     var kind: ClipboardKind {
@@ -41,6 +110,8 @@ struct ClipboardPacket: Codable, Hashable {
         switch kind {
         case .image:
             return "image:\(imageDataBase64 ?? "")"
+        case .file:
+            return "file:\(file?.id ?? text)"
         default:
             return "\(kind.rawValue):\(text)"
         }
@@ -67,7 +138,34 @@ struct ClipboardPacket: Codable, Hashable {
 }
 
 enum ClipboardCapture {
+    static func packet(forDroppedFile url: URL) -> ClipboardPacket? {
+        guard url.isFileURL else { return nil }
+
+        let hasAccess = url.startAccessingSecurityScopedResource()
+        defer { if hasAccess { url.stopAccessingSecurityScopedResource() } }
+        guard let values = try? url.resourceValues(forKeys: [.isRegularFileKey]),
+              values.isRegularFile == true else { return nil }
+
+        if let imagePacket = readImageFilePacket(from: url) {
+            return imagePacket
+        }
+        return FileClipSource.packet(for: url)
+    }
+
+    static func readCurrentPackets(from pasteboard: NSPasteboard = .general) -> [ClipboardPacket] {
+        let urls = fileURLs(from: pasteboard)
+        if !urls.isEmpty {
+            return urls.filter { $0.isFileURL && !$0.hasDirectoryPath }
+                .compactMap(packet(forClipboardFileURL:))
+        }
+        return readCurrentPacket(from: pasteboard).map { [$0] } ?? []
+    }
+
     static func readCurrentPacket(from pasteboard: NSPasteboard = .general) -> ClipboardPacket? {
+        if let url = fileURLs(from: pasteboard).first(where: { $0.isFileURL && !$0.hasDirectoryPath }),
+           let packet = packet(forClipboardFileURL: url) {
+            return packet
+        }
         if let packet = readImagePacket(from: pasteboard) {
             return packet
         }
@@ -87,10 +185,41 @@ enum ClipboardCapture {
         return ClipboardPacket(kind: ClipType.detect(string).clipboardKind, text: string)
     }
 
+    /// Finder has used several representations for copied files across macOS
+    /// releases. Prefer typed NSURL decoding, then inspect modern file-url
+    /// pasteboard items, and finally the legacy filename-list flavor.
+    static func fileURLs(from pasteboard: NSPasteboard) -> [URL] {
+        let options: [NSPasteboard.ReadingOptionKey: Any] = [.urlReadingFileURLsOnly: true]
+        var urls = (pasteboard.readObjects(forClasses: [NSURL.self], options: options) as? [URL]) ?? []
+
+        for item in pasteboard.pasteboardItems ?? [] {
+            for type in [NSPasteboard.PasteboardType.fileURL,
+                         NSPasteboard.PasteboardType("public.file-url")] {
+                guard let value = item.string(forType: type),
+                      let url = URL(string: value), url.isFileURL else { continue }
+                urls.append(url)
+            }
+        }
+
+        let legacyType = NSPasteboard.PasteboardType("NSFilenamesPboardType")
+        if let paths = pasteboard.propertyList(forType: legacyType) as? [String] {
+            urls.append(contentsOf: paths.map { URL(fileURLWithPath: $0) })
+        }
+
+        var seen = Set<String>()
+        return urls.filter { seen.insert($0.standardizedFileURL.path).inserted }
+    }
+
     static func write(_ packet: ClipboardPacket, to pasteboard: NSPasteboard = .general) {
         pasteboard.clearContents()
 
         switch packet.kind {
+        case .file:
+            if let file = packet.file {
+                _ = FileClipSource.withAccess(to: file.id) { url in
+                    pasteboard.writeObjects([url as NSURL])
+                }
+            }
         case .image:
             if let data = packet.imageData, let image = NSImage(data: data) {
                 pasteboard.writeObjects([image])
@@ -137,15 +266,32 @@ enum ClipboardCapture {
 
     private static func readFileImagePacket(from string: String) -> ClipboardPacket? {
         let url = URL(fileURLWithPath: string)
+        return readImageFilePacket(from: url)
+    }
+
+    private static func readImageFilePacket(from url: URL) -> ClipboardPacket? {
         guard FileManager.default.fileExists(atPath: url.path) else { return nil }
 
         let ext = url.pathExtension.lowercased()
         let imageExtensions = ["png", "jpg", "jpeg", "gif", "webp", "heic", "heif", "bmp", "tif", "tiff"]
-        guard imageExtensions.contains(ext), let data = try? Data(contentsOf: url), NSImage(data: data) != nil else {
+        let contentType = UTType(filenameExtension: ext)
+        guard (imageExtensions.contains(ext) || contentType?.conforms(to: .image) == true),
+              let data = try? Data(contentsOf: url),
+              NSImage(data: data) != nil else {
             return nil
         }
 
         return ClipboardPacket(kind: .image, text: url.lastPathComponent, imageData: data)
+    }
+
+    private static func packet(forClipboardFileURL url: URL) -> ClipboardPacket? {
+        let hasAccess = url.startAccessingSecurityScopedResource()
+        defer { if hasAccess { url.stopAccessingSecurityScopedResource() } }
+
+        if let imagePacket = readImageFilePacket(from: url) {
+            return imagePacket
+        }
+        return FileClipSource.packet(for: url)
     }
 
     private static func imageSummary(for image: NSImage) -> String {
@@ -178,10 +324,138 @@ private extension NSColor {
     }
 }
 
+enum FileClipSource {
+    private static let defaultsKey = "fileClipSourceURLs"
+    private static let bookmarkKey = "fileClipSourceBookmarks"
+
+    static func packet(for url: URL) -> ClipboardPacket? {
+        guard url.isFileURL,
+              let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey, .contentModificationDateKey, .contentTypeKey]),
+              values.isRegularFile == true
+        else { return nil }
+        let id = UUID().uuidString
+        var sources = UserDefaults.standard.dictionary(forKey: defaultsKey) as? [String: String] ?? [:]
+        sources[id] = url.path
+        UserDefaults.standard.set(sources, forKey: defaultsKey)
+        if let bookmark = try? url.bookmarkData(options: .withSecurityScope,
+                                                includingResourceValuesForKeys: nil, relativeTo: nil) {
+            var bookmarks = UserDefaults.standard.dictionary(forKey: bookmarkKey) as? [String: String] ?? [:]
+            bookmarks[id] = bookmark.base64EncodedString()
+            UserDefaults.standard.set(bookmarks, forKey: bookmarkKey)
+        }
+        let type = values.contentType ?? UTType(filenameExtension: url.pathExtension) ?? .data
+        let metadata = FileClipMetadata(
+            id: id,
+            name: url.lastPathComponent,
+            size: Int64(values.fileSize ?? 0),
+            mimeType: type.preferredMIMEType ?? "application/octet-stream",
+            modifiedAtMs: values.contentModificationDate.map { Int64($0.timeIntervalSince1970 * 1000) },
+            thumbnailBase64: nil,
+            durationMs: nil,
+            width: nil,
+            height: nil,
+            artist: nil,
+            album: nil
+        )
+        return ClipboardPacket(kind: .file, text: metadata.name, file: metadata)
+    }
+
+    static func url(for id: String) -> URL? {
+        if let encoded = (UserDefaults.standard.dictionary(forKey: bookmarkKey) as? [String: String])?[id],
+           let data = Data(base64Encoded: encoded) {
+            var stale = false
+            if let secured = try? URL(resolvingBookmarkData: data, options: .withSecurityScope,
+                                      relativeTo: nil, bookmarkDataIsStale: &stale),
+               FileManager.default.fileExists(atPath: secured.path) {
+                return secured
+            }
+        }
+        guard let path = (UserDefaults.standard.dictionary(forKey: defaultsKey) as? [String: String])?[id] else { return nil }
+        let url = URL(fileURLWithPath: path)
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
+    }
+
+    static func withAccess<T>(to id: String, _ operation: (URL) throws -> T) rethrows -> T? {
+        guard let url = url(for: id) else { return nil }
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        return try operation(url)
+    }
+
+    static func thumbnail(for id: String) async -> Data? {
+        guard let url = url(for: id) else { return nil }
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        if let type = try? url.resourceValues(forKeys: [.contentTypeKey]).contentType,
+           type.conforms(to: .audio) {
+            let metadata = (try? await AVURLAsset(url: url).load(.commonMetadata)) ?? []
+            let artworkItem = AVMetadataItem.metadataItems(from: metadata,
+                                                           withKey: AVMetadataKey.commonKeyArtwork,
+                                                           keySpace: .common).first
+            if let artwork = try? await artworkItem?.load(.dataValue),
+               let image = NSImage(data: artwork) {
+                let side = max(image.size.width, image.size.height)
+                let scale = min(1, 320 / max(side, 1))
+                let target = NSSize(width: image.size.width * scale, height: image.size.height * scale)
+                let resized = NSImage(size: target, flipped: false) { rect in
+                    image.draw(in: rect)
+                    return true
+                }
+                guard let tiff = resized.tiffRepresentation,
+               let bitmap = NSBitmapImageRep(data: tiff),
+               let jpeg = bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.7]),
+                jpeg.count <= 160 * 1024 else { return nil }
+                return jpeg
+            }
+        }
+        let request = QLThumbnailGenerator.Request(
+            fileAt: url,
+            size: CGSize(width: 320, height: 320),
+            scale: 1,
+            representationTypes: .thumbnail
+        )
+        return await withCheckedContinuation { continuation in
+            QLThumbnailGenerator.shared.generateBestRepresentation(for: request) { representation, _ in
+                guard let representation else { continuation.resume(returning: nil); return }
+                let bitmap = NSBitmapImageRep(cgImage: representation.cgImage)
+                let data = bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.76])
+                continuation.resume(returning: (data?.count ?? 0) <= 160 * 1024 ? data : nil)
+            }
+        }
+    }
+
+    static func enrichMedia(_ file: FileClipMetadata) async -> FileClipMetadata {
+        guard file.mimeType.hasPrefix("audio/") || file.mimeType.hasPrefix("video/"),
+              let url = url(for: file.id) else { return file }
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        let asset = AVURLAsset(url: url)
+        var result = file
+        if let duration = try? await asset.load(.duration), duration.isNumeric {
+            result.durationMs = Int64(CMTimeGetSeconds(duration) * 1000)
+        }
+        if file.mimeType.hasPrefix("video/"),
+           let tracks = try? await asset.loadTracks(withMediaType: .video),
+           let track = tracks.first,
+           let size = try? await track.load(.naturalSize) {
+            result.width = Int(abs(size.width))
+            result.height = Int(abs(size.height))
+        }
+        if file.mimeType.hasPrefix("audio/") {
+            let metadata = (try? await asset.load(.commonMetadata)) ?? []
+            let artist = AVMetadataItem.metadataItems(from: metadata, withKey: AVMetadataKey.commonKeyArtist, keySpace: .common).first
+            let album = AVMetadataItem.metadataItems(from: metadata, withKey: AVMetadataKey.commonKeyAlbumName, keySpace: .common).first
+            result.artist = try? await artist?.load(.stringValue)
+            result.album = try? await album?.load(.stringValue)
+        }
+        return result
+    }
+}
+
 // MARK: - Clip Type — shared between popup and main window
 
 enum ClipType: String, Codable, CaseIterable {
-    case url, code, color, email, image, text
+    case url, code, color, email, image, file, text
 
     var clipboardKind: ClipboardKind {
         ClipboardKind(rawValue: rawValue) ?? .text

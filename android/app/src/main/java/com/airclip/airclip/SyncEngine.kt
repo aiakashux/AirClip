@@ -24,6 +24,18 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.OkHttpClient
 import java.util.UUID
+import java.io.File
+import java.io.RandomAccessFile
+
+data class FileTransferStatus(
+    val phase: String,
+    val received: Long,
+    val total: Long,
+    val error: String? = null,
+    val temporaryPreview: Boolean = false,
+)
+
+const val FILE_PREVIEW_MAX_BYTES = 3L * 1024L * 1024L
 
 private const val TAG = "SyncEngine"
 
@@ -40,6 +52,8 @@ object SyncEngine {
 
     private val _clipHistory = MutableStateFlow<List<ClipItemRecord>>(emptyList())
     val clipHistory: StateFlow<List<ClipItemRecord>> = _clipHistory
+    private val _fileTransfers = MutableStateFlow<Map<String, FileTransferStatus>>(emptyMap())
+    val fileTransfers: StateFlow<Map<String, FileTransferStatus>> = _fileTransfers
     private val _remoteInsertionId = MutableStateFlow<String?>(null)
     val remoteInsertionId: StateFlow<String?> = _remoteInsertionId
 
@@ -76,6 +90,9 @@ object SyncEngine {
             PeerManager.connectedPeersSnapshot()
                 .firstOrNull { it.deviceId == deviceId }
                 ?.let(::pushHistoryToPeer)
+        }
+        PeerManager.onFileMessage = { deviceId, message ->
+            scope.launch { handleFileMessage(deviceId, message) }
         }
         PeerManager.onPeerSeen = { deviceId, wifiNetwork ->
             appContext?.let { ctx ->
@@ -230,27 +247,12 @@ object SyncEngine {
      * Encrypt [text] and broadcast to all authenticated peers.
      * Always saves to local history, even if no peers are connected.
      */
-    fun sendClip(text: String, sensitiveOverride: Boolean = false) {
+    fun sendClip(text: String) {
         if (!Prefs.syncMode.allowsManualSend) {
             Log.d(TAG, "Clip send blocked by sync mode")
             return
         }
         markLocalActivity()
-        if (!sensitiveOverride) {
-            val assessment = SensitiveClipboardClassifier.classify(text)
-            val action = assessment.primaryFinding
-                ?.let { Prefs.sensitiveRule(it.category) }
-                ?: SensitiveRuleAction.ASK
-            if (SensitiveClipboardPolicy.decide(
-                    assessment,
-                    SensitiveSendIntent.MANUAL,
-                    action,
-                ) != SensitiveSendDecision.ALLOW
-            ) {
-                Log.d(TAG, "Clip send blocked by sensitive-content policy")
-                return
-            }
-        }
         scope.launch {
             if (!Prefs.syncMode.allowsManualSend) return@launch
             try {
@@ -341,6 +343,211 @@ object SyncEngine {
         }
     }
 
+    fun sendFileClip(file: FileClipMetadata, sourcePath: String) {
+        if (!Prefs.syncMode.allowsManualSend) return
+        scope.launch {
+            val source = File(sourcePath)
+            if (!source.isFile || source.length() != file.size) return@launch
+            val record = ClipItemRecord(
+                messageId = UUID.randomUUID().toString(),
+                seq = 0L,
+                fromDeviceId = AirclipIdentity.deviceId ?: "self",
+                timestampMs = System.currentTimeMillis(),
+                cipherHash = file.id.toByteArray().sha256Hex().take(16),
+                preview = file.name.take(40),
+                contentText = file.name,
+                kind = ClipKind.FILE.name,
+                file = file,
+                sourceFilePath = sourcePath,
+            )
+            appContext?.let { ctx ->
+                _clipHistory.value = ClipHistoryStore.merge(ctx, listOf(record))
+            }
+            if (PeerManager.connectedCount.value > 0) {
+                PeerManager.broadcast(
+                    ClipboardWirePayload.encode(record).toByteArray(Charsets.UTF_8),
+                    record.messageId, record.timestampMs, record.fromDeviceId,
+                    type = "file_clip",
+                )
+            }
+        }
+    }
+
+    fun availableFile(record: ClipItemRecord): File? {
+        val file = record.file ?: return null
+        val source = record.sourceFilePath?.let(::File)
+        if (source?.isFile == true) return source
+        val destination = downloadedFile(file)
+        return destination.takeIf { it.isFile && it.length() == file.size }
+    }
+
+    private fun downloadedFile(file: FileClipMetadata): File {
+        val directory = File(requireNotNull(appContext).filesDir, "downloaded-files").apply { mkdirs() }
+        val extension = file.name.substringAfterLast('.', "")
+            .takeIf { it.matches(Regex("[A-Za-z0-9]{1,12}")) }
+        return File(directory, file.id + (extension?.let { ".$it" } ?: ""))
+    }
+
+    private fun previewFile(file: FileClipMetadata): File {
+        val directory = File(requireNotNull(appContext).cacheDir, "file-previews").apply { mkdirs() }
+        val extension = file.name.substringAfterLast('.', "")
+            .takeIf { it.matches(Regex("[A-Za-z0-9]{1,12}")) }
+        return File(directory, file.id + (extension?.let { ".$it" } ?: ""))
+    }
+
+    fun availablePreviewFile(record: ClipItemRecord): File? {
+        val file = record.file ?: return null
+        if (file.size > FILE_PREVIEW_MAX_BYTES) return null
+        if (record.sourceFilePath != null) return File(record.sourceFilePath).takeIf { it.isFile }
+        return previewFile(file).takeIf { it.isFile && it.length() == file.size }
+    }
+
+    fun previewFile(record: ClipItemRecord) {
+        val file = record.file ?: return
+        if (file.size > FILE_PREVIEW_MAX_BYTES || record.sourceFilePath != null) return
+        val peer = PeerManager.connectedPeersSnapshot().firstOrNull { it.deviceId == record.fromDeviceId }
+        if (peer == null) {
+            _fileTransfers.value += file.id to FileTransferStatus("failed", 0, file.size, "Source device is offline", true)
+            return
+        }
+        val destination = previewFile(file)
+        if (destination.isFile && destination.length() == file.size) return
+        val partial = File(destination.path + ".part")
+        if (partial.length() > file.size) partial.delete()
+        val offset = partial.takeIf { it.isFile }?.length() ?: 0L
+        _fileTransfers.value += file.id to FileTransferStatus("downloading", offset, file.size, temporaryPreview = true)
+        peer.send(PeerManager.gson.toJson(mapOf(
+            "type" to "file_request", "file_id" to file.id, "offset" to offset.toString(),
+            "preview_limit" to file.size.toString(),
+        )))
+    }
+
+    fun clearPreviewFile(record: ClipItemRecord) {
+        val file = record.file ?: return
+        if (record.sourceFilePath == null) {
+            val destination = previewFile(file)
+            destination.delete()
+            File(destination.path + ".part").delete()
+        }
+        if (_fileTransfers.value[file.id]?.temporaryPreview == true) {
+            _fileTransfers.value -= file.id
+        }
+    }
+
+    fun downloadFile(record: ClipItemRecord) {
+        val file = record.file ?: return
+        val peer = PeerManager.connectedPeersSnapshot().firstOrNull { it.deviceId == record.fromDeviceId }
+        if (peer == null) {
+            _fileTransfers.value += file.id to FileTransferStatus("failed", 0, file.size, "Source device is offline")
+            return
+        }
+        val partial = File(downloadedFile(file).path + ".part")
+        if (partial.length() > file.size) partial.delete()
+        val offset = partial.takeIf { it.isFile }?.length() ?: 0L
+        _fileTransfers.value += file.id to FileTransferStatus("downloading", offset, file.size)
+        peer.send(PeerManager.gson.toJson(mapOf(
+            "type" to "file_request", "file_id" to file.id, "offset" to offset.toString(),
+        )))
+    }
+
+    private suspend fun handleFileMessage(deviceId: String, message: Map<String, String>) {
+        when (message["type"]) {
+            "file_request" -> handleFileRequest(deviceId, message)
+            "file_chunk" -> handleFileChunk(deviceId, message)
+        }
+    }
+
+    private suspend fun handleFileRequest(deviceId: String, message: Map<String, String>) {
+        val id = message["file_id"] ?: return
+        val peer = PeerManager.connectedPeersSnapshot().firstOrNull { it.deviceId == deviceId } ?: return
+        val record = _clipHistory.value.firstOrNull { it.file?.id == id && it.sourceFilePath != null }
+        val source = record?.sourceFilePath?.let(::File)
+        val file = record?.file
+        val offset = message["offset"]?.toLongOrNull()
+        if (source?.isFile != true || file == null || source.length() != file.size ||
+            offset == null || offset < 0 || offset > file.size) {
+            peer.send(PeerManager.gson.toJson(mapOf("type" to "file_chunk", "file_id" to id, "error" to "File unavailable")))
+            return
+        }
+        val previewLimitRaw = message["preview_limit"]
+        val previewLimit = previewLimitRaw?.toLongOrNull()
+        val transferLimit = if (previewLimitRaw != null) {
+            previewLimit?.takeIf { it in 0..FILE_PREVIEW_MAX_BYTES && it == file.size }
+                ?: run {
+                    peer.send(PeerManager.gson.toJson(mapOf("type" to "file_chunk", "file_id" to id, "error" to "Preview unavailable")))
+                    return
+                }
+        } else file.size
+        if (offset > transferLimit) {
+            peer.send(PeerManager.gson.toJson(mapOf("type" to "file_chunk", "file_id" to id, "error" to "Preview unavailable")))
+            return
+        }
+        runCatching {
+            val bytes = ByteArray(minOf(512 * 1024L, transferLimit - offset).toInt())
+            RandomAccessFile(source, "r").use { reader ->
+                reader.seek(offset)
+                reader.readFully(bytes)
+            }
+            val ciphertext = if (bytes.isEmpty()) "" else SealedBox.encryptForRecipient(bytes, peer.publicKey).ciphertextBase64
+            peer.send(PeerManager.gson.toJson(mapOf(
+                "type" to "file_chunk", "file_id" to id, "offset" to offset.toString(),
+                "ciphertext" to ciphertext,
+                "done" to (offset + bytes.size >= transferLimit).toString(),
+                "preview_only" to (previewLimit != null).toString(),
+            )))
+        }.onFailure {
+            peer.send(PeerManager.gson.toJson(mapOf("type" to "file_chunk", "file_id" to id, "error" to "File unavailable")))
+        }
+    }
+
+    private suspend fun handleFileChunk(deviceId: String, message: Map<String, String>) {
+        val id = message["file_id"] ?: return
+        val state = _fileTransfers.value[id] ?: return
+        if (state.phase != "downloading") return
+        val record = _clipHistory.value.firstOrNull { it.file?.id == id && it.fromDeviceId == deviceId } ?: return
+        val file = record.file ?: return
+        val failure = message["error"]
+        if (failure != null) {
+            _fileTransfers.value += id to state.copy(phase = "failed", error = failure)
+            return
+        }
+        val offset = message["offset"]?.toLongOrNull()
+        if (offset != state.received) return
+        val km = keyManager ?: return
+        val bytes = runCatching {
+            val ciphertext = message["ciphertext"].orEmpty()
+            if (ciphertext.isEmpty() && file.size == 0L) ByteArray(0) else
+                SealedBox.decryptForSelf(ciphertext, km.getPublicKeyBytes(), km.getPrivateKeyBytes())
+        }.getOrNull() ?: return
+        if (offset + bytes.size > file.size) return
+        val previewOnly = message["preview_only"] == "true" || state.temporaryPreview
+        if (previewOnly && file.size > FILE_PREVIEW_MAX_BYTES) return
+        val destination = if (previewOnly) previewFile(file) else downloadedFile(file)
+        val partial = File(destination.path + ".part")
+        runCatching {
+            RandomAccessFile(partial, "rw").use { writer ->
+                writer.seek(offset)
+                writer.write(bytes)
+            }
+            val received = offset + bytes.size
+            if (message["done"] == "true") {
+                check(received == file.size)
+                if (destination.exists()) destination.delete()
+                check(partial.renameTo(destination))
+                _fileTransfers.value += id to FileTransferStatus(if (previewOnly) "previewed" else "downloaded", received, file.size, temporaryPreview = previewOnly)
+            } else {
+                _fileTransfers.value += id to FileTransferStatus("downloading", received, file.size, temporaryPreview = previewOnly)
+                val peer = PeerManager.connectedPeersSnapshot().firstOrNull { it.deviceId == deviceId } ?: return
+                peer.send(PeerManager.gson.toJson(mapOf(
+                    "type" to "file_request", "file_id" to id, "offset" to received.toString(),
+                    "preview_limit" to if (previewOnly) file.size.toString() else null,
+                )))
+            }
+        }.onFailure {
+            _fileTransfers.value += id to state.copy(phase = "failed", error = "Could not save file")
+        }
+    }
+
     // ── Receiving ─────────────────────────────────────────────────────────────
 
     private fun processInboundClip(
@@ -386,8 +593,11 @@ object SyncEngine {
                     contentText  = text,
                     kind         = payload.kind.name,
                     imageDataBase64 = payload.imageDataBase64,
+                    file = payload.file,
                 )
-                if (payload.kind != ClipKind.IMAGE || !ImageClipboard.copy(ctx, record)) {
+                if (payload.kind == ClipKind.FILE) {
+                    // A remote file entry is metadata only until the user downloads it.
+                } else if (payload.kind != ClipKind.IMAGE || !ImageClipboard.copy(ctx, record)) {
                     val clip = ClipData.newPlainText("Airclip", text)
                     val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                     cm.setPrimaryClip(clip)
@@ -400,8 +610,10 @@ object SyncEngine {
                     if (_remoteInsertionId.value == messageId) _remoteInsertionId.value = null
                 }
 
-                WidgetState.save(ctx, WidgetState.PENDING, preview = text.take(40), lastText = text)
-                WidgetState.notifyWidgets(ctx)
+                if (payload.kind != ClipKind.FILE) {
+                    WidgetState.save(ctx, WidgetState.PENDING, preview = text.take(40), lastText = text)
+                    WidgetState.notifyWidgets(ctx)
+                }
 
                 Log.d(TAG, "Inbound clip from ${fromDeviceId.take(8)} len=${text.length}")
                 PrivacyAnalytics.record(ctx, AnalyticsEvent.FIRST_TRANSFER)
@@ -443,6 +655,7 @@ object SyncEngine {
                     contentText  = text,
                     kind         = payload.kind.name,
                     imageDataBase64 = payload.imageDataBase64,
+                    file = payload.file,
                 )
                 val updated = ClipHistoryStore.merge(ctx, listOf(record))
                 _clipHistory.value = updated
@@ -488,7 +701,7 @@ object SyncEngine {
                     val enc = SealedBox.encryptForRecipient(plain, peer.publicKey)
                     val json = PeerManager.gson.toJson(
                         mapOf(
-                            "type" to "history_clip",
+                            "type" to if (record.kind == ClipKind.FILE.name) "history_file_clip" else "history_clip",
                             "ciphertext" to enc.ciphertextBase64,
                             "nonce" to enc.nonce,
                             "ts" to record.timestampMs.toString(),

@@ -61,7 +61,7 @@ object SealedBox {
         privateKeyBytes: ByteArray
     ): ByteArray {
         val ciphertext = Base64.decode(ciphertextBase64, Base64.NO_WRAP)
-        require(ciphertext.size > Box.SEALBYTES) {
+        require(ciphertext.size >= Box.SEALBYTES) {
             "Ciphertext too short to be a valid sealed box"
         }
         val plaintext = ByteArray(ciphertext.size - Box.SEALBYTES)

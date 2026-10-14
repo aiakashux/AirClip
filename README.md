@@ -11,7 +11,7 @@ Airclip copies whatever you copy on one device and pastes it on the other. No cl
 - Copy on Mac → paste on Android (and vice versa)
 - Syncs text, links, and clipboard content automatically or on demand
 - Keeps a local history of your recent clips on each device
-- Blocks sensitive content (passwords, OTPs) from syncing — your rules
+- Syncs clipboard content to paired devices over your local network
 - Pairs devices once via QR code, then works silently in the background
 
 ## How It Works
@@ -90,10 +90,6 @@ xcodebuild \
 | Auto | Every clipboard change syncs instantly |
 | Manual | You tap/click to send |
 | Paused | Nothing syncs until resumed |
-
-## Sensitive Clipboard Policy
-
-Detects passwords, OTPs, and credit card numbers. Per-device policy: **Block**, **Ask**, or **Allow**.
 
 ---
 

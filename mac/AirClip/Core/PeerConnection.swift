@@ -86,11 +86,13 @@ final class PeerConnection {
         } else {
             // Authenticated
             switch type {
-            case "clip":          handleClip(json)
-            case "history_clip":  handleHistoryClip(json)
+            case "clip", "file_clip": handleClip(json)
+            case "history_clip", "history_file_clip": handleHistoryClip(json)
             case "history_delete": handleHistoryDelete(json)
             case "history_clear":  handleHistoryClear(json)
             case "history_request": handleHistoryRequest()
+            case "file_request": SyncEngine.shared.handleFileRequest(json, peer: self)
+            case "file_chunk": SyncEngine.shared.handleFileChunk(json, peer: self)
             case "heartbeat":     handleHeartbeat(json)
             case "heartbeat_ack": handleHeartbeatAck(json)
             case DeviceRemovalNotice.type:
@@ -390,7 +392,7 @@ final class PeerConnection {
             ) else { continue }
             let tsMs = Int64(item.receivedAt.timeIntervalSince1970 * 1000)
             sendJSON([
-                "type":           "history_clip",
+                "type":           item.clipType == .file ? "history_file_clip" : "history_clip",
                 "ciphertext":     ct.base64EncodedString(),
                 "nonce":          nonce.base64EncodedString(),
                 "ts":             "\(tsMs)",
@@ -449,6 +451,7 @@ final class PeerConnection {
     }
 
     func sendClip(
+        type: String = "clip",
         ciphertext: String,
         nonce: String,
         messageId: String,
@@ -456,7 +459,7 @@ final class PeerConnection {
         fromDeviceId: String
     ) {
         sendJSON([
-            "type": "clip",
+            "type": type,
             "ciphertext": ciphertext,
             "nonce": nonce,
             "msg_id": messageId,
@@ -484,6 +487,10 @@ final class PeerConnection {
             "ts": "\(Int64(Date().timeIntervalSince1970 * 1000))",
         ]
         if let ssid = currentSSID() { payload["ssid"] = ssid }
+        sendJSON(payload)
+    }
+
+    func sendFileMessage(_ payload: [String: Any]) {
         sendJSON(payload)
     }
 

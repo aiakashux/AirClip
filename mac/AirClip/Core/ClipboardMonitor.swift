@@ -80,11 +80,13 @@ final class ClipboardMonitor {
     // MARK: - Polling
 
     private func poll() {
-        guard SyncModeStore.shared.mode.allowsAutomaticCapture else { return }
-
         let current = NSPasteboard.general.changeCount
         guard current != lastChangeCount else { return }
         lastChangeCount = current
+
+        let explicitShare = NSPasteboard.general.data(forType: NSPasteboard.PasteboardType("com.airclip.share-files")) != nil
+        guard SyncModeStore.shared.mode.allowsAutomaticCapture ||
+              (explicitShare && SyncModeStore.shared.mode.allowsOutboundSync) else { return }
 
         // Rule 1: remote update wrote to the clipboard — skip
         if remoteUpdateInProgress {
@@ -98,16 +100,12 @@ final class ClipboardMonitor {
             return
         }
 
-        guard let packet = ClipboardCapture.readCurrentPacket(from: NSPasteboard.general) else { return }
-        guard SensitiveClipboardProtectionStore.shared.allowsAutomaticSend(packet) else { return }
-
-        // Rule 2: hash-based dedup
-        let hash = sha256(packet.fingerprint)
-        guard !recentHashes.contains(hash) else { return }
-
-        // Rule 3: new content — record hash and forward to SyncEngine
-        addHash(hash)
-        syncEngine?.sendClipboard(packet: packet)
+        for packet in ClipboardCapture.readCurrentPackets(from: NSPasteboard.general) {
+            let hash = sha256(packet.fingerprint)
+            guard !recentHashes.contains(hash) else { continue }
+            addHash(hash)
+            syncEngine?.sendClipboard(packet: packet)
+        }
     }
 
     // MARK: - Helpers

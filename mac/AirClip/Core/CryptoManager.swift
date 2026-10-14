@@ -63,11 +63,15 @@ final class CryptoManager {
     /// NaCl sealed box: encrypt plaintext for recipientPublicKey.
     /// Returns (ciphertext, sentinel nonce) — nonce field is protocol padding only.
     func encrypt(plaintext: String, recipientPublicKeyBase64: String) throws -> (ciphertext: Data, nonce: Data) {
+        try encrypt(data: Data(plaintext.utf8), recipientPublicKeyBase64: recipientPublicKeyBase64)
+    }
+
+    func encrypt(data: Data, recipientPublicKeyBase64: String) throws -> (ciphertext: Data, nonce: Data) {
         guard let recipientRaw = Data(base64Encoded: recipientPublicKeyBase64) else {
             throw CryptoError.invalidPublicKey
         }
         guard let ct = sodium.box.seal(
-            message: Bytes(plaintext.utf8),
+            message: Bytes(data),
             recipientPublicKey: Bytes(recipientRaw)
         ) else {
             throw CryptoError.encryptionFailed
@@ -80,6 +84,12 @@ final class CryptoManager {
 
     /// NaCl sealed box open. senderPublicKeyBase64 is unused — sealed box is anonymous.
     func decrypt(ciphertextBase64: String, nonceBase64: String, senderPublicKeyBase64: String) throws -> String {
+        let plain = try decryptData(ciphertextBase64: ciphertextBase64)
+        guard let text = String(data: plain, encoding: .utf8) else { throw CryptoError.decryptionFailed }
+        return text
+    }
+
+    func decryptData(ciphertextBase64: String) throws -> Data {
         guard let ctData = Data(base64Encoded: ciphertextBase64) else {
             throw CryptoError.decryptionFailed
         }
@@ -91,10 +101,7 @@ final class CryptoManager {
         ) else {
             throw CryptoError.decryptionFailed
         }
-        guard let text = String(bytes: plain, encoding: .utf8) else {
-            throw CryptoError.decryptionFailed
-        }
-        return text
+        return Data(plain)
     }
 
     // MARK: - UserDefaults persistence (64 bytes: publicKey[32] + secretKey[32])

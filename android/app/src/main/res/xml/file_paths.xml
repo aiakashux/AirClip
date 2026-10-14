@@ -3,4 +3,6 @@
     <cache-path
         name="shared_images"
         path="shared_images/" />
+    <files-path name="downloaded_files" path="downloaded-files/" />
+    <files-path name="shared_file_sources" path="shared-file-sources/" />
 </paths>

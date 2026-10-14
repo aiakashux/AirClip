@@ -12,8 +12,6 @@ private const val KEY_HISTORY_DEPTH = "history_depth"
 private const val KEY_HISTORY_DEPTH_VERSION = "history_depth_version"
 private const val HISTORY_DEPTH_VERSION = 4
 private const val DEFAULT_HISTORY_DEPTH = 2
-private const val KEY_SENSITIVE_MASTER_RULE = "sensitive_rule_master"
-private const val KEY_SENSITIVE_RULE_PREFIX = "sensitive_rule_"
 private const val KEY_ANALYTICS_ENABLED = "analytics_enabled"
 private const val KEY_LAST_UPDATE_CHECK = "last_update_check"
 private const val DEFAULT_URL  = "http://10.0.2.2:8000"
@@ -44,6 +42,12 @@ object Prefs {
 
     fun init(context: Context) {
         sp = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val legacySensitiveKeys = sp.all.keys.filter { it.startsWith("sensitive_rule_") }
+        if (legacySensitiveKeys.isNotEmpty()) {
+            sp.edit().apply {
+                legacySensitiveKeys.forEach(::remove)
+            }.apply()
+        }
     }
 
     var serverUrl: String
@@ -86,10 +90,6 @@ object Prefs {
                 .apply()
         }
 
-    var sensitiveMasterRule: SensitiveRuleAction
-        get() = SensitiveRuleAction.fromStoredValue(sp.getString(KEY_SENSITIVE_MASTER_RULE, null))
-        set(value) { sp.edit().putString(KEY_SENSITIVE_MASTER_RULE, value.name).apply() }
-
     var analyticsEnabled: Boolean
         get() = sp.getBoolean(KEY_ANALYTICS_ENABLED, false)
         set(value) { sp.edit().putBoolean(KEY_ANALYTICS_ENABLED, value).apply() }
@@ -97,24 +97,6 @@ object Prefs {
     var lastUpdateCheckMs: Long
         get() = sp.getLong(KEY_LAST_UPDATE_CHECK, 0L)
         set(value) { sp.edit().putLong(KEY_LAST_UPDATE_CHECK, value).apply() }
-
-    fun sensitiveRule(category: SensitiveCategory): SensitiveRuleAction =
-        if (sensitiveMasterRule == SensitiveRuleAction.ALLOW) {
-            SensitiveRuleAction.ALLOW
-        } else {
-            SensitiveRuleAction.fromStoredValue(
-                sp.getString("$KEY_SENSITIVE_RULE_PREFIX${category.name}", null)
-            )
-        }
-
-    fun setSensitiveRule(category: SensitiveCategory, action: SensitiveRuleAction) {
-        sp.edit()
-            .putString("$KEY_SENSITIVE_RULE_PREFIX${category.name}", action.name)
-            .apply()
-    }
-
-    fun sensitiveRules(): Map<SensitiveCategory, SensitiveRuleAction> =
-        SensitiveCategory.entries.associateWith(::sensitiveRule)
 
     /** Remove all persisted UI preferences, reverting to defaults. */
     fun clearAll() {
@@ -125,12 +107,9 @@ object Prefs {
             .remove(KEY_APPEARANCE)
             .remove(KEY_HISTORY_DEPTH)
             .remove(KEY_HISTORY_DEPTH_VERSION)
-            .remove(KEY_SENSITIVE_MASTER_RULE)
             .remove(KEY_ANALYTICS_ENABLED)
             .remove(KEY_LAST_UPDATE_CHECK)
-        SensitiveCategory.entries.forEach {
-            editor.remove("$KEY_SENSITIVE_RULE_PREFIX${it.name}")
-        }
+        sp.all.keys.filter { it.startsWith("sensitive_rule_") }.forEach(editor::remove)
         editor.apply()
     }
 }

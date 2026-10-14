@@ -30,5 +30,5 @@ You'll get a response within 72 hours. Please allow time to patch before public 
 - All clipboard packets are encrypted with **NaCl sealed boxes** before leaving the device
 - Device identity keys are generated locally and never leave the device
 - No clipboard content is sent to any server — LAN only
-- Sensitive content detection (passwords, OTPs, card numbers) runs locally before any sync decision
+- Clipboard contents are not classified or filtered before sync; users control transfer through the sync mode and paired-device membership
 - Pairing is done via QR code — no unauthenticated device can receive clips

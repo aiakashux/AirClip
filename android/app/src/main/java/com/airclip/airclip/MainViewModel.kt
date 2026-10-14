@@ -50,8 +50,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 syncMode = Prefs.syncMode,
                 appearanceSetting = Prefs.appearanceSetting,
                 historyDepth = Prefs.historyDepth,
-                sensitiveMasterAction = Prefs.sensitiveMasterRule,
-                sensitiveRules = Prefs.sensitiveRules(),
                 analyticsEnabled = Prefs.analyticsEnabled,
             )
         }
@@ -184,11 +182,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val historyDepth: Int               = 4,
         val lanRuntimeDiagnostic: LanRuntimeDiagnostic = LanRuntimeDiagnostic(),
         val lastManualRefreshAtMs: Long     = System.currentTimeMillis(),
-        val sensitiveMasterAction: SensitiveRuleAction = SensitiveRuleAction.ALLOW,
-        val sensitiveRules: Map<SensitiveCategory, SensitiveRuleAction> =
-            SensitiveCategory.entries.associateWith { SensitiveRuleAction.ALLOW },
-        val pendingSensitiveFinding: SensitiveFinding? = null,
-        val sensitiveBlockedNotice: SensitiveFinding? = null,
         val openDevicesOnFirstLaunch: Boolean = false,
         val showNetworkSwitchConfirmation: Boolean = false,
         val updateInfo: UpdateInfo?                 = null,
@@ -678,7 +671,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun onCheckForUpdates() {
-        _uiState.update { it.copy(updateStatus = "Checking…") }
+        _uiState.update { it.copy(updateStatus = "Checking for updates…") }
         viewModelScope.launch(Dispatchers.IO) {
             val result = updateManager.check(force = true)
             val info = result.update
@@ -750,12 +743,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun onCaptureClipboard() {
         if (!_uiState.value.syncMode.allowsManualSend) return
-        captureCurrentClipboard(SensitiveSendIntent.MANUAL)
+        captureCurrentClipboard()
     }
 
-    private fun captureCurrentClipboard(
-        intent: SensitiveSendIntent = SensitiveSendIntent.AUTOMATIC,
-    ) {
+    private fun captureCurrentClipboard() {
         if (AirclipIdentity.deviceId == null) return
         val app = getApplication<Application>()
         val cm  = app.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -771,78 +762,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
         if (text == null) return
 
-        requestSend(text, intent)
+        sendClipboardText(text)
     }
 
     fun onClipboardChanged(text: String) {
         if (!_uiState.value.syncMode.allowsAutomaticCapture) return
         if (AirclipIdentity.deviceId == null) return
-        requestSend(text, SensitiveSendIntent.AUTOMATIC)
+        sendClipboardText(text)
     }
 
-    private var pendingSensitiveText: String? = null
-
-    private fun requestSend(text: String, intent: SensitiveSendIntent) {
-        val assessment = SensitiveClipboardClassifier.classify(text)
-        val action = assessment.primaryFinding
-            ?.let { _uiState.value.sensitiveRules[it.category] }
-            ?: SensitiveRuleAction.ASK
-        when (SensitiveClipboardPolicy.decide(assessment, intent, action)) {
-            SensitiveSendDecision.ALLOW -> {
-                viewModelScope.launch(Dispatchers.IO) {
-                    SyncEngine.sendClip(text)
-                }
-            }
-            SensitiveSendDecision.BLOCK -> {
-                pendingSensitiveText = null
-                _uiState.update {
-                    it.copy(sensitiveBlockedNotice = assessment.primaryFinding)
-                }
-            }
-            SensitiveSendDecision.REQUIRE_CONFIRMATION -> {
-                pendingSensitiveText = text
-                _uiState.update {
-                    it.copy(pendingSensitiveFinding = assessment.primaryFinding)
-                }
-            }
-        }
-    }
-
-    fun onConfirmSensitiveSend() {
-        val text = pendingSensitiveText ?: return
-        pendingSensitiveText = null
-        _uiState.update { it.copy(pendingSensitiveFinding = null) }
+    private fun sendClipboardText(text: String) {
         viewModelScope.launch(Dispatchers.IO) {
-            SyncEngine.sendClip(text, sensitiveOverride = true)
-        }
-    }
-
-    fun onCancelSensitiveSend() {
-        pendingSensitiveText = null
-        _uiState.update { it.copy(pendingSensitiveFinding = null) }
-    }
-
-    fun onSensitiveBlockedNoticeShown() {
-        _uiState.update { it.copy(sensitiveBlockedNotice = null) }
-    }
-
-    fun onSensitiveRuleChanged(
-        category: SensitiveCategory,
-        action: SensitiveRuleAction,
-    ) {
-        Prefs.setSensitiveRule(category, action)
-        _uiState.update { state ->
-            state.copy(sensitiveRules = state.sensitiveRules + (category to action))
-        }
-    }
-
-    fun onSensitiveMasterRuleChanged(action: SensitiveRuleAction) {
-        Prefs.sensitiveMasterRule = action
-        _uiState.update {
-            it.copy(
-                sensitiveMasterAction = action,
-                sensitiveRules = Prefs.sensitiveRules(),
-            )
+            SyncEngine.sendClip(text)
         }
     }
 
@@ -919,7 +850,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             UiState(
                 deviceName = android.os.Build.MODEL,
                 syncMode = Prefs.syncMode,
-                sensitiveRules = Prefs.sensitiveRules(),
             )
         }
         log("This device was removed from the Airclip space")

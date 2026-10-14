@@ -32,7 +32,7 @@ For interactive development, open `mac/Airclip.xcodeproj` and run the `Airclip` 
 
 1. Pair with Android using QR/code flows.
 2. Monitor `NSPasteboard`.
-3. Apply sync mode and sensitive clipboard policies.
+3. Apply sync mode.
 4. Encrypt and send clipboard packets to paired LAN peers.
 5. Receive and decrypt live clipboard packets.
 6. Merge history backfill without changing the active clipboard.
@@ -54,8 +54,6 @@ mac/Airclip/
     LocalHistoryStore.swift
     PeerConnection.swift
     PeerManager.swift
-    SensitiveClipboardPolicy.swift
-    SensitiveClipboardProtectionStore.swift
     SyncEngine.swift
     SyncModeStore.swift
   MenuBar/

@@ -5,6 +5,10 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.pdf.PdfRenderer
+import android.os.ParcelFileDescriptor
+import android.util.Base64
 import android.net.Uri
 import android.util.LruCache
 import androidx.annotation.DrawableRes
@@ -83,12 +87,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.viewinterop.AndroidView
 import com.airclip.airclip.R
 import com.airclip.airclip.AirclipIdentity
 import com.airclip.airclip.ClipItemRecord
 import com.airclip.airclip.ClipKind
 import com.airclip.airclip.ImageClipboard
 import com.airclip.airclip.MainViewModel
+import com.airclip.airclip.SyncEngine
+import com.airclip.airclip.FILE_PREVIEW_MAX_BYTES
 import com.airclip.airclip.SyncMode
 import com.airclip.airclip.parseClipboardColor
 import com.airclip.airclip.ui.theme.*
@@ -101,7 +108,12 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
+import java.io.File
 import java.util.*
+import android.media.MediaPlayer
+import android.widget.MediaController
+import android.widget.VideoView
+import androidx.core.content.FileProvider
 
 // ── Screen ────────────────────────────────────────────────────────────────────
 
@@ -285,6 +297,10 @@ fun ClipboardScreen(
             onCopy = {
                 viewModel.onHistoryItemCopyStarted(record)
                 copyRecordToClipboard(context, record)
+            },
+            onFileAction = {
+                if (SyncEngine.availableFile(record) != null) openRecordFile(context, record)
+                else SyncEngine.downloadFile(record)
             },
             onOpenLink = { openRecordLink(context, record) },
             onSave = {
@@ -664,6 +680,7 @@ private fun FeedFilterRow(
         item { FeedChip("Text", selectedKind == ClipKind.TEXT) { onSelectedKind(if (selectedKind == ClipKind.TEXT) null else ClipKind.TEXT) } }
         item { FeedChip("Link", selectedKind == ClipKind.URL) { onSelectedKind(if (selectedKind == ClipKind.URL) null else ClipKind.URL) } }
         item { FeedChip("Image", selectedKind == ClipKind.IMAGE) { onSelectedKind(if (selectedKind == ClipKind.IMAGE) null else ClipKind.IMAGE) } }
+        item { FeedChip("Files", selectedKind == ClipKind.FILE) { onSelectedKind(if (selectedKind == ClipKind.FILE) null else ClipKind.FILE) } }
         item { FeedChip("Color", selectedKind == ClipKind.COLOR) { onSelectedKind(if (selectedKind == ClipKind.COLOR) null else ClipKind.COLOR) } }
     }
 }
@@ -756,11 +773,125 @@ private fun FeedClipItem(
             ClipKind.TEXT  -> TextFeedItem(record, timeStr)
             ClipKind.URL   -> UrlFeedItem(record, timeStr)
             ClipKind.IMAGE -> ImageFeedItem(record, timeStr)
+            ClipKind.FILE -> FileFeedItem(record, timeStr)
             ClipKind.COLOR -> ColorFeedItem(record, timeStr)
             ClipKind.CODE  -> TextFeedItem(record, timeStr)
             ClipKind.EMAIL -> TextFeedItem(record, timeStr)
         }
     }
+}
+
+@Composable
+private fun FileFeedItem(record: ClipItemRecord, timeStr: String) {
+    val c = LocalAirclipColors.current
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 18.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        FileVisual(
+            record,
+            28.dp,
+            showBorder = false,
+            backgroundOpacity = 0.07f,
+            iconSize = 16.dp,
+        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(record.file?.name ?: record.displayText, fontSize = 18.sp, color = c.textPrimary,
+                maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Spacer(Modifier.height(6.dp))
+            Text("${record.file?.size?.let(::formatFileSize) ?: "File"} · $timeStr",
+                fontSize = 13.sp, color = c.textSecondary)
+        }
+    }
+    HorizontalDivider(thickness = 1.dp, color = c.borderSubtle)
+}
+
+@Composable
+private fun FileVisual(
+    record: ClipItemRecord,
+    size: Dp,
+    showBorder: Boolean = true,
+    backgroundOpacity: Float = 0.05f,
+    iconSize: Dp = size * 0.86f,
+) {
+    val c = LocalAirclipColors.current
+    val bytes = remember(record.file?.thumbnailBase64) {
+        record.file?.thumbnailBase64?.let { runCatching { Base64.decode(it, Base64.NO_WRAP) }.getOrNull() }
+    }
+    val bitmap = remember(bytes) { bytes?.let { BitmapFactory.decodeByteArray(it, 0, it.size) } }
+    if (bitmap != null && (size > 28.dp || record.file?.let { isImageFile(it.name, it.mimeType) } == true)) {
+        Image(bitmap.asImageBitmap(), contentDescription = null,
+            modifier = Modifier.size(size).clip(RoundedCornerShape(6.dp)), contentScale = ContentScale.Crop)
+    } else {
+        val name = record.file?.name.orEmpty()
+        val mimeType = record.file?.mimeType.orEmpty()
+        val shape = RoundedCornerShape(6.dp)
+        Box(
+            modifier = Modifier
+                .size(size)
+                .clip(shape)
+                .background(fileIconAccentColor(name, mimeType).copy(alpha = backgroundOpacity))
+                .then(if (showBorder) Modifier.border(0.5.dp, c.borderDefault, shape) else Modifier),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (record.file?.let { isImageFile(it.name, it.mimeType) } == true) {
+                Icon(Icons.Outlined.Image, contentDescription = "Image file",
+                    tint = fileIconAccentColor(name, mimeType), modifier = Modifier.size(iconSize))
+            } else {
+                Image(painterResource(fileIconResource(name, mimeType)),
+                    contentDescription = null, modifier = Modifier.size(iconSize))
+            }
+        }
+    }
+}
+
+private fun fileIconAccentColor(name: String, mimeType: String): Color = when (fileIconResource(name, mimeType)) {
+    R.drawable.file_icon_pdf -> Color(0xFFDC0C11)
+    R.drawable.file_icon_presentation -> Color(0xFFFC6F40)
+    R.drawable.file_icon_windows_installer, R.drawable.file_icon_apple_installer -> Color(0xFF33A1FE)
+    R.drawable.file_icon_android_installer -> Color(0xFF50DA8C)
+    R.drawable.file_icon_zip -> Color(0xFFFFBA02)
+    R.drawable.file_icon_rar -> Color(0xFFA79455)
+    R.drawable.file_icon_audio, R.drawable.file_icon_video -> Color(0xFFED144E)
+    R.drawable.file_icon_code -> Color(0xFFDF53E3)
+    else -> Color(0xFF33A1FE)
+}
+
+@DrawableRes
+private fun fileIconResource(name: String, mimeType: String): Int {
+    val extension = name.substringAfterLast('.', "").lowercase(Locale.ROOT)
+    return when (extension) {
+        "pdf" -> R.drawable.file_icon_pdf
+        "ppt", "pptx", "key" -> R.drawable.file_icon_presentation
+        "exe", "msi", "msix" -> R.drawable.file_icon_windows_installer
+        "dmg", "ipa", "pkg", "app" -> R.drawable.file_icon_apple_installer
+        "apk", "aab" -> R.drawable.file_icon_android_installer
+        "zip", "7z", "tar", "gz", "bz2" -> R.drawable.file_icon_zip
+        "rar" -> R.drawable.file_icon_rar
+        "mp3", "m4a", "aac", "wav", "flac", "ogg", "opus", "aiff" -> R.drawable.file_icon_audio
+        "mp4", "m4v", "mov", "mkv", "avi", "webm", "wmv" -> R.drawable.file_icon_video
+        "html", "htm", "css", "js", "ts", "jsx", "tsx", "json", "xml", "py", "swift", "kt", "java", "c", "cpp", "h", "rs", "go", "sh", "sql" -> R.drawable.file_icon_code
+        else -> when {
+            mimeType == "application/pdf" -> R.drawable.file_icon_pdf
+            mimeType.startsWith("audio/") -> R.drawable.file_icon_audio
+            mimeType.startsWith("video/") -> R.drawable.file_icon_video
+            mimeType.startsWith("text/") && extension != "txt" -> R.drawable.file_icon_code
+            else -> R.drawable.file_icon_document
+        }
+    }
+}
+
+private fun isImageFile(name: String, mimeType: String): Boolean =
+    mimeType.startsWith("image/") || name.substringAfterLast('.', "").lowercase(Locale.ROOT) in setOf(
+        "png", "jpg", "jpeg", "gif", "webp", "heic", "heif", "bmp", "tif", "tiff",
+    )
+
+private fun formatFileSize(bytes: Long): String = when {
+    bytes >= 1_000_000_000 -> String.format(Locale.US, "%.1f GB", bytes / 1_000_000_000.0)
+    bytes >= 1_000_000 -> String.format(Locale.US, "%.1f MB", bytes / 1_000_000.0)
+    bytes >= 1_000 -> String.format(Locale.US, "%.1f KB", bytes / 1_000.0)
+    else -> "$bytes B"
 }
 
 // ── Item type layouts ─────────────────────────────────────────────────────────
@@ -1080,12 +1211,17 @@ private fun ClipPreviewSheet(
     record: ClipItemRecord,
     onDismiss: () -> Unit,
     onCopy: () -> Unit,
+    onFileAction: () -> Unit,
     onOpenLink: () -> Unit,
     onSave: () -> Unit,
     onDelete: () -> Unit,
 ) {
     val c = LocalAirclipColors.current
     val kind = recordKind(record)
+    val fileTransfers by SyncEngine.fileTransfers.collectAsState()
+    val fileTransfer = record.file?.id?.let(fileTransfers::get)
+    val fileAvailable = remember(record, fileTransfer) { SyncEngine.availableFile(record) != null }
+    val temporaryPreviewFile = remember(record, fileTransfer) { SyncEngine.availablePreviewFile(record) }
     val bitmap = if (kind == ClipKind.IMAGE) rememberPreviewBitmap(record) else null
     val linkPreview = if (kind == ClipKind.URL) rememberLinkPreview(record) else null
     val embeddedLinkPreview = if (kind == ClipKind.TEXT) rememberEmbeddedLinkPreview(record.displayText) else null
@@ -1114,6 +1250,15 @@ private fun ClipPreviewSheet(
         copied = false
     }
 
+    LaunchedEffect(record.messageId, record.file?.id) {
+        record.file?.takeIf { it.size <= FILE_PREVIEW_MAX_BYTES }?.let {
+            if (SyncEngine.availablePreviewFile(record) == null) SyncEngine.previewFile(record)
+        }
+    }
+    DisposableEffect(record.messageId) {
+        onDispose { SyncEngine.clearPreviewFile(record) }
+    }
+
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
@@ -1128,14 +1273,16 @@ private fun ClipPreviewSheet(
                 .padding(horizontal = 24.dp)
                 .padding(bottom = 20.dp),
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Text(sourceNameFor(record.fromDeviceId), fontSize = 14.sp, lineHeight = 20.sp, color = c.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                Spacer(Modifier.width(16.dp))
-                Text(formatTime(record.timestampMs), fontSize = 14.sp, lineHeight = 20.sp, color = c.textSecondary)
+            if (kind != ClipKind.FILE) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text(sourceNameFor(record.fromDeviceId), fontSize = 14.sp, lineHeight = 20.sp, color = c.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                    Spacer(Modifier.width(16.dp))
+                    Text(formatTime(record.timestampMs), fontSize = 14.sp, lineHeight = 20.sp, color = c.textSecondary)
+                }
             }
 
             Spacer(Modifier.height(20.dp))
@@ -1143,6 +1290,100 @@ private fun ClipPreviewSheet(
             Box(modifier = Modifier.fillMaxWidth().weight(1f, fill = false)
                 .verticalScroll(rememberScrollState())) {
                 when (kind) {
+                    ClipKind.FILE -> {
+                        val file = record.file
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(20.dp),
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .border(1.dp, c.borderDefault, RoundedCornerShape(14.dp))
+                                    .padding(20.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(12.dp),
+                            ) {
+                                if (temporaryPreviewFile != null) {
+                                    FileInlinePreview(record, temporaryPreviewFile)
+                                } else {
+                                    FileVisual(record, 104.dp)
+                                }
+                                Text(
+                                    file?.name ?: record.displayText,
+                                    fontSize = 18.sp,
+                                    lineHeight = 24.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = c.textPrimary,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                file?.let {
+                                    Text(
+                                        buildList {
+                                            add(formatFileSize(it.size))
+                                            if (it.mimeType.isNotBlank() && it.mimeType != "application/octet-stream") add(it.mimeType)
+                                            if (it.width != null && it.height != null) add("${it.width} × ${it.height}")
+                                            it.durationMs?.let { duration -> add("${duration / 1000}s") }
+                                        }.joinToString(" · "),
+                                        fontSize = 14.sp,
+                                        lineHeight = 20.sp,
+                                        color = c.textSecondary,
+                                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                    )
+                                }
+                                if (fileTransfer?.phase == "downloading") {
+                                    LinearProgressIndicator(
+                                        progress = { fileTransfer.received.toFloat() / maxOf(fileTransfer.total, 1).toFloat() },
+                                        modifier = Modifier.fillMaxWidth(),
+                                    )
+                                    Text(
+                                        "${if (fileTransfer.temporaryPreview) "Preparing preview" else "Downloading"} ${fileTransfer.received * 100 / maxOf(fileTransfer.total, 1)}%",
+                                        color = c.textSecondary,
+                                    )
+                                }
+                                fileTransfer?.error?.let { Text(it, color = c.destructive) }
+                            }
+
+                            if (file != null) {
+                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Text("Information", fontSize = 14.sp, fontWeight = FontWeight.Medium,
+                                        color = c.textSecondary, modifier = Modifier.padding(start = 4.dp, bottom = 4.dp))
+                                    val rows = buildList {
+                                        add("Source" to sourceNameFor(record.fromDeviceId))
+                                        add("Type" to "File")
+                                        add("Size" to formatFileSize(file.size))
+                                        file.mimeType.takeIf { it.isNotBlank() }?.let { add("Format" to it) }
+                                        file.width?.let { width -> file.height?.let { height -> add("Dimensions" to "${width} × ${height}") } }
+                                        file.durationMs?.let { add("Duration" to "${it / 1000}s") }
+                                        file.artist?.let { add("Artist" to it) }
+                                        file.album?.let { add("Album" to it) }
+                                        add("Copied" to formatTime(record.timestampMs))
+                                    }
+                                    rows.forEachIndexed { index, (label, value) ->
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clip(RoundedCornerShape(10.dp))
+                                                .background(if (index % 2 == 0) c.bgElevated else Color.Transparent)
+                                                .padding(horizontal = 14.dp, vertical = 11.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                        ) {
+                                            Text(label, fontSize = 14.sp, color = c.textSecondary)
+                                            Spacer(Modifier.width(16.dp))
+                                            Text(value, fontSize = 14.sp, color = c.textPrimary,
+                                                textAlign = androidx.compose.ui.text.style.TextAlign.End,
+                                                maxLines = 2, overflow = TextOverflow.Ellipsis,
+                                                modifier = Modifier.weight(1f, fill = false))
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                     ClipKind.URL -> linkPreview?.let { LinkPreview(it, Modifier.fillMaxWidth()) }
                     ClipKind.IMAGE -> Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         ImagePreviewBox(
@@ -1192,10 +1433,13 @@ private fun ClipPreviewSheet(
             ) {
                 Button(
                     onClick = {
-                        onCopy()
-                        copied = true
-                        copyFeedbackVersion++
+                        if (kind == ClipKind.FILE) onFileAction() else {
+                            onCopy()
+                            copied = true
+                            copyFeedbackVersion++
+                        }
                     },
+                    enabled = kind != ClipKind.FILE || fileTransfer?.phase != "downloading",
                     modifier = Modifier
                         .weight(1f)
                         .height(52.dp),
@@ -1206,6 +1450,17 @@ private fun ClipPreviewSheet(
                     ),
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (kind == ClipKind.FILE) {
+                            if (fileTransfer?.phase != "downloading") {
+                                Icon(
+                                    painter = painterResource(if (fileAvailable) R.drawable.ic_file_open else R.drawable.ic_file_download),
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                                Spacer(Modifier.width(8.dp))
+                            }
+                            Text(if (fileAvailable) "Open" else if (fileTransfer?.phase == "downloading") "Downloading…" else "Download")
+                        } else {
                         CopyConfirmationIcon(
                             progress = copyMorphProgress,
                             tint = copyButtonContentColor,
@@ -1214,6 +1469,7 @@ private fun ClipPreviewSheet(
                         Spacer(Modifier.width(8.dp))
                         Crossfade(targetState = copied, animationSpec = tween(150), label = "copy confirmation") { isCopied ->
                             Text(if (isCopied) "Copied" else "Copy")
+                        }
                         }
                     }
                 }
@@ -1226,13 +1482,15 @@ private fun ClipPreviewSheet(
                         iconSize = 22.dp,
                     )
                 }
-                Crossfade(targetState = record.isSaved, animationSpec = tween(120), label = "preview save") { saved ->
-                    PreviewResourceIconButton(
-                        iconRes = if (saved) R.drawable.ic_clip_unsave else R.drawable.ic_clip_save,
-                        description = if (saved) "Remove from saved" else "Save",
-                        onClick = onSave,
-                        tint = if (saved) c.accent else c.textSecondary,
-                    )
+                if (kind != ClipKind.FILE) {
+                    Crossfade(targetState = record.isSaved, animationSpec = tween(120), label = "preview save") { saved ->
+                        PreviewResourceIconButton(
+                            iconRes = if (saved) R.drawable.ic_clip_unsave else R.drawable.ic_clip_save,
+                            description = if (saved) "Remove from saved" else "Save",
+                            onClick = onSave,
+                            tint = if (saved) c.accent else c.textSecondary,
+                        )
+                    }
                 }
                 PreviewResourceIconButton(R.drawable.ic_clip_delete, "Delete", onDelete, c.destructive)
             }
@@ -1280,6 +1538,155 @@ private fun CopyConfirmationIcon(
 }
 
 @Composable
+private fun FileInlinePreview(record: ClipItemRecord, file: File) {
+    val metadata = record.file ?: return
+    val name = metadata.name.lowercase(Locale.ROOT)
+    when {
+        metadata.mimeType == "application/pdf" || name.endsWith(".pdf") -> PdfPagesPreview(file)
+        metadata.mimeType.startsWith("video/") -> {
+            AndroidView(
+                factory = { viewContext ->
+                    VideoView(viewContext).apply {
+                        val controls = MediaController(viewContext)
+                        controls.setAnchorView(this)
+                        setMediaController(controls)
+                        setVideoURI(Uri.fromFile(file))
+                    }
+                },
+                modifier = Modifier.fillMaxWidth().heightIn(min = 180.dp, max = 320.dp)
+                    .clip(RoundedCornerShape(10.dp)),
+            )
+        }
+        metadata.mimeType.startsWith("audio/") -> AudioFilePreview(file, metadata.name)
+        metadata.mimeType.startsWith("image/") || listOf(".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".heic")
+            .any(name::endsWith) -> AsyncImage(
+                model = file,
+                contentDescription = metadata.name,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 200.dp, max = 360.dp)
+                    .clip(RoundedCornerShape(10.dp)),
+                contentScale = ContentScale.Fit,
+            )
+        metadata.mimeType.startsWith("text/") || listOf(".txt", ".md", ".csv", ".json", ".xml", ".log")
+            .any(name::endsWith) -> PlainTextFilePreview(file)
+        else -> FileVisual(record, 96.dp)
+    }
+}
+
+@Composable
+private fun PlainTextFilePreview(file: File) {
+    val c = LocalAirclipColors.current
+    val content by produceState(initialValue = "Loading preview…", file.absolutePath) {
+        value = withContext(Dispatchers.IO) {
+            runCatching { file.readText(Charsets.UTF_8).take(30_000) }
+                .getOrElse { "Text preview unavailable" }
+        }
+    }
+    SelectionContainer {
+        Text(
+            content,
+            color = c.textPrimary,
+            fontSize = 14.sp,
+            lineHeight = 20.sp,
+            modifier = Modifier.fillMaxWidth().heightIn(max = 360.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(c.bgElevated).verticalScroll(rememberScrollState()).padding(16.dp),
+        )
+    }
+}
+
+@Composable
+private fun PdfPagesPreview(file: File) {
+    val pageCount by produceState(initialValue = 0, file.absolutePath) {
+        value = withContext(Dispatchers.IO) {
+            runCatching {
+                ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY).use { descriptor ->
+                    PdfRenderer(descriptor).use { renderer -> renderer.pageCount }
+                }
+            }.getOrDefault(0)
+        }
+    }
+    if (pageCount == 0) {
+        Text("PDF preview unavailable", color = LocalAirclipColors.current.textSecondary)
+        return
+    }
+    LazyColumn(
+        modifier = Modifier.fillMaxWidth().heightIn(max = 440.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        items(pageCount) { pageIndex ->
+            val bitmap by produceState<Bitmap?>(initialValue = null, file.absolutePath, pageIndex) {
+                value = withContext(Dispatchers.IO) {
+                    runCatching {
+                        ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY).use { descriptor ->
+                            PdfRenderer(descriptor).use { renderer ->
+                                renderer.openPage(pageIndex).use { page ->
+                                    val scale = minOf(900f / page.width.coerceAtLeast(1), 1200f / page.height.coerceAtLeast(1))
+                                    val width = (page.width * scale).toInt().coerceIn(1, 900)
+                                    val height = (page.height * scale).toInt().coerceIn(1, 1200)
+                                    Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).also { page.render(it, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY) }
+                                }
+                            }
+                        }
+                    }.getOrNull()
+                }
+            }
+            bitmap?.let {
+                Image(
+                    bitmap = it.asImageBitmap(),
+                    contentDescription = "PDF page ${pageIndex + 1} of $pageCount",
+                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp))
+                        .border(0.5.dp, LocalAirclipColors.current.borderSubtle, RoundedCornerShape(6.dp)),
+                    contentScale = ContentScale.FillWidth,
+                )
+            } ?: Box(Modifier.fillMaxWidth().height(240.dp), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+            }
+        }
+    }
+}
+
+@Composable
+private fun AudioFilePreview(file: File, name: String) {
+    val c = LocalAirclipColors.current
+    val context = LocalContext.current
+    var player by remember(file.absolutePath) { mutableStateOf<MediaPlayer?>(null) }
+    var prepared by remember(file.absolutePath) { mutableStateOf(false) }
+    var playing by remember(file.absolutePath) { mutableStateOf(false) }
+    DisposableEffect(file.absolutePath) {
+        val created = MediaPlayer()
+        player = created
+        runCatching {
+            created.setDataSource(context, Uri.fromFile(file))
+            created.setOnPreparedListener { prepared = true }
+            created.setOnCompletionListener { playing = false }
+            created.prepareAsync()
+        }.onFailure { prepared = false }
+        onDispose {
+            player = null
+            runCatching { created.stop() }
+            created.release()
+        }
+    }
+    Row(
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+            .background(c.bgElevated).padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Icon(Icons.Outlined.AudioFile, contentDescription = null, tint = c.accent, modifier = Modifier.size(32.dp))
+        Text(name, color = c.textPrimary, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        IconButton(onClick = {
+            player?.let { active ->
+                if (active.isPlaying) { active.pause(); playing = false }
+                else if (prepared) { active.start(); playing = true }
+            }
+        }, enabled = prepared) {
+            Icon(if (playing) Icons.Outlined.Pause else Icons.Outlined.PlayArrow, contentDescription = if (playing) "Pause audio preview" else "Play audio preview", tint = c.textPrimary)
+        }
+    }
+}
+
+@Composable
 private fun PreviewResourceIconButton(
     @DrawableRes iconRes: Int,
     description: String,
@@ -1309,6 +1716,16 @@ private fun copyRecordToClipboard(context: Context, record: ClipItemRecord) {
     if (runCatching { ImageClipboard.copy(context, record) }.getOrDefault(false)) return
     val mgr = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
     mgr.setPrimaryClip(ClipData.newPlainText("Airclip", record.displayText))
+}
+
+private fun openRecordFile(context: Context, record: ClipItemRecord) {
+    val file = SyncEngine.availableFile(record) ?: return
+    val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", file)
+    val intent = Intent(Intent.ACTION_VIEW).apply {
+        setDataAndType(uri, record.file?.mimeType ?: "application/octet-stream")
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+    runCatching { context.startActivity(intent) }
 }
 
 private fun isToday(timestampMs: Long, now: Long): Boolean {

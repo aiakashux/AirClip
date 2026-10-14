@@ -33,6 +33,6 @@ If cloud relay returns, it should be:
 
 1. Explicit opt-in.
 2. End-to-end encrypted.
-3. Sensitive-policy aware.
+3. Clearly distinct from the LAN-first flow.
 4. Clear about remote-network status.
 5. Re-documented before implementation resumes.

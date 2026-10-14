@@ -77,8 +77,6 @@ These appear to be behavior/spec drift in the current working tree and should be
 | Delete item | Yes, with Undo | Yes, immediate | Add Mac Undo |
 | Clear all history | Missing from current screen | Missing from current screen; only legacy unused view has it | Missing on both; required by PRD |
 | Retention | 1/3/7/15/30 days/limit | 7/30/90 days/forever | Align choices and semantics |
-| Sensitive-content master policy | Yes | Yes | Parity |
-| Per-category sensitive rules | Logic exists, not exposed | Exposed | Android UI gap |
 | Share-sheet/manual entry | Android share target + widget | Menu-bar picker | Platform-specific equivalents |
 | Keyboard shortcuts | Not applicable in same form | Listed in Settings, not implemented | Misleading Mac UI; wire them or remove the claims |
 | Sync diagnostics | Actionable banners | Small hub text | Mac needs a visible offline/failed state and reconnect action |
@@ -93,7 +91,6 @@ Must-have before adding new scope:
 3. Visible Mac type filters, including Color, using the already-present filter state.
 4. Clear History on both platforms, with saved-item behavior stated clearly.
 5. Mac delete Undo and actual Mac keyboard shortcuts.
-6. A single cross-platform behavior contract for defaults, history limits, retention, clip types, and sensitive rules.
 
 Useful after stabilization:
 
@@ -188,7 +185,7 @@ Exit criterion: both directions recover without relaunch across the four lifecyc
 3. Align retention options and history limit.
 4. Add Clear History to both apps.
 5. Add Mac delete Undo.
-6. Wire Mac shortcuts; expose Android per-category sensitive rules.
+6. Wire Mac shortcuts.
 
 Exit criterion: the feature table has no unintended platform gaps.
 

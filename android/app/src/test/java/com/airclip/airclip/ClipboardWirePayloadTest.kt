@@ -2,6 +2,7 @@ package com.airclip.airclip
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertFalse
 import org.junit.Test
 
 class ClipboardWirePayloadTest {
@@ -91,5 +92,27 @@ class ClipboardWirePayloadTest {
 
         assertEquals(fullText, decoded.text)
         assertEquals(ClipKind.TEXT, decoded.kind)
+    }
+
+    @Test
+    fun `file clip round trip carries metadata but no file bytes`() {
+        val file = FileClipMetadata(
+            id = "source-file-1", name = "movie.mp4", size = 1_073_741_824L,
+            mimeType = "video/mp4", durationMs = 7_200_000L, width = 1920, height = 1080,
+        )
+        val record = ClipItemRecord(
+            messageId = "message-1", seq = 0L, fromDeviceId = "android",
+            timestampMs = 12_345L, cipherHash = "hash", preview = file.name,
+            contentText = file.name, kind = ClipKind.FILE.name,
+            file = file, sourceFilePath = "/private/source-file-1",
+        )
+
+        val encoded = ClipboardWirePayload.encode(record)
+        val decoded = ClipboardWirePayload.decode(encoded)
+
+        assertEquals(ClipKind.FILE, decoded.kind)
+        assertEquals(file, decoded.file)
+        assertFalse(encoded.contains("sourceFilePath"))
+        assertFalse(encoded.contains("/private/source-file-1"))
     }
 }

@@ -21,7 +21,6 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.input.pointer.util.VelocityTrackerAddPointsFix
 import androidx.core.view.WindowCompat
@@ -72,7 +71,6 @@ class MainActivity : ComponentActivity() {
             }
 
             AirclipTheme(appearanceSetting = uiState.appearanceSetting) {
-                val uriHandler = LocalUriHandler.current
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background,
@@ -114,25 +112,6 @@ class MainActivity : ComponentActivity() {
                         )
                     }
 
-                    uiState.updateInfo?.let { update ->
-                        AlertDialog(
-                            onDismissRequest = viewModel::onUpdateLater,
-                            title = { Text("Airclip ${update.versionName} is available") },
-                            text = { Text(update.releaseNotes) },
-                            confirmButton = {
-                                TextButton(onClick = {
-                                    if (runCatching { uriHandler.openUri(update.downloadUrl) }.isSuccess) {
-                                        viewModel.onUpdateOpened()
-                                    } else {
-                                        viewModel.onUpdateOpenFailed()
-                                    }
-                                }) { Text("Update") }
-                            },
-                            dismissButton = {
-                                TextButton(onClick = viewModel::onUpdateLater) { Text("Later") }
-                            },
-                        )
-                    }
                 }
             }
         }

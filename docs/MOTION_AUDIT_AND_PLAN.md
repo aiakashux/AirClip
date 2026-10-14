@@ -38,7 +38,6 @@ Use the existing Airclip motion language as the authority:
 | Card press scales to 0.965 | Use 0.98 for 80–100 ms, or rely on the fill change | Enough tactile confirmation without a noticeable jump |
 | Keyboard selection changes immediately | Keep it immediate | Arrow-key navigation is frequent and must track input exactly |
 | Copy confirmation appears as a short toast and closes the popover | Keep the brief fade/4 pt offset; keep total feedback under about 700 ms | It confirms success without blocking the workflow |
-| Sensitive content is statically blurred | Keep redaction static; reveal/conceal via a 100–120 ms opacity crossfade, never animate blur radius | Preserves privacy while avoiding an expensive, distracting blur animation |
 | Empty popover, coachmark, manual Send, See All/Open App footer | Fade coachmark once at 150–180 ms; use existing hover/press feedback for actions; leave empty state static | Only transient state needs motion |
 | Connection badge can pulse whenever connected | Pulse opacity only while actively syncing; connected and offline states remain still | Continuous motion should represent ongoing work, not success |
 
@@ -69,7 +68,6 @@ Use the existing Airclip motion language as the authority:
 | Row selection and keyboard movement | Keep immediate | Selection is high-frequency navigation |
 | Preview switches between selected items abruptly | Crossfade preview content in 120–150 ms for pointer selection; switch immediately for keyboard traversal | Adds continuity only when it will not lag input |
 | Link metadata and image previews pop in after loading | Fade loaded media/content in for 120–150 ms; use a static placeholder and spinner only after roughly 400 ms | Async completion benefits from a soft handoff; fast loads should not flash a loader |
-| Sensitive preview reveal changes abruptly | Crossfade redacted and revealed layers for 100–120 ms; do not animate blur | Keeps the privacy boundary legible |
 | Copy action already swaps to success feedback | Keep the 120 ms crossfade, shorten the reset to about 800 ms, and suppress movement with Reduced Motion | Clear, compact confirmation |
 | Open, Reveal, Copy, Save, Delete floating actions | Keep local hover/press feedback; crossfade only stateful icons such as Save/Unsave | Avoid animating destructive or external navigation itself |
 | Saved coachmark enters and waits 2.2 seconds before exit | Enter with fade/4 pt movement at 160 ms; dismiss after 1.2–1.6 seconds with a 100–120 ms fade | It stays visible long enough to read without interrupting repeat saves |
@@ -94,8 +92,7 @@ Use the existing Airclip motion language as the authority:
 
 | Before | After | Why |
 |---|---|---|
-| Appearance, history, sync, and sensitive choices update abruptly | Animate only local fill/border/text color for 100–150 ms; allow the system theme change to remain native | Confirms selection without adding a second global transition |
-| Sensitive category rows appear/disappear when the master rule changes | Reveal/collapse the group with opacity plus 4 pt movement over 180–200 ms | Shows that the master rule controls the child settings |
+| Appearance, history, and sync choices update abruptly | Animate only local fill/border/text color for 100–150 ms; allow the system theme change to remain native | Confirms selection without adding a second global transition |
 | Menus and destructive confirmations | Keep native menu and alert transitions | No custom animation is needed |
 | Shortcut recorder enters/leaves recording mode abruptly | Animate border/fill and prompt crossfade for 100–120 ms; capture each key immediately | The mode change needs feedback; keystrokes do not |
 | Clear-shortcut affordance appears/disappears | Fade over 100 ms | Small state continuity |
@@ -124,7 +121,6 @@ Use the existing Airclip motion language as the authority:
 | Home, Devices, and Settings replace abruptly | Crossfade for 120–150 ms with no horizontal slide | Tabs are peers, not a forward/back hierarchy |
 | Bottom-nav indicator, icon, and label switch immediately | Animate fill and color for 120–150 ms; crossfade active/inactive icons; retain Material ripple | Gives one consistent selection signal without bounce |
 | Device-connected tip uses scale plus a spring | Replace spring with 150–180 ms ease-out fade and 0.96-to-1 scale; fade-only under Reduced Motion | Keeps the useful reveal while removing spring physics |
-| Sensitive-send dialog and blocked snackbar | Keep native Material motion | These are standard system-like feedback surfaces |
 | Status/navigation bar color changes with paired state | Let the theme/window apply immediately or use the root fade only; do not separately animate system bars | Avoids mismatched simultaneous transitions |
 
 ### Home clipboard feed
@@ -170,7 +166,6 @@ Use the existing Airclip motion language as the authority:
 |---|---|---|
 | Selectable rows open Material modal sheets | Keep native bottom-sheet motion and drag behavior | Platform behavior already provides origin and modality |
 | Radio selection and displayed row value update | Keep native radio animation; crossfade the row value for 100–120 ms after dismissal | Confirms the chosen result without animating the entire page |
-| Sensitive category rows appear/disappear abruptly | Reveal/collapse the group over 180–200 ms with fade; fade-only under Reduced Motion | Shows parent-child dependency |
 | Appearance changes the full color scheme | Use the platform/theme transition if provided; do not add a custom full-screen overlay | One theme change is enough |
 | Show Tips, version, Clear History, and Leave Network rows | Use Material ripple only | These are ordinary or destructive actions, not animation showcases |
 | Clear History and Leave Network confirmation dialogs | Keep native dialog motion; crossfade resulting app root only when leaving returns to onboarding | Maintains platform expectations |
@@ -199,7 +194,6 @@ Use the existing Airclip motion language as the authority:
 |---|---|---|
 | Share target is a transparent activity that returns a Toast | Keep native Toast/activity behavior; do not build a custom animated surface | It should finish as quickly as the platform allows |
 | Home-screen widget swaps among No Devices, Synced, Pending, and Ready to Send via `RemoteViews` | Keep state replacement immediate; do not add an animation dependency or fake repeated updates | Launcher support varies and widget refreshes are constrained |
-| Widget Send/Paste action invokes a transparent activity and may show a native sensitive-content alert | Keep the native alert; let the widget state change be the confirmation | A hidden helper activity should not introduce another UI layer |
 | Widget status dot and labels | Change atomically with each widget update; no pulse loop | Widgets should be glanceable and battery-cheap |
 | Android system splash, activity transitions, permission UI, keyboard, notifications, back gesture | Retain platform behavior | These surfaces are owned by Android and already account for accessibility/settings |
 
@@ -208,7 +202,6 @@ Use the existing Airclip motion language as the authority:
 - Clipboard text as the user types or as every timestamp/countdown second changes.
 - Keyboard selection, arrow navigation, shortcut recording keystrokes, Copy/Paste hotkeys, or global-shortcut opening.
 - Sticky headers, scroll-linked collapse beyond their direct gesture response, or rows merely becoming visible during normal scrolling.
-- Sensitive content via changing blur radius.
 - Connected/healthy status continuously. Only active work may use a bounded opacity pulse.
 - Native menus, alerts, sheets, snackbars, ripples, scrollbars, permission prompts, window controls, scanner camera preview, To­­asts, and widgets with custom replacements.
 - Dead/unreachable Mac orbit components.
@@ -263,7 +256,6 @@ Exit: the primary clipboard loop—receive, find, preview, copy/save/delete—fe
 ### Phase 4 — Pairing, devices, and settings
 
 1. Add device/status/diagnostic transitions and pairing QR/success handoffs.
-2. Add sensitive-rule child-section reveal and compact settings value feedback.
 3. Leave alerts, sheets, permission prompts, scanner activity, and destructive confirmations native.
 
 Exit: structural and asynchronous changes are visible; steady-state screens remain still.
@@ -292,6 +284,6 @@ Exit: no animation exceeds 350 ms, no action waits for animation to complete, an
 ## Recommended priority
 
 - P0: remove conflicting spring/spin/shake/blur/stagger motion; Reduced Motion coverage; eliminate duplicate popover animation.
-- P1: clipboard workflow, app/tab navigation, dropdowns, device status, pairing success, sensitive-setting reveal.
+- P1: clipboard workflow, app/tab navigation, dropdowns, device status, pairing success.
 - P2: rare first-run entrances and optional async media fades.
 - Skip: custom widget animation, scanner sweep, animated system dialogs/menus, timestamps/countdowns, dead orbit UI.

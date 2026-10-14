@@ -197,6 +197,7 @@ final class PeerManager: ObservableObject {
                     recipientPublicKeyBase64: pk
                 )
                 peer.sendClip(
+                    type: packet.kind == .file ? "file_clip" : "clip",
                     ciphertext: ct.base64EncodedString(),
                     nonce: nonce.base64EncodedString(),
                     messageId: messageId,

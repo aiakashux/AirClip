@@ -13,7 +13,6 @@ Airclip currently focuses on:
 3. Exchanging clipboard packets over LAN WebSocket connections on TCP `7878`.
 4. Encrypting clipboard payloads before network transfer.
 5. Supporting Auto, Manual, and Paused sync modes.
-6. Blocking or confirming sensitive clipboard content before send.
 7. Keeping local history on each device.
 8. Backfilling recent local history after peer authentication.
 
@@ -146,14 +145,12 @@ After pairing:
 Auto:
 
 1. Clipboard changes are captured automatically.
-2. Allowed content is sent to connected peers.
-3. Sensitive content follows the configured policy.
+2. Clipboard content is sent to connected peers.
 
 Manual:
 
 1. Clipboard changes are not sent automatically.
 2. Explicit send actions still work.
-3. Sensitive content still follows the configured policy.
 
 Paused:
 
@@ -173,27 +170,6 @@ Current behavior:
 4. Filters support All, Text, Links, and Images.
 5. History backfill merges peer history without writing to the active clipboard.
 
-## Sensitive Clipboard Protection
-
-Sensitive checks run locally before sending.
-
-Covered examples include:
-
-1. Password-like strings.
-2. API keys and tokens.
-3. Private keys.
-4. Recovery phrases.
-5. Payment cards.
-6. One-time codes.
-
-Each category can be configured as:
-
-1. Block.
-2. Ask.
-3. Allow.
-
-Block rejects automatic and explicit sends. Ask blocks automatic sends and requires confirmation for explicit sends. Allow permits sending for that category.
-
 ## Manual Validation Queue
 
 Use `docs/MANUAL_VALIDATION_QUEUE.md` for the current user-facing manual test list.
@@ -203,7 +179,6 @@ The highest-value validation passes are:
 1. Fresh pairing from reset state.
 2. Auto and Manual text transfer both directions.
 3. Paused mode teardown.
-4. Sensitive Block, Ask, and Allow behavior.
 5. Remove device and verify reconnect rejection.
 6. Re-pair after removal.
 7. History search, filters, save, delete, clear, retention, and restart persistence.
@@ -249,10 +224,9 @@ This remains part of the manual validation queue.
 Check:
 
 1. Current sync mode.
-2. Sensitive policy for the copied content.
-3. Whether the peer is connected in Devices.
-4. Whether the item already exists and duplicate suppression skipped it.
-5. Whether clipboard permissions are restricted by the OS.
+2. Whether the peer is connected in Devices.
+3. Whether the item already exists and duplicate suppression skipped it.
+4. Whether clipboard permissions are restricted by the OS.
 
 ### History item tap causes an echo
 
@@ -273,4 +247,4 @@ Current backend status:
 3. Backend auth/account/device bootstrap is legacy or future optional infrastructure, not active clipboard transport.
 4. Do not treat backend relay docs, old specs, or old plans as current Airclip behavior.
 
-If cloud relay returns later, it should be explicitly opt-in, encrypted end to end, sensitive-policy aware, and clearly distinct from the LAN-first flow.
+If cloud relay returns later, it should be explicitly opt-in, encrypted end to end, and clearly distinct from the LAN-first flow.

@@ -16,7 +16,7 @@ Airclip is a private clipboard sync utility for people who work across multiple 
 ## Product Principles
 
 1. **Privacy first, but visible.** Encryption alone isn't enough. The UI must make control obvious.
-2. **Automatic until risky.** Auto-sync for normal text. Sensitive content gets blocked or confirmed.
+2. **Predictable sync.** Auto, Manual, and Paused modes control when clipboard content is sent.
 3. **Manual send must exist.** Users need a deliberate action for moments where auto-sync feels too broad.
 4. **Platform honesty.** macOS can monitor the clipboard. Android and iOS have restrictions. Design around that, don't hide it.
 5. **Local-first is the trust story.** LAN sync is default. Cloud relay, if ever added, is explicit opt-in.
@@ -36,20 +36,6 @@ Airclip is a private clipboard sync utility for people who work across multiple 
 - **Auto** — every clipboard change syncs instantly
 - **Manual** — tap/click to send only
 - **Paused** — no LAN activity at all
-
-### Sensitive Clipboard Protection
-Runs locally before any content leaves the device.
-
-| Category | Default |
-|----------|---------|
-| Passwords | Block |
-| API keys / tokens | Block |
-| Private keys | Block |
-| Recovery phrases | Block |
-| Payment cards | Block |
-| OTP / 2FA codes | Ask |
-
-Per-category policy: **Block**, **Ask**, or **Allow**.
 
 ### Pairing
 - QR code exchange, local only
@@ -75,7 +61,7 @@ Per-category policy: **Block**, **Ask**, or **Allow**.
 - Mac → Android text sync in < 2 seconds on LAN
 - Android → Mac manual send in < 2 seconds on LAN
 - No clipboard plaintext in logs
-- Sensitive test samples blocked from auto-sync
+- Clipboard payloads are encrypted before LAN transfer
 - User can pause sync, clear history, and remove a device without confusion
 
 ## Non-Goals (Current MVP)

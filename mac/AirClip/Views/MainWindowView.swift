@@ -2,7 +2,44 @@ import SwiftUI
 import SwiftData
 import AppKit
 import Quartz
+import QuickLookUI
 import Carbon
+import UniformTypeIdentifiers
+
+private struct DroppedFileCandidate: Identifiable {
+    let url: URL
+    let name: String
+    let size: Int64
+    let kindName: String
+
+    var id: String { url.standardizedFileURL.path }
+
+    init?(url: URL) {
+        guard url.isFileURL,
+              let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey, .contentTypeKey]),
+              values.isRegularFile == true else { return nil }
+        self.url = url
+        self.name = url.lastPathComponent
+        self.size = Int64(values.fileSize ?? 0)
+        self.kindName = values.contentType?.localizedDescription ?? "File"
+    }
+}
+
+private struct EmbeddedFileQuickLookPreview: NSViewRepresentable {
+    let url: URL
+
+    func makeNSView(context: Context) -> QLPreviewView {
+        let view = QLPreviewView(frame: .zero, style: .normal)!
+        view.previewItem = url as NSURL
+        return view
+    }
+
+    func updateNSView(_ view: QLPreviewView, context: Context) {
+        guard (view.previewItem as? NSURL)?.path != url.path else { return }
+        view.previewItem = url as NSURL
+        view.refreshPreviewItem()
+    }
+}
 
 private final class QuickLookImagePreviewer: NSObject, QLPreviewPanelDataSource {
     static let shared = QuickLookImagePreviewer()
@@ -101,6 +138,7 @@ private enum MainWindowLayout {
     static let imageBadgeFill = Color(hex: "#DB438A").opacity(0.12)
     static let imageBadgeForeground = Color(hex: "#DB438A")
     static let imagePreviewBadgeFill = Color.white.opacity(0.50)
+    static let fileIconFallbackColor = Color(hex: "#33A1FE")
     static let colorBadgeFill = Color(hex: "#4D4D4D").opacity(0.12)
     static let colorBadgeForeground = Color(hex: "#4D4D4D")
     static let badgeBorder = Color(hex: "#808080").opacity(0.2)
@@ -176,9 +214,15 @@ private struct FilterArrowPressStyle: ButtonStyle {
 struct MainWindowView: View {
     @Query private var allItems: [ClipboardItem]
     @ObservedObject private var alertCenter = AirclipAlertCenter.shared
+    @ObservedObject private var identity = AirclipIdentity.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var activePage: MainPage = .home
     @State private var isNavigationCollapsed = false
+    @State private var isFileDropTargeted = false
+    @State private var droppedFiles: [DroppedFileCandidate] = []
+    @State private var dropSpaceName = ""
+    @State private var showFileDropConfirmation = false
+    @State private var showUnsupportedDropAlert = false
 
     private var savedCount: Int {
         allItems.filter(\.isSaved).count
@@ -224,6 +268,27 @@ struct MainWindowView: View {
         .frame(width: MainWindowLayout.contentWidth, height: MainWindowLayout.contentHeight, alignment: .topLeading)
         .frame(width: MainWindowLayout.windowWidth, height: MainWindowLayout.windowHeight, alignment: .topLeading)
         .background(MainWindowPalette.shell)
+        .overlay {
+            if isFileDropTargeted {
+                ZStack {
+                    RoundedRectangle(cornerRadius: MainWindowLayout.mainCardCornerRadius, style: .continuous)
+                        .fill(Color.accent.opacity(0.10))
+                    VStack(spacing: 8) {
+                        Image(systemName: "doc.on.doc")
+                            .font(.system(size: 24, weight: .medium))
+                        Text("Drop files to share with your Space")
+                            .font(.system(size: 14, weight: .medium))
+                    }
+                    .foregroundColor(.textPrimary)
+                    .padding(20)
+                    RoundedRectangle(cornerRadius: MainWindowLayout.mainCardCornerRadius, style: .continuous)
+                        .strokeBorder(Color.accent.opacity(0.75), style: StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
+                }
+                .padding(8)
+                .allowsHitTesting(false)
+                .transition(.opacity)
+            }
+        }
         .overlay(alignment: .bottom) {
             if let alert = alertCenter.current {
                 AirclipBottomAlert(
@@ -245,6 +310,21 @@ struct MainWindowView: View {
             .timingCurve(0.25, 0.46, 0.45, 0.94, duration: MainWindowMotion.sidebarDuration),
             value: isNavigationCollapsed
         )
+        .onDrop(of: [UTType.fileURL], isTargeted: $isFileDropTargeted, perform: receiveFileDrop)
+        .sheet(isPresented: $showFileDropConfirmation, onDismiss: { droppedFiles = [] }) {
+            FileDropConfirmationSheet(
+                files: droppedFiles,
+                spaceName: dropSpaceName,
+                canShare: SyncModeStore.shared.mode.allowsOutboundSync,
+                onCancel: { showFileDropConfirmation = false },
+                onShare: shareDroppedFiles
+            )
+        }
+        .alert("No supported files to share", isPresented: $showUnsupportedDropAlert) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text("Airclip can share individual files. Folders and items without an accessible file are not added to your Space.")
+        }
         .onReceive(NotificationCenter.default.publisher(for: .openSettingsTab)) { _ in
             withAnimation(.timingCurve(0.25, 0.46, 0.45, 0.94, duration: MainWindowMotion.sidebarDuration)) {
                 activePage = .settings
@@ -268,6 +348,76 @@ struct MainWindowView: View {
                 isNavigationCollapsed.toggle()
             }
         }
+    }
+
+    private func receiveFileDrop(providers: [NSItemProvider]) -> Bool {
+        let fileProviders = providers.filter {
+            $0.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier)
+        }
+        guard !fileProviders.isEmpty else { return false }
+
+        let group = DispatchGroup()
+        let lock = NSLock()
+        var urls: [URL] = []
+        for provider in fileProviders {
+            group.enter()
+            provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
+                if let url = Self.fileURL(from: item) {
+                    lock.lock()
+                    urls.append(url)
+                    lock.unlock()
+                }
+                group.leave()
+            }
+        }
+        group.notify(queue: .main) {
+            lock.lock()
+            let loadedURLs = urls
+            lock.unlock()
+            var seen = Set<String>()
+            let candidates = loadedURLs
+                .filter { seen.insert($0.standardizedFileURL.path).inserted }
+                .compactMap(DroppedFileCandidate.init(url:))
+            guard !candidates.isEmpty else {
+                showUnsupportedDropAlert = true
+                return
+            }
+            droppedFiles = candidates
+            dropSpaceName = identity.spaceName.trimmingCharacters(in: .whitespacesAndNewlines)
+            if dropSpaceName.isEmpty { dropSpaceName = "your Airclip Space" }
+            showFileDropConfirmation = true
+        }
+        return true
+    }
+
+    private static func fileURL(from item: NSSecureCoding?) -> URL? {
+        if let url = item as? URL, url.isFileURL { return url }
+        if let url = item as? NSURL, url.isFileURL { return url as URL }
+        if let data = item as? Data {
+            if let url = URL(dataRepresentation: data, relativeTo: nil), url.isFileURL { return url }
+            if let string = String(data: data, encoding: .utf8),
+               let url = URL(string: string), url.isFileURL { return url }
+        }
+        if let string = item as? String,
+           let url = URL(string: string), url.isFileURL { return url }
+        return nil
+    }
+
+    private func shareDroppedFiles() {
+        guard SyncModeStore.shared.mode.allowsOutboundSync else { return }
+        let files = droppedFiles
+        showFileDropConfirmation = false
+        let packets = files.compactMap { ClipboardCapture.packet(forDroppedFile: $0.url) }
+        guard !packets.isEmpty else {
+            showUnsupportedDropAlert = true
+            return
+        }
+        packets.forEach { SyncEngine.shared.sendClipboard(packet: $0) }
+        let count = packets.count
+        alertCenter.show(
+            count == 1 ? "Added to \(dropSpaceName)" : "Added \(count) items to \(dropSpaceName)",
+            kind: .success
+        )
     }
 
     private var sidebarColumn: some View {
@@ -531,6 +681,7 @@ private enum ClipTypeFilter: String, CaseIterable {
     case text
     case links
     case images
+    case files
     case colors
 
     var title: String {
@@ -539,6 +690,7 @@ private enum ClipTypeFilter: String, CaseIterable {
         case .text: return "Text"
         case .links: return "Links"
         case .images: return "Images"
+        case .files: return "Files"
         case .colors: return "Color"
         }
     }
@@ -549,6 +701,7 @@ private enum ClipTypeFilter: String, CaseIterable {
         case .text: return .text
         case .links: return .url
         case .images: return .image
+        case .files: return .file
         case .colors: return .color
         }
     }
@@ -565,8 +718,8 @@ private struct ClipboardWorkspace: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Query(sort: \ClipboardItem.receivedAt, order: .reverse) private var allItems: [ClipboardItem]
-    @ObservedObject private var revealStore = SensitiveContentRevealStore.shared
     @ObservedObject private var syncModeStore = SyncModeStore.shared
+    @ObservedObject private var syncEngine = SyncEngine.shared
 
     let filter: ClipFilter
     let workspaceWidth: CGFloat
@@ -939,7 +1092,7 @@ private struct ClipboardWorkspace: View {
                 clipTypeBadge(for: item)
                 VStack(alignment: .leading, spacing: 8) {
                     if item.clipType == .url {
-                        URLClipRowText(item: item, shouldRedact: shouldRedact(item))
+                        URLClipRowText(item: item)
                     } else {
                         Text(item.text)
                             .font(titleFont(for: item))
@@ -947,7 +1100,6 @@ private struct ClipboardWorkspace: View {
                             .lineSpacing(2.2)
                             .lineLimit(1)
                             .truncationMode(.tail)
-                            .blur(radius: shouldRedact(item) ? 4 : 0)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     HStack(spacing: 0) {
@@ -1109,6 +1261,25 @@ private struct ClipboardWorkspace: View {
                         .foregroundColor(MainWindowLayout.imageBadgeForeground)
                 }
             }
+        case .file:
+            clipBadge(
+                background: (item.fileMetadata?.iconAccentColor ?? MainWindowLayout.fileIconFallbackColor).opacity(0.07),
+                showsBorder: false
+            ) {
+                if item.fileMetadata?.isImage == true,
+                   let thumbnail = item.fileMetadata?.thumbnailImage {
+                    Image(nsImage: thumbnail)
+                        .resizable().aspectRatio(contentMode: .fill)
+                        .frame(width: 27, height: 27).clipped()
+                        .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+                } else if item.fileMetadata?.isImage == true {
+                    AirclipIcon(.image, size: MainWindowLayout.rowIconWidth)
+                        .foregroundColor(MainWindowLayout.imageBadgeForeground)
+                } else {
+                    Image(item.fileMetadata?.iconAssetName ?? "FileIconDocument")
+                        .resizable().interpolation(.high).frame(width: 16, height: 16)
+                }
+            }
         case .email:
             clipBadge(background: MainWindowLayout.textBadgeFill) {
                 AirclipIcon(.text, size: MainWindowLayout.rowIconWidth)
@@ -1124,13 +1295,16 @@ private struct ClipboardWorkspace: View {
 
     private func clipBadge<Content: View>(
         background: Color,
+        showsBorder: Bool = true,
         @ViewBuilder content: () -> Content
     ) -> some View {
         ZStack {
             RoundedRectangle(cornerRadius: 6, style: .continuous)
                 .fill(background)
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .strokeBorder(MainWindowLayout.badgeBorder, lineWidth: 0.5)
+            if showsBorder {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .strokeBorder(MainWindowLayout.badgeBorder, lineWidth: 0.5)
+            }
             content()
         }
         .frame(width: 28, height: 28)
@@ -1150,7 +1324,7 @@ private struct ClipboardWorkspace: View {
             return MainWindowLayout.listTitleText
         case .color:
             return MainWindowLayout.listTitleText
-        case .image:
+        case .image, .file:
             return MainWindowLayout.listTitleText
         case .text:
             return MainWindowLayout.listTitleText
@@ -1168,8 +1342,6 @@ private struct ClipboardWorkspace: View {
                     PreviewContent(
                         item: selectedItem,
                         sourceLabel: deviceLabel(for: selectedItem),
-                        isSensitive: isSensitive(selectedItem),
-                        isRevealed: revealStore.isRevealed(selectedItem.id),
                         minimumHeight: max(
                             workspaceHeight
                                 - MainWindowLayout.previewTopInset
@@ -1205,14 +1377,11 @@ private struct ClipboardWorkspace: View {
 
                 FloatingActions(
                     isSaved: selectedItem.isSaved,
+                    isFile: selectedItem.clipType == .file,
                     onOpenBrowser: selectedItem.clipType == .url ? { openInBrowser(selectedItem) } : nil,
-                    sensitiveRevealState: isSensitive(selectedItem)
-                        ? revealStore.isRevealed(selectedItem.id)
-                        : nil,
-                    onToggleSensitiveReveal: isSensitive(selectedItem)
-                        ? { revealStore.toggle(selectedItem.id) }
-                        : nil,
                     onCopy: { copy(selectedItem) },
+                    onFileAction: selectedItem.clipType == .file ? { fileAction(selectedItem) } : nil,
+                    fileActionLabel: selectedItem.clipType == .file ? fileActionLabel(selectedItem) : nil,
                     onSave: { toggleSaved(selectedItem) },
                     onDelete: { delete(selectedItem) }
                 )
@@ -1246,9 +1415,32 @@ private struct ClipboardWorkspace: View {
     }
 
     private func copy(_ item: ClipboardItem) {
+        if item.clipType == .file {
+            _ = syncEngine.withAvailableFileURL(for: item) { url in
+                ClipboardMonitor.shared.suppressNextChange()
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.writeObjects([url as NSURL])
+            }
+            return
+        }
         ClipboardMonitor.shared.suppressPacket(item.clipboardPacket)
         ClipboardCapture.write(item.clipboardPacket, to: NSPasteboard.general)
         AirclipAlertCenter.shared.show("Copied to clipboard", kind: .success)
+    }
+
+    private func fileAction(_ item: ClipboardItem) {
+        if syncEngine.availableFileURL(for: item) != nil {
+            _ = syncEngine.withAvailableFileURL(for: item) { NSWorkspace.shared.open($0) }
+        } else {
+            syncEngine.downloadFile(item)
+        }
+    }
+
+    private func fileActionLabel(_ item: ClipboardItem) -> String {
+        if syncEngine.availableFileURL(for: item) != nil { return "Open" }
+        if let id = item.fileMetadata?.id,
+           syncEngine.fileTransfers[id]?.phase == .downloading { return "Downloading…" }
+        return "Download"
     }
 
     private func openInBrowser(_ item: ClipboardItem) {
@@ -1272,17 +1464,8 @@ private struct ClipboardWorkspace: View {
         if selectedItem?.id == item.id {
             selectedItem = filteredItems.first { $0.id != item.id }
         }
-        revealStore.setRevealed(false, for: item.id)
         SyncEngine.shared.deleteHistoryItem(item)
         AirclipAlertCenter.shared.show("Deleted")
-    }
-
-    private func isSensitive(_ item: ClipboardItem) -> Bool {
-        item.clipType != .image && SensitiveClipboardClassifier.classify(item.text).isSensitive
-    }
-
-    private func shouldRedact(_ item: ClipboardItem) -> Bool {
-        isSensitive(item) && !revealStore.isRevealed(item.id)
     }
 
     private func deviceLabel(for item: ClipboardItem) -> String {
@@ -1300,6 +1483,7 @@ private struct ClipboardWorkspace: View {
         case .color: return "Color"
         case .email: return "Email"
         case .image: return "Image"
+        case .file: return "File"
         case .text: return "Text"
         }
     }
@@ -1324,7 +1508,6 @@ private struct ClipboardWorkspace: View {
 
 private struct URLClipRowText: View {
     let item: ClipboardItem
-    let shouldRedact: Bool
     @State private var metadata: LinkPreviewMetadata?
 
     private var url: String {
@@ -1348,10 +1531,8 @@ private struct URLClipRowText: View {
                     .truncationMode(.middle)
             }
         }
-        .blur(radius: shouldRedact ? 4 : 0)
         .frame(maxWidth: .infinity, alignment: .leading)
         .task(id: item.id) {
-            guard !shouldRedact else { return }
             metadata = await LinkPreviewLoader.preview(for: url, includeImage: false)
         }
     }
@@ -1373,22 +1554,22 @@ private struct PreviewContent: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let item: ClipboardItem
     let sourceLabel: String
-    let isSensitive: Bool
-    let isRevealed: Bool
     let minimumHeight: CGFloat
     let onQuickLook: (Data, String) -> Void
     @State private var isURLHovered = false
     @State private var linkPreview: LinkPreviewMetadata?
     @State private var isLoadedPreviewVisible = false
+    @ObservedObject private var syncEngine = SyncEngine.shared
 
     private var type: ClipType { item.clipType }
     private var parsedColor: Color? { Color.parseHex(item.text) }
-    private var shouldRedact: Bool { isSensitive && !isRevealed }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: previewSpacing) {
-                if type == .image, let image = previewImage {
+                if type == .file {
+                    filePreview
+                } else if type == .image, let image = previewImage {
                     imagePreview(image)
                 } else if type == .url, let linkPreview {
                     linkPreviewCard(linkPreview)
@@ -1400,13 +1581,13 @@ private struct PreviewContent: View {
                     colorCard(color: parsedColor)
                 }
 
-                if type == .image {
+                if type == .image || type == .file {
                     EmptyView()
                 } else if type == .url {
                     Button {
                         openURL()
                     } label: {
-                        redactedPreviewText(
+                        previewText(
                             foregroundColor: isURLHovered ? previewColor.opacity(0.84) : previewColor,
                             underline: false
                         )
@@ -1419,18 +1600,8 @@ private struct PreviewContent: View {
                         }
                     }
                 } else if type != .color {
-                    redactedPreviewText(foregroundColor: previewColor)
+                    previewText(foregroundColor: previewColor)
                         .textSelection(.enabled)
-                }
-
-                if shouldRedact {
-                    HStack(spacing: 6) {
-                        AirclipIcon(.shield, size: 12)
-                        Text("Sensitive content hidden")
-                    }
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(MainWindowPalette.secondaryText)
-                    .padding(.top, 10)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -1443,7 +1614,6 @@ private struct PreviewContent: View {
         .task(id: item.id) {
             linkPreview = nil
             isLoadedPreviewVisible = false
-            guard !shouldRedact else { return }
             if type == .url {
                 linkPreview = await LinkPreviewLoader.preview(for: item.text)
                 guard linkPreview != nil else { return }
@@ -1506,6 +1676,61 @@ private struct PreviewContent: View {
         }
         .buttonStyle(.plain)
         .frame(maxWidth: .infinity, alignment: .center)
+    }
+
+    private var filePreview: some View {
+        VStack(spacing: 16) {
+            if let url = syncEngine.availablePreviewURL(for: item) {
+                EmbeddedFileQuickLookPreview(url: url)
+                    .frame(maxWidth: 520)
+                    .frame(height: 420)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .strokeBorder(MainWindowPalette.divider, lineWidth: 0.5))
+            } else if let image = item.fileMetadata?.thumbnailImage {
+                Image(nsImage: image)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxWidth: 320, maxHeight: 220)
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+            } else {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill((item.fileMetadata?.iconAccentColor ?? MainWindowLayout.fileIconFallbackColor).opacity(0.05))
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .strokeBorder(MainWindowLayout.badgeBorder, lineWidth: 0.5)
+                    Image(item.fileMetadata?.iconAssetName ?? "FileIconDocument")
+                        .resizable().interpolation(.high).frame(width: 104, height: 104)
+                }
+                .frame(width: 136, height: 136)
+                .frame(height: 160)
+            }
+            Text(item.fileMetadata?.name ?? item.text)
+                .font(.system(size: 18, weight: .medium))
+                .foregroundColor(MainWindowPalette.primaryText)
+                .lineLimit(2)
+            if let id = item.fileMetadata?.id, let transfer = syncEngine.fileTransfers[id] {
+                switch transfer.phase {
+                case .downloading:
+                    ProgressView(value: Double(transfer.received), total: Double(max(transfer.total, 1)))
+                    Text("\(transfer.temporaryPreview ? "Preparing preview" : "Downloading") \(Int(Double(transfer.received) / Double(max(transfer.total, 1)) * 100))%")
+                        .foregroundColor(MainWindowPalette.secondaryText)
+                case .failed(let reason):
+                    Text(reason).foregroundColor(MainWindowPalette.secondaryText)
+                case .downloaded:
+                    EmptyView()
+                }
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .task(id: item.id) {
+            guard let file = item.fileMetadata, file.size <= 3 * 1024 * 1024,
+                  !item.isLocal, syncEngine.availablePreviewURL(for: item) == nil else { return }
+            syncEngine.previewFile(item)
+        }
+        .onDisappear {
+            syncEngine.clearPreviewFile(for: item)
+        }
     }
 
     @ViewBuilder
@@ -1586,6 +1811,16 @@ private struct PreviewContent: View {
         ]
 
         switch type {
+        case .file:
+            if let file = item.fileMetadata {
+                rows.append(("Name", file.name))
+                rows.append(("Size", ByteCountFormatter.string(fromByteCount: file.size, countStyle: .file)))
+                rows.append(("Format", file.mimeType))
+                if let durationMs = file.durationMs { rows.append(("Duration", "\(durationMs / 1000)s")) }
+                if let width = file.width, let height = file.height { rows.append(("Dimensions", "\(width)×\(height)")) }
+                if let artist = file.artist { rows.append(("Artist", artist)) }
+                if let album = file.album { rows.append(("Album", album)) }
+            }
         case .image:
             if let imageDimensions { rows.append(("Dimensions", imageDimensions)) }
             if let imageData = item.imageData {
@@ -1595,8 +1830,7 @@ private struct PreviewContent: View {
                 rows.append(("Name", item.text))
             }
         case .url:
-            if !shouldRedact,
-               let host = URL(string: item.text.trimmingCharacters(in: .whitespacesAndNewlines))?.host {
+            if let host = URL(string: item.text.trimmingCharacters(in: .whitespacesAndNewlines))?.host {
                 rows.append(("Domain", host))
             }
         case .text, .code:
@@ -1623,6 +1857,7 @@ private struct PreviewContent: View {
         case .color: return "Color"
         case .email: return "Email"
         case .image: return "Image"
+        case .file: return "File"
         case .text: return "Text"
         }
     }
@@ -1720,7 +1955,7 @@ private struct PreviewContent: View {
         }
     }
 
-    private func redactedPreviewText(
+    private func previewText(
         foregroundColor: Color,
         underline: Bool = false
     ) -> some View {
@@ -1730,7 +1965,6 @@ private struct PreviewContent: View {
             .underline(underline, color: foregroundColor)
             .lineSpacing(previewLineSpacing)
             .multilineTextAlignment(.leading)
-            .blur(radius: shouldRedact ? 7 : 0)
             .frame(maxWidth: .infinity, alignment: .topLeading)
     }
 
@@ -1752,6 +1986,8 @@ private struct PreviewContent: View {
             return .system(size: size.clamped(to: 20...20), weight: .medium, design: .monospaced)
         case .image:
             return .system(size: size.clamped(to: 18...18), weight: .regular)
+        case .file:
+            return .system(size: 18, weight: .regular)
         case .text:
             return .system(size: size, weight: .regular)
         }
@@ -1769,6 +2005,8 @@ private struct PreviewContent: View {
             return 20
         case .image:
             return 18
+        case .file:
+            return 18
         case .text:
             return 24
         }
@@ -1784,7 +2022,7 @@ private struct PreviewContent: View {
             return MainWindowPalette.primaryText
         case .code, .text:
             return MainWindowPalette.primaryText
-        case .image:
+        case .image, .file:
             return MainWindowPalette.primaryText
         }
     }
@@ -1793,7 +2031,7 @@ private struct PreviewContent: View {
         switch type {
         case .code:
             return 4
-        case .image:
+        case .image, .file:
             return 5
         case .text:
             return item.text.count > 480 ? 5 : 7
@@ -1947,10 +2185,11 @@ private extension Comparable {
 
 private struct FloatingActions: View {
     let isSaved: Bool
+    let isFile: Bool
     let onOpenBrowser: (() -> Void)?
-    let sensitiveRevealState: Bool?
-    let onToggleSensitiveReveal: (() -> Void)?
     let onCopy: () -> Void
+    let onFileAction: (() -> Void)?
+    let fileActionLabel: String?
     let onSave: () -> Void
     let onDelete: () -> Void
 
@@ -1964,24 +2203,24 @@ private struct FloatingActions: View {
                     action: onOpenBrowser
                 )
             }
-            if let sensitiveRevealState, let onToggleSensitiveReveal {
-                ActionIconButton(
-                    icon: .eye,
-                    foregroundColor: sensitiveRevealState ? MainWindowPalette.primaryText : MainWindowPalette.secondaryText,
-                    help: sensitiveRevealState ? "Hide sensitive content" : "Show sensitive content",
-                    action: onToggleSensitiveReveal
-                )
+            if let onFileAction, let fileActionLabel {
+                Button(fileActionLabel, action: onFileAction)
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+            } else {
+                CopyActionIconButton(action: onCopy)
+                    .keyboardShortcut("c", modifiers: .command)
             }
-            CopyActionIconButton(action: onCopy)
-            .keyboardShortcut("c", modifiers: .command)
-            ActionIconButton(
-                icon: isSaved ? .bookmarkCheck : .bookmarkAdd,
-                foregroundColor: isSaved ? MainWindowPalette.saved : MainWindowPalette.secondaryText,
-                help: isSaved ? "Saved" : "Save",
-                action: onSave
-            )
-            .contentTransition(.opacity)
-            .animation(.easeOut(duration: 0.12), value: isSaved)
+            if !isFile {
+                ActionIconButton(
+                    icon: isSaved ? .bookmarkCheck : .bookmarkAdd,
+                    foregroundColor: isSaved ? MainWindowPalette.saved : MainWindowPalette.secondaryText,
+                    help: isSaved ? "Saved" : "Save",
+                    action: onSave
+                )
+                .contentTransition(.opacity)
+                .animation(.easeOut(duration: 0.12), value: isSaved)
+            }
             ActionIconButton(
                 icon: .delete,
                 foregroundColor: MainWindowPalette.secondaryText,
@@ -1992,7 +2231,8 @@ private struct FloatingActions: View {
             .keyboardShortcut(.delete, modifiers: [])
         }
         .padding(9)
-        .frame(width: actionBarWidth, height: MainWindowLayout.actionBarHeight)
+        .frame(minWidth: actionBarWidth)
+        .frame(height: MainWindowLayout.actionBarHeight)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(MainWindowPalette.card)
@@ -2006,9 +2246,8 @@ private struct FloatingActions: View {
     }
 
     private var actionBarWidth: CGFloat {
-        let buttonCount = 3
+        let buttonCount = (isFile ? 2 : 3)
             + (onOpenBrowser == nil ? 0 : 1)
-            + (onToggleSensitiveReveal == nil ? 0 : 1)
         return CGFloat(18 + (40 * buttonCount) + (8 * max(buttonCount - 1, 0)))
     }
 }
@@ -3438,14 +3677,13 @@ private struct MonitorArtwork: View {
 }
 
 private struct SettingsPanel: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject private var identity = AirclipIdentity.shared
     @ObservedObject private var appearanceStore = AppAppearanceStore.shared
     @ObservedObject private var syncModeStore = SyncModeStore.shared
-    @ObservedObject private var sensitiveProtection = SensitiveClipboardProtectionStore.shared
     @ObservedObject private var pasteShortcutStore = PasteShortcutStore.shared
     @ObservedObject private var popoverShortcutStore = PasteShortcutStore.popover
     @ObservedObject private var analytics = PrivacyAnalytics.shared
+    @ObservedObject private var updateController = AppUpdateController.shared
 
     @State private var historyDepth: Int = HistoryRetentionPolicy.selectedIndex()
     @State private var showResetAlert = false
@@ -3493,8 +3731,6 @@ private struct SettingsPanel: View {
                             syncModeChooser
                                 .frame(width: 172)
                         }
-                        settingsDivider
-                        sensitiveProtectionContent
                     }
                 }
 
@@ -3520,7 +3756,7 @@ private struct SettingsPanel: View {
                         SettingsActionRow(
                             icon: .refresh,
                             title: "Check for Updates",
-                            subtitle: "Checks Airclip's signed update feed.",
+                            subtitle: updateController.updateStatus ?? "Checks automatically at most once daily.",
                             tint: MainWindowPalette.primaryText,
                             hoverFill: MainWindowPalette.hoverFill
                         ) {
@@ -3531,15 +3767,42 @@ private struct SettingsPanel: View {
                             icon: .shield,
                             iconTint: MainWindowPalette.secondaryText,
                             iconFill: MainWindowPalette.activeFill,
-                            title: "Share Anonymous Analytics",
-                            subtitle: "Coarse event counts only. No clipboard or device data."
+                            title: "Help improve Airclip",
+                            subtitle: "Anonymous feature counts help us improve Airclip. Clipboard content is never shared."
                         ) {
-                            Toggle("", isOn: $analytics.isEnabled)
-                                .labelsHidden()
-                                .toggleStyle(.switch)
-                                .onChange(of: analytics.isEnabled) { _, enabled in
-                                    if enabled { analytics.flushIfDue() }
+                            Menu {
+                                Button {
+                                    analytics.isEnabled = true
+                                    analytics.flushIfDue()
+                                } label: {
+                                    if analytics.isEnabled { Label("Allow", systemImage: "checkmark") }
+                                    else { Text("Allow") }
                                 }
+                                Button {
+                                    analytics.isEnabled = false
+                                } label: {
+                                    if !analytics.isEnabled { Label("Don't allow", systemImage: "checkmark") }
+                                    else { Text("Don't allow") }
+                                }
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Text(analytics.isEnabled ? "Allowed" : "Not allowed")
+                                    Image(systemName: "chevron.down")
+                                        .font(.system(size: 9, weight: .semibold))
+                                }
+                                .font(.system(size: 11.5, weight: .medium))
+                                .foregroundColor(MainWindowPalette.secondaryText)
+                                .padding(.horizontal, 9)
+                                .frame(height: 28)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                        .strokeBorder(Color.borderDefault, lineWidth: 0.5)
+                                )
+                            }
+                            .menuStyle(.borderlessButton)
+                            .accessibilityLabel("Anonymous analytics")
+                            .accessibilityValue(analytics.isEnabled ? "Allowed" : "Not allowed")
+                            .accessibilityHint("Choose whether to share anonymous feature counts")
                         }
                     }
                 }
@@ -3578,7 +3841,9 @@ private struct SettingsPanel: View {
             SettingsDestructiveConfirmationSheet(
                 icon: .logout,
                 title: "Leave this space?",
-                message: "This Mac will disconnect and its history, pairing data, settings, and encryption keys will be removed. Other devices stay connected.",
+                message: identity.pairedDevices.isEmpty
+                    ? "This is the last device. Leaving permanently clears this space and its data."
+                    : "This Mac will disconnect and its history, pairing data, settings, and encryption keys will be removed. Other devices stay connected.",
                 actionTitle: "Leave Space",
                 onCancel: { showResetAlert = false },
                 onConfirm: {
@@ -3950,98 +4215,6 @@ private struct SettingsPanel: View {
         }
     }
 
-    private var sensitiveProtectionContent: some View {
-        VStack(spacing: 0) {
-            HStack(alignment: .center, spacing: 12) {
-                settingsIcon(.shield, tint: MainWindowPalette.secondaryText, fill: MainWindowPalette.activeFill)
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Sensitive sync")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundColor(MainWindowPalette.primaryText)
-                    Text(sensitiveProtection.masterAction == .allow ? "All sensitive clips are allowed by default." : "Category rules apply below.")
-                        .font(.system(size: 11))
-                        .foregroundColor(MainWindowPalette.secondaryText)
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer(minLength: 12)
-                Picker(
-                    "Sensitive sync",
-                    selection: Binding(
-                        get: { sensitiveProtection.masterAction },
-                        set: { sensitiveProtection.setMasterAction($0) }
-                    )
-                ) {
-                    ForEach(SensitiveRuleAction.allCases, id: \.rawValue) { action in
-                        Text(action.label).tag(action)
-                    }
-                }
-                .labelsHidden()
-                .pickerStyle(.menu)
-                .controlSize(.small)
-                .frame(width: 92)
-            }
-            .padding(.horizontal, 14)
-            .frame(minHeight: 62)
-
-            if sensitiveProtection.masterAction != .allow {
-                VStack(spacing: 0) {
-                    settingsDivider
-
-                    ForEach(Array(SensitiveCategory.allCases.enumerated()), id: \.element.rawValue) {
-                        index,
-                        category in
-                        HStack {
-                            Text(category.label)
-                                .font(.system(size: 12))
-                                .foregroundColor(MainWindowPalette.primaryText)
-                            Spacer()
-                            Picker(
-                                category.label,
-                                selection: Binding(
-                                    get: { sensitiveProtection.action(for: category) },
-                                    set: { sensitiveProtection.setAction($0, for: category) }
-                                )
-                            ) {
-                                ForEach(SensitiveRuleAction.allCases, id: \.rawValue) { action in
-                                    Text(action.label).tag(action)
-                                }
-                            }
-                            .labelsHidden()
-                            .pickerStyle(.menu)
-                            .controlSize(.small)
-                            .frame(width: 92)
-                        }
-                        .padding(.horizontal, 14)
-                        .frame(height: 38)
-
-                        if index < SensitiveCategory.allCases.count - 1 {
-                            settingsDivider
-                        }
-                    }
-                }
-                .transition(.asymmetric(
-                    insertion: (reduceMotion
-                        ? AnyTransition.opacity
-                        : AnyTransition.offset(y: -4).combined(with: .opacity))
-                        .animation(reduceMotion
-                            ? .easeOut(duration: 0.12)
-                            : .timingCurve(0.23, 1, 0.32, 1, duration: 0.20)),
-                    removal: .opacity.animation(.easeOut(duration: reduceMotion ? 0.12 : 0.14))
-                ))
-            }
-
-            Text("Ask stops automatic sync for matching clips until you approve them.")
-                .font(.system(size: 11))
-                .foregroundColor(MainWindowPalette.secondaryText)
-                .padding(.horizontal, 14)
-                .padding(.top, 8)
-                .padding(.bottom, 10)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-
     // ── Section label ─────────────────────────────────────────────────────────
 
     private func settingsLabel(_ title: String) -> some View {
@@ -4216,6 +4389,113 @@ private struct SettingsPanel: View {
         }
         .padding(.horizontal, 16)
         .frame(height: 44)
+    }
+}
+
+private struct FileDropConfirmationSheet: View {
+    let files: [DroppedFileCandidate]
+    let spaceName: String
+    let canShare: Bool
+    let onCancel: () -> Void
+    let onShare: () -> Void
+
+    private var visibleFiles: [DroppedFileCandidate] { Array(files.prefix(5)) }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Image(systemName: "square.and.arrow.up")
+                .font(.system(size: 22, weight: .medium))
+                .foregroundStyle(Color.accent)
+                .frame(width: 52, height: 52)
+                .background(Color.accent.opacity(0.12), in: Circle())
+                .padding(.bottom, 16)
+
+            Text(files.count == 1 ? "Share this file?" : "Share these files?")
+                .font(.system(size: 19, weight: .semibold))
+                .foregroundStyle(Color.textPrimary)
+                .padding(.bottom, 6)
+
+            Text("Add to \(spaceName)? Other devices in this Space can download the file when they need it. The original stays on this Mac.")
+                .font(.system(size: 13))
+                .foregroundStyle(Color.textSecondary)
+                .multilineTextAlignment(.center)
+                .lineSpacing(3)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 8)
+                .padding(.bottom, 18)
+
+            VStack(spacing: 0) {
+                ForEach(visibleFiles) { file in
+                    HStack(spacing: 10) {
+                        Image(systemName: "doc")
+                            .font(.system(size: 16))
+                            .foregroundStyle(Color.accent)
+                            .frame(width: 28, height: 32)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(file.name)
+                                .font(.system(size: 12, weight: .medium))
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                                .foregroundStyle(Color.textPrimary)
+                            Text("\(file.kindName) · \(ByteCountFormatter.string(fromByteCount: file.size, countStyle: .file))")
+                                .font(.system(size: 11))
+                                .foregroundStyle(Color.textSecondary)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.vertical, 6)
+                }
+                if files.count > visibleFiles.count {
+                    Text("and \(files.count - visibleFiles.count) more")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.textSecondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.top, 4)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(Color.bgElevated, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(Color.borderSubtle, lineWidth: 1)
+            }
+            .padding(.bottom, canShare ? 18 : 10)
+
+            if !canShare {
+                Text("Sharing is paused. Resume sync in Settings to share files.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.destructiveRed)
+                    .multilineTextAlignment(.center)
+                    .padding(.bottom, 12)
+            }
+
+            VStack(spacing: 8) {
+                SettingsConfirmationButton(
+                    title: "Share with Space",
+                    fill: canShare ? .accentDeep : .textTertiary,
+                    hoverFill: canShare ? Color.accentDeep.opacity(0.86) : .textTertiary,
+                    foreground: .white,
+                    action: onShare
+                )
+                .disabled(!canShare)
+                .keyboardShortcut(.defaultAction)
+
+                SettingsConfirmationButton(
+                    title: "Cancel",
+                    fill: .activeFill,
+                    hoverFill: Color.textPrimary.opacity(0.10),
+                    foreground: .textSecondary,
+                    action: onCancel
+                )
+                .keyboardShortcut(.cancelAction)
+            }
+        }
+        .padding(.horizontal, 26)
+        .padding(.top, 24)
+        .padding(.bottom, 20)
+        .frame(width: 410)
+        .background(Color.bgFloating)
     }
 }
 
@@ -4468,11 +4748,12 @@ private struct SettingsActionRow: View {
                     Text(subtitle)
                         .font(.system(size: 11))
                         .foregroundColor(MainWindowPalette.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer()
             }
             .padding(.horizontal, 16)
-            .frame(height: 60)
+            .frame(minHeight: 60)
             .background(
                 Rectangle()
                     .fill(isHovered || isPressed ? hoverFill : .clear)

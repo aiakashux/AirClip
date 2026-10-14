@@ -39,8 +39,6 @@ import com.airclip.airclip.ClipItemRecord
 import com.airclip.airclip.PairedDevice
 import com.airclip.airclip.R
 import com.airclip.airclip.MainViewModel
-import com.airclip.airclip.SensitiveCategory
-import com.airclip.airclip.SensitiveRuleAction
 import com.airclip.airclip.SyncMode
 import com.airclip.airclip.lan.LanRuntimeDiagnostic
 import com.airclip.airclip.ui.theme.*
@@ -84,10 +82,9 @@ data class SettingsTabUiState(
     val appearanceSetting: AppAppearanceSetting,
     val historyDepth: Int,
     val syncMode: SyncMode,
-    val sensitiveMasterAction: SensitiveRuleAction,
-    val sensitiveRules: Map<SensitiveCategory, SensitiveRuleAction>,
     val analyticsEnabled: Boolean,
     val updateStatus: String?,
+    val isLastDeviceInSpace: Boolean,
 )
 
 @Composable
@@ -130,19 +127,17 @@ fun MainScreen(viewModel: MainViewModel, uiState: MainViewModel.UiState) {
         uiState.appearanceSetting,
         uiState.historyDepth,
         uiState.syncMode,
-        uiState.sensitiveMasterAction,
-        uiState.sensitiveRules,
         uiState.analyticsEnabled,
         uiState.updateStatus,
+        uiState.pairedDevices,
     ) {
         SettingsTabUiState(
             appearanceSetting = uiState.appearanceSetting,
             historyDepth = uiState.historyDepth,
             syncMode = uiState.syncMode,
-            sensitiveMasterAction = uiState.sensitiveMasterAction,
-            sensitiveRules = uiState.sensitiveRules,
             analyticsEnabled = uiState.analyticsEnabled,
             updateStatus = uiState.updateStatus,
+            isLastDeviceInSpace = uiState.pairedDevices.isEmpty(),
         )
     }
     LaunchedEffect(uiState.openDevicesOnFirstLaunch) {
@@ -150,15 +145,6 @@ fun MainScreen(viewModel: MainViewModel, uiState: MainViewModel.UiState) {
             currentTab = Tab.DEVICES
             viewModel.onInitialDevicesTabShown()
         }
-    }
-
-    LaunchedEffect(uiState.sensitiveBlockedNotice) {
-        uiState.sensitiveBlockedNotice ?: return@LaunchedEffect
-        alertHostState.show(
-            message = "Sensitive item wasn’t shared",
-            kind = AirclipAlertKind.DANGER,
-        )
-        viewModel.onSensitiveBlockedNoticeShown()
     }
 
     CompositionLocalProvider(LocalAirclipAlertHostState provides alertHostState) {
@@ -212,31 +198,6 @@ fun MainScreen(viewModel: MainViewModel, uiState: MainViewModel.UiState) {
         }
     }
 
-    uiState.pendingSensitiveFinding?.let { finding ->
-        AlertDialog(
-            onDismissRequest = viewModel::onCancelSensitiveSend,
-            icon = { Icon(Icons.Outlined.WarningAmber, null, tint = c.yellow) },
-            title = { Text("Send sensitive clipboard item?", color = c.textPrimary) },
-            text = {
-                Text(
-                    "${finding.category.label} detected. Only continue if you intend to share it with your paired devices.",
-                    color = c.textSecondary,
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = viewModel::onConfirmSensitiveSend) {
-                    Text("Send anyway", color = c.destructive)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = viewModel::onCancelSensitiveSend) {
-                    Text("Cancel", color = c.textSecondary)
-                }
-            },
-            containerColor = c.bgFloating,
-        )
-    }
 }
 
 @Composable

@@ -9,10 +9,6 @@ import com.airclip.airclip.AirclipIdentity
 import com.airclip.airclip.ManualSendBootstrap
 import com.airclip.airclip.SyncEngine
 import com.airclip.airclip.SyncService
-import com.airclip.airclip.SensitiveClipboardClassifier
-import com.airclip.airclip.SensitiveClipboardPolicy
-import com.airclip.airclip.SensitiveSendDecision
-import com.airclip.airclip.SensitiveSendIntent
 import com.airclip.airclip.crypto.KeyManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -63,36 +59,13 @@ class ClipboardSendActivity : Activity() {
             return
         }
 
-        val assessment = SensitiveClipboardClassifier.classify(text)
-        val action = assessment.primaryFinding
-            ?.let { Prefs.sensitiveRule(it.category) }
-            ?: com.airclip.airclip.SensitiveRuleAction.ASK
-        when (SensitiveClipboardPolicy.decide(
-            assessment,
-            SensitiveSendIntent.MANUAL,
-            action,
-        )) {
-            SensitiveSendDecision.ALLOW -> send(text, sensitiveOverride = false)
-            SensitiveSendDecision.REQUIRE_CONFIRMATION -> {
-                val label = assessment.primaryFinding?.category?.label ?: "Sensitive content"
-                android.app.AlertDialog.Builder(this)
-                    .setTitle("Send sensitive clipboard item?")
-                    .setMessage("$label detected. Only continue if you intend to share it with your paired devices.")
-                    .setNegativeButton("Cancel") { _, _ -> finish() }
-                    .setPositiveButton("Send anyway") { _, _ ->
-                        send(text, sensitiveOverride = true)
-                    }
-                    .setOnCancelListener { finish() }
-                    .show()
-            }
-            SensitiveSendDecision.BLOCK -> finish()
-        }
+        send(text)
     }
 
-    private fun send(text: String, sensitiveOverride: Boolean) {
+    private fun send(text: String) {
         CoroutineScope(Dispatchers.IO).launch {
             if (prepareSyncRuntime()) {
-                SyncEngine.sendClip(text, sensitiveOverride)
+                SyncEngine.sendClip(text)
                 WidgetState.save(this@ClipboardSendActivity, WidgetState.SYNCED)
                 WidgetState.notifyWidgets(this@ClipboardSendActivity)
             }

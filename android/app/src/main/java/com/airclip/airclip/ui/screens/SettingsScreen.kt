@@ -20,8 +20,12 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -31,7 +35,6 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -60,8 +63,6 @@ import com.airclip.airclip.AppAppearanceSetting
 import com.airclip.airclip.BuildConfig
 import com.airclip.airclip.MainViewModel
 import com.airclip.airclip.R
-import com.airclip.airclip.SensitiveCategory
-import com.airclip.airclip.SensitiveRuleAction
 import com.airclip.airclip.SyncMode
 import com.airclip.airclip.ui.theme.LocalAirclipColors
 
@@ -73,15 +74,12 @@ fun SettingsScreen(viewModel: MainViewModel, uiState: SettingsTabUiState) {
     var showClearHistoryDialog by remember { mutableStateOf(false) }
     val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val headerHeight = statusBarTop + 80.dp
-    val categoryOffset = with(LocalDensity.current) { 4.dp.roundToPx() }
-    val easeOut = CubicBezierEasing(0.23f, 1f, 0.32f, 1f)
 
     val appearanceOptions = listOf("System (Default)", "Light", "Dark")
     val historyOptions = listOf(
         "1 Day", "3 Days", "7 Days", "15 Days", "Forever",
     )
     val syncOptions = listOf("Automatic", "Manual only", "Paused")
-    val sensitiveOptions = listOf("Allow", "Ask", "Block")
 
     Box(
         modifier = Modifier
@@ -137,46 +135,6 @@ fun SettingsScreen(viewModel: MainViewModel, uiState: SettingsTabUiState) {
                         }
                     },
                 )
-                SettingsSelectableRow(
-                    iconRes = R.drawable.ic_settings_security_lock,
-                    title = "Sensitive Data Sync",
-                    value = displaySensitiveAction(uiState.sensitiveMasterAction),
-                    options = sensitiveOptions,
-                    onSelect = { label ->
-                        when (label) {
-                            "Allow" -> viewModel.onSensitiveMasterRuleChanged(SensitiveRuleAction.ALLOW)
-                            "Ask" -> viewModel.onSensitiveMasterRuleChanged(SensitiveRuleAction.ASK)
-                            "Block" -> viewModel.onSensitiveMasterRuleChanged(SensitiveRuleAction.ALWAYS_BLOCK)
-                        }
-                    },
-                )
-                AnimatedVisibility(
-                    visible = uiState.sensitiveMasterAction != SensitiveRuleAction.ALLOW,
-                    enter = fadeIn(tween(200, easing = easeOut)) +
-                        slideInVertically(tween(200, easing = easeOut)) { -categoryOffset },
-                    exit = fadeOut(tween(140, easing = easeOut)),
-                ) {
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        SensitiveCategory.entries.forEach { category ->
-                            SettingsSelectableRow(
-                                iconRes = null,
-                                title = category.label,
-                                value = displaySensitiveAction(
-                                    uiState.sensitiveRules[category] ?: SensitiveRuleAction.ASK
-                                ),
-                                options = sensitiveOptions,
-                                onSelect = { label ->
-                                    val action = when (label) {
-                                        "Allow" -> SensitiveRuleAction.ALLOW
-                                        "Block" -> SensitiveRuleAction.ALWAYS_BLOCK
-                                        else -> SensitiveRuleAction.ASK
-                                    }
-                                    viewModel.onSensitiveRuleChanged(category, action)
-                                },
-                            )
-                        }
-                    }
-                }
                 SettingsStaticRow(
                     iconRes = R.drawable.ic_settings_encrypt,
                     title = "End-to-End Encrypted",
@@ -195,19 +153,21 @@ fun SettingsScreen(viewModel: MainViewModel, uiState: SettingsTabUiState) {
                 SettingsListRow(
                     iconRes = R.drawable.ic_settings_database_sync,
                     title = "Check for Updates",
-                    value = uiState.updateStatus ?: "Checks automatically at most once daily",
-                    showArrow = true,
+                    value = uiState.updateStatus ?: "Checks automatically at most once daily.",
+                    showArrow = false,
                     onClick = viewModel::onCheckForUpdates,
+                    rowHeight = 94.dp,
+                    valueMaxLines = 2,
                 )
             }
 
             SettingsGroupDivider()
 
             SettingsGroup {
-                SettingsSwitchRow(
+                SettingsChoiceRow(
                     iconRes = R.drawable.ic_settings_security_lock,
-                    title = "Share Anonymous Analytics",
-                    value = "Coarse event counts only. No clipboard or device data.",
+                    title = "Help improve Airclip",
+                    value = "Anonymous feature counts help us improve Airclip. Clipboard content is never shared.",
                     checked = uiState.analyticsEnabled,
                     onCheckedChange = viewModel::onAnalyticsEnabledChanged,
                 )
@@ -241,7 +201,11 @@ fun SettingsScreen(viewModel: MainViewModel, uiState: SettingsTabUiState) {
             onDismissRequest = { showResetDialog = false },
             iconRes = R.drawable.ic_settings_logout_03,
             title = "Leave this space?",
-            message = "This device will disconnect and its history, pairing data, settings, and encryption keys will be removed. Other devices stay connected.",
+            message = if (uiState.isLastDeviceInSpace) {
+                "This is the last device. Leaving permanently clears this space and its data."
+            } else {
+                "This device will disconnect and its history, pairing data, settings, and encryption keys will be removed. Other devices stay connected."
+            },
             confirmLabel = "Leave Space",
             onConfirm = { showResetDialog = false; viewModel.onResetAirclip() },
         )
@@ -546,7 +510,7 @@ private fun SettingsStaticRow(
 }
 
 @Composable
-private fun SettingsSwitchRow(
+private fun SettingsChoiceRow(
     iconRes: Int,
     title: String,
     value: String,
@@ -554,17 +518,54 @@ private fun SettingsSwitchRow(
     onCheckedChange: (Boolean) -> Unit,
 ) {
     val c = LocalAirclipColors.current
+    var expanded by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(8.dp)
     Row(
-        modifier = Modifier.fillMaxWidth().heightIn(min = 84.dp).padding(horizontal = 20.dp),
+        modifier = Modifier.fillMaxWidth().heightIn(min = 96.dp).padding(horizontal = 20.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(painterResource(iconRes), null, tint = c.textSecondary, modifier = Modifier.size(24.dp))
-        Spacer(Modifier.width(16.dp))
-        Column(Modifier.weight(1f)) {
-            Text(title, color = c.textPrimary, fontSize = 16.sp, fontWeight = FontWeight.Medium)
+        Icon(painterResource(iconRes), null, tint = c.textSecondary, modifier = Modifier.size(28.dp))
+        Spacer(Modifier.width(23.dp))
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(title, color = c.textPrimary, fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.Medium)
             Text(value, color = c.textSecondary, fontSize = 13.sp, lineHeight = 18.sp)
         }
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
+        Spacer(Modifier.width(8.dp))
+        Box {
+            Row(
+                modifier = Modifier
+                    .clip(shape)
+                    .clickable(role = Role.Button) { expanded = true }
+                    .padding(horizontal = 8.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(
+                    if (checked) "Allowed" else "Not allowed",
+                    color = c.textSecondary,
+                    fontSize = 12.sp,
+                    maxLines = 1,
+                )
+                Icon(
+                    painter = painterResource(R.drawable.ic_settings_arrow_down_01),
+                    contentDescription = null,
+                    tint = c.textSecondary,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                DropdownMenuItem(
+                    text = { Text("Allow") },
+                    onClick = { expanded = false; onCheckedChange(true) },
+                    trailingIcon = if (checked) {{ Icon(Icons.Outlined.Check, null) }} else null,
+                )
+                DropdownMenuItem(
+                    text = { Text("Don't allow") },
+                    onClick = { expanded = false; onCheckedChange(false) },
+                    trailingIcon = if (!checked) {{ Icon(Icons.Outlined.Check, null) }} else null,
+                )
+            }
+        }
     }
 }
 
@@ -658,7 +659,7 @@ private fun SettingsListRow(
                     Text(
                         displayedValue,
                         fontSize = 14.sp,
-                        lineHeight = if (isDestructive) 20.sp else 14.sp,
+                        lineHeight = if (isDestructive) 20.sp else 18.sp,
                         fontWeight = FontWeight.Normal,
                         color = resolvedValueColor,
                         maxLines = valueMaxLines,
@@ -692,11 +693,4 @@ private fun displaySyncMode(mode: SyncMode): String =
         SyncMode.AUTO -> "Automatic"
         SyncMode.MANUAL_ONLY -> "Manual only"
         SyncMode.PAUSED -> "Paused"
-    }
-
-private fun displaySensitiveAction(action: SensitiveRuleAction): String =
-    when (action) {
-        SensitiveRuleAction.ALLOW -> "Allow"
-        SensitiveRuleAction.ASK -> "Ask"
-        SensitiveRuleAction.ALWAYS_BLOCK -> "Block"
     }

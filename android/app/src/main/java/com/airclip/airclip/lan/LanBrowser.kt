@@ -280,7 +280,7 @@ object LanBrowser {
                 val msg = PeerManager.gson.fromJson(text, Map::class.java) as? Map<String, String>
                     ?: return
                 when (msg["type"]) {
-                    "clip" -> {
+                    "clip", "file_clip" -> {
                         val ciphertext = msg["ciphertext"] ?: return
                         val nonce      = msg["nonce"]      ?: return
                         val timestampMs = msg["ts"]?.toLongOrNull() ?: System.currentTimeMillis()
@@ -293,7 +293,7 @@ object LanBrowser {
                             messageId,
                         )
                     }
-                    "history_clip" -> {
+                    "history_clip", "history_file_clip" -> {
                         val ciphertext   = msg["ciphertext"]         ?: return
                         val nonce        = msg["nonce"]              ?: return
                         val ts           = msg["ts"]?.toLongOrNull() ?: System.currentTimeMillis()
@@ -308,6 +308,7 @@ object LanBrowser {
                     )
                     "history_clear" -> msg["through_ms"]?.toLongOrNull()?.let(PeerManager::dispatchHistoryClear)
                     "history_request" -> PeerManager.dispatchHistoryRequest(authenticatedPeerId ?: peerHint)
+                    "file_request", "file_chunk" -> PeerManager.dispatchFileMessage(authenticatedPeerId ?: peerHint, msg)
                     "heartbeat" -> {
                         val fromId = authenticatedPeerId ?: peerHint
                         PeerManager.markPeerSeen(fromId, msg["ssid"])

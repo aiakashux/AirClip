@@ -185,14 +185,70 @@ enum ClipboardSchemaV2: VersionedSchema {
     }
 }
 
-enum ClipboardMigrationPlan: SchemaMigrationPlan {
-    static var schemas: [any VersionedSchema.Type] { [ClipboardSchemaV1.self, ClipboardSchemaV2.self] }
-    static var stages: [MigrationStage] {
-        [.lightweight(fromVersion: ClipboardSchemaV1.self, toVersion: ClipboardSchemaV2.self)]
+enum ClipboardSchemaV3: VersionedSchema {
+    static var versionIdentifier: Schema.Version { .init(3, 0, 0) }
+    static var models: [any PersistentModel.Type] { [ClipboardItem.self] }
+
+    @Model
+    final class ClipboardItem {
+        var id: UUID
+        var text: String
+        var kindRaw: String
+        var imageData: Data?
+        var fileMetadataData: Data?
+        var receivedAt: Date
+        var fromDeviceId: String
+        var isLocal: Bool
+        var isSaved: Bool = false
+
+        init(
+            id: UUID = UUID(),
+            text: String,
+            kindRaw: String = ClipType.text.rawValue,
+            imageData: Data? = nil,
+            fileMetadataData: Data? = nil,
+            receivedAt: Date = Date(),
+            fromDeviceId: String,
+            isLocal: Bool,
+            isSaved: Bool = false
+        ) {
+            self.id = id
+            self.text = text
+            self.kindRaw = kindRaw
+            self.imageData = imageData
+            self.fileMetadataData = fileMetadataData
+            self.receivedAt = receivedAt
+            self.fromDeviceId = fromDeviceId
+            self.isLocal = isLocal
+            self.isSaved = isSaved
+        }
+
+        var clipType: ClipType {
+            let decoded = ClipType(rawValue: kindRaw) ?? ClipType.detect(text)
+            return decoded == .code ? .text : decoded
+        }
+
+        var fileMetadata: FileClipMetadata? {
+            fileMetadataData.flatMap { try? JSONDecoder().decode(FileClipMetadata.self, from: $0) }
+        }
+
+        var clipboardPacket: ClipboardPacket {
+            ClipboardPacket(kind: clipType.clipboardKind, text: text, imageData: imageData, file: fileMetadata)
+        }
     }
 }
 
-typealias ClipboardItem = ClipboardSchemaV2.ClipboardItem
+enum ClipboardMigrationPlan: SchemaMigrationPlan {
+    static var schemas: [any VersionedSchema.Type] { [ClipboardSchemaV1.self, ClipboardSchemaV2.self, ClipboardSchemaV3.self] }
+    static var stages: [MigrationStage] {
+        [
+            .lightweight(fromVersion: ClipboardSchemaV1.self, toVersion: ClipboardSchemaV2.self),
+            .lightweight(fromVersion: ClipboardSchemaV2.self, toVersion: ClipboardSchemaV3.self)
+        ]
+    }
+}
+
+typealias ClipboardItem = ClipboardSchemaV3.ClipboardItem
 
 @MainActor
 final class LocalHistoryStore {
@@ -202,11 +258,11 @@ final class LocalHistoryStore {
     let container: ModelContainer
 
     private init() {
-        container = Self.makeContainer(retryingAfterStoreReset: true) ?? Self.makeInMemoryContainer()
+        container = Self.makeContainer() ?? Self.makeInMemoryContainer()
     }
 
-    private static func makeContainer(retryingAfterStoreReset: Bool) -> ModelContainer? {
-        let schema = Schema(versionedSchema: ClipboardSchemaV2.self)
+    private static func makeContainer() -> ModelContainer? {
+        let schema = Schema(versionedSchema: ClipboardSchemaV3.self)
         let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
         do {
             return try ModelContainer(
@@ -215,29 +271,20 @@ final class LocalHistoryStore {
                 configurations: [config]
             )
         } catch {
-            guard retryingAfterStoreReset else { return nil }
-            resetPersistentStore()
-            return makeContainer(retryingAfterStoreReset: false)
+            // Keep the existing store intact if a migration fails. An in-memory
+            // fallback is safer than silently deleting the user's clip history.
+            return nil
         }
     }
 
     private static func makeInMemoryContainer() -> ModelContainer {
-        let schema = Schema(versionedSchema: ClipboardSchemaV2.self)
+        let schema = Schema(versionedSchema: ClipboardSchemaV3.self)
         let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
         return try! ModelContainer(
             for: schema,
             migrationPlan: ClipboardMigrationPlan.self,
             configurations: [config]
         )
-    }
-
-    private static func resetPersistentStore() {
-        let fm = FileManager.default
-        guard let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else { return }
-        let storeURL = appSupport.appendingPathComponent("default.store")
-        let walURL = appSupport.appendingPathComponent("default.store-wal")
-        let shmURL = appSupport.appendingPathComponent("default.store-shm")
-        [storeURL, walURL, shmURL].forEach { try? fm.removeItem(at: $0) }
     }
 
     func insert(text: String, fromDeviceId: String, isLocal: Bool) {
@@ -278,6 +325,7 @@ final class LocalHistoryStore {
             text: packet.text,
             kindRaw: packet.kind.rawValue,
             imageData: packet.imageData,
+            fileMetadataData: packet.file.flatMap { try? JSONEncoder().encode($0) },
             receivedAt: receivedAt,
             fromDeviceId: fromDeviceId,
             isLocal: isLocal
@@ -339,6 +387,7 @@ final class LocalHistoryStore {
             text: packet.text,
             kindRaw: packet.kind.rawValue,
             imageData: packet.imageData,
+            fileMetadataData: packet.file.flatMap { try? JSONEncoder().encode($0) },
             receivedAt: receivedAt,
             fromDeviceId: fromDeviceId,
             isLocal: fromDeviceId == AirclipIdentity.shared.deviceId
@@ -387,6 +436,15 @@ final class LocalHistoryStore {
         )
         descriptor.fetchLimit = 1
         return try? container.mainContext.fetch(descriptor).first?.clipboardPacket
+    }
+
+    func fileItem(id: String) -> ClipboardItem? {
+        let descriptor = FetchDescriptor<ClipboardItem>()
+        return (try? container.mainContext.fetch(descriptor))?.first { $0.fileMetadata?.id == id }
+    }
+
+    func fileMetadata(id: String) -> FileClipMetadata? {
+        fileItem(id: id)?.fileMetadata
     }
 
     /// Prune unsaved items older than `days` days. Saved items are retained until the user removes them.
