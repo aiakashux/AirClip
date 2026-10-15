@@ -216,11 +216,13 @@ struct MainWindowView: View {
     @ObservedObject private var alertCenter = AirclipAlertCenter.shared
     @ObservedObject private var identity = AirclipIdentity.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
     @State private var activePage: MainPage = .home
     @State private var isNavigationCollapsed = false
     @State private var isFileDropTargeted = false
     @State private var droppedFiles: [DroppedFileCandidate] = []
     @State private var dropSpaceName = ""
+    @State private var saveDroppedFiles = false
     @State private var showFileDropConfirmation = false
     @State private var showUnsupportedDropAlert = false
 
@@ -244,6 +246,21 @@ struct MainWindowView: View {
         MainWindowLayout.contentHeight - MainWindowLayout.mainCardTopInset - MainWindowLayout.mainCardBottomInset
     }
 
+    private var fileDropIsEnabled: Bool {
+        activePage == .home || activePage == .saved
+    }
+
+    private var showsFileDropOverlay: Bool {
+        fileDropIsEnabled && isFileDropTargeted
+    }
+
+    private var fileDropTargetBinding: Binding<Bool> {
+        Binding(
+            get: { showsFileDropOverlay },
+            set: { isFileDropTargeted = fileDropIsEnabled && $0 }
+        )
+    }
+
     private var navigationCollapsedBinding: Binding<Bool> {
         Binding(
             get: { isNavigationCollapsed },
@@ -264,31 +281,18 @@ struct MainWindowView: View {
                 .allowsHitTesting(!isNavigationCollapsed)
 
             detailContent
+                .frame(width: currentDetailAreaWidth, height: MainWindowLayout.contentHeight, alignment: .topLeading)
+                .blur(radius: showsFileDropOverlay ? 8 : 0, opaque: false)
+                .clipped()
+                .overlay {
+                    if showsFileDropOverlay {
+                        fileDropOverlay
+                    }
+                }
         }
         .frame(width: MainWindowLayout.contentWidth, height: MainWindowLayout.contentHeight, alignment: .topLeading)
         .frame(width: MainWindowLayout.windowWidth, height: MainWindowLayout.windowHeight, alignment: .topLeading)
         .background(MainWindowPalette.shell)
-        .overlay {
-            if isFileDropTargeted {
-                ZStack {
-                    RoundedRectangle(cornerRadius: MainWindowLayout.mainCardCornerRadius, style: .continuous)
-                        .fill(Color.accent.opacity(0.10))
-                    VStack(spacing: 8) {
-                        Image(systemName: "doc.on.doc")
-                            .font(.system(size: 24, weight: .medium))
-                        Text("Drop files to share with your Space")
-                            .font(.system(size: 14, weight: .medium))
-                    }
-                    .foregroundColor(.textPrimary)
-                    .padding(20)
-                    RoundedRectangle(cornerRadius: MainWindowLayout.mainCardCornerRadius, style: .continuous)
-                        .strokeBorder(Color.accent.opacity(0.75), style: StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
-                }
-                .padding(8)
-                .allowsHitTesting(false)
-                .transition(.opacity)
-            }
-        }
         .overlay(alignment: .bottom) {
             if let alert = alertCenter.current {
                 AirclipBottomAlert(
@@ -310,11 +314,12 @@ struct MainWindowView: View {
             .timingCurve(0.25, 0.46, 0.45, 0.94, duration: MainWindowMotion.sidebarDuration),
             value: isNavigationCollapsed
         )
-        .onDrop(of: [UTType.fileURL], isTargeted: $isFileDropTargeted, perform: receiveFileDrop)
+        .onDrop(of: [UTType.fileURL], isTargeted: fileDropTargetBinding, perform: receiveFileDrop)
         .sheet(isPresented: $showFileDropConfirmation, onDismiss: { droppedFiles = [] }) {
             FileDropConfirmationSheet(
                 files: droppedFiles,
                 spaceName: dropSpaceName,
+                saveAfterSharing: saveDroppedFiles,
                 canShare: SyncModeStore.shared.mode.allowsOutboundSync,
                 onCancel: { showFileDropConfirmation = false },
                 onShare: shareDroppedFiles
@@ -350,7 +355,32 @@ struct MainWindowView: View {
         }
     }
 
+    private var fileDropOverlay: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: MainWindowLayout.mainCardCornerRadius, style: .continuous)
+                .fill(Color.accent.opacity(0.05))
+            VStack(spacing: 10) {
+                AirclipEmptyLogoMark(size: 32, color: .textPrimary)
+                Text("Drop the file to share with your Space")
+                    .font(.system(size: 14, weight: .medium))
+                if activePage == .saved {
+                    Text("It will also be added to Saved.")
+                        .font(.system(size: 12))
+                        .foregroundColor(.textSecondary)
+                }
+            }
+            .foregroundColor(.textPrimary)
+            .padding(20)
+            RoundedRectangle(cornerRadius: MainWindowLayout.mainCardCornerRadius, style: .continuous)
+                .strokeBorder(Color.syncBlue.opacity(0.72), style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
+        }
+        .padding(8)
+        .allowsHitTesting(false)
+        .transition(.opacity)
+    }
+
     private func receiveFileDrop(providers: [NSItemProvider]) -> Bool {
+        guard fileDropIsEnabled else { return false }
         let fileProviders = providers.filter {
             $0.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier)
         }
@@ -383,6 +413,7 @@ struct MainWindowView: View {
                 return
             }
             droppedFiles = candidates
+            saveDroppedFiles = activePage == .saved
             dropSpaceName = identity.spaceName.trimmingCharacters(in: .whitespacesAndNewlines)
             if dropSpaceName.isEmpty { dropSpaceName = "your Airclip Space" }
             showFileDropConfirmation = true
@@ -412,10 +443,12 @@ struct MainWindowView: View {
             showUnsupportedDropAlert = true
             return
         }
-        packets.forEach { SyncEngine.shared.sendClipboard(packet: $0) }
+        packets.forEach { SyncEngine.shared.sendClipboard(packet: $0, isSaved: saveDroppedFiles) }
         let count = packets.count
         alertCenter.show(
-            count == 1 ? "Added to \(dropSpaceName)" : "Added \(count) items to \(dropSpaceName)",
+            saveDroppedFiles
+                ? (count == 1 ? "Shared and saved" : "Shared and saved \(count) items")
+                : (count == 1 ? "Added to \(dropSpaceName)" : "Added \(count) items to \(dropSpaceName)"),
             kind: .success
         )
     }
@@ -1132,15 +1165,24 @@ private struct ClipboardWorkspace: View {
             }
         }
         .contextMenu {
-            Button {
-                copy(item)
-            } label: {
-                Label("Copy", systemImage: "doc.on.doc")
-            }
-            Button {
-                toggleSaved(item)
-            } label: {
-                Label(item.isSaved ? "Saved" : "Save", systemImage: item.isSaved ? "bookmark.fill" : "bookmark")
+            if item.clipType == .file {
+                Button {
+                    fileAction(item)
+                } label: {
+                    Label(fileActionLabel(item), systemImage: fileActionSystemImage(item))
+                }
+                .disabled(!fileActionIsEnabled(item))
+            } else {
+                Button {
+                    copy(item)
+                } label: {
+                    Label("Copy", systemImage: "doc.on.doc")
+                }
+                Button {
+                    toggleSaved(item)
+                } label: {
+                    Label(item.isSaved ? "Saved" : "Save", systemImage: item.isSaved ? "bookmark.fill" : "bookmark")
+                }
             }
             Divider()
             Button(role: .destructive) {
@@ -1238,11 +1280,6 @@ private struct ClipboardWorkspace: View {
                 AirclipIcon(.link, size: MainWindowLayout.rowIconWidth)
                     .foregroundColor(MainWindowLayout.linkBadgeForeground)
             }
-        case .code:
-            clipBadge(background: MainWindowLayout.textBadgeFill) {
-                AirclipIcon(.text, size: MainWindowLayout.rowIconWidth)
-                    .foregroundColor(MainWindowLayout.textBadgeForeground)
-            }
         case .image:
             clipBadge(
                 background: item.imageData == nil
@@ -1277,7 +1314,7 @@ private struct ClipboardWorkspace: View {
                         .foregroundColor(MainWindowLayout.imageBadgeForeground)
                 } else {
                     Image(item.fileMetadata?.iconAssetName ?? "FileIconDocument")
-                        .resizable().interpolation(.high).frame(width: 16, height: 16)
+                        .resizable().interpolation(.high).frame(width: 20, height: 20)
                 }
             }
         case .email:
@@ -1318,8 +1355,6 @@ private struct ClipboardWorkspace: View {
         switch item.clipType {
         case .url:
             return MainWindowLayout.linkBadgeForeground
-        case .code:
-            return MainWindowLayout.codeTitleText
         case .email:
             return MainWindowLayout.listTitleText
         case .color:
@@ -1382,6 +1417,8 @@ private struct ClipboardWorkspace: View {
                     onCopy: { copy(selectedItem) },
                     onFileAction: selectedItem.clipType == .file ? { fileAction(selectedItem) } : nil,
                     fileActionLabel: selectedItem.clipType == .file ? fileActionLabel(selectedItem) : nil,
+                    fileActionIcon: selectedItem.clipType == .file ? fileActionIcon(selectedItem) : nil,
+                    fileActionIsEnabled: selectedItem.clipType != .file || fileActionIsEnabled(selectedItem),
                     onSave: { toggleSaved(selectedItem) },
                     onDelete: { delete(selectedItem) }
                 )
@@ -1437,10 +1474,30 @@ private struct ClipboardWorkspace: View {
     }
 
     private func fileActionLabel(_ item: ClipboardItem) -> String {
-        if syncEngine.availableFileURL(for: item) != nil { return "Open" }
+        if syncEngine.availableFileURL(for: item) != nil {
+            return item.fileMetadata?.isPlayableMedia == true ? "Play" : "Open"
+        }
         if let id = item.fileMetadata?.id,
            syncEngine.fileTransfers[id]?.phase == .downloading { return "Downloading…" }
         return "Download"
+    }
+
+    private func fileActionIcon(_ item: ClipboardItem) -> AirclipIconName {
+        guard syncEngine.availableFileURL(for: item) != nil else { return .fileDownload }
+        return item.fileMetadata?.isPlayableMedia == true ? .filePlay : .fileOpen
+    }
+
+    private func fileActionSystemImage(_ item: ClipboardItem) -> String {
+        switch fileActionIcon(item) {
+        case .filePlay: return "play"
+        case .fileOpen: return "arrow.up.right.square"
+        default: return "arrow.down.to.line"
+        }
+    }
+
+    private func fileActionIsEnabled(_ item: ClipboardItem) -> Bool {
+        guard let id = item.fileMetadata?.id else { return true }
+        return syncEngine.fileTransfers[id]?.phase != .downloading
     }
 
     private func openInBrowser(_ item: ClipboardItem) {
@@ -1479,7 +1536,6 @@ private struct ClipboardWorkspace: View {
     private func clipTypeLabel(for type: ClipType) -> String {
         switch type {
         case .url: return "Link"
-        case .code: return "Code"
         case .color: return "Color"
         case .email: return "Email"
         case .image: return "Image"
@@ -1833,7 +1889,7 @@ private struct PreviewContent: View {
             if let host = URL(string: item.text.trimmingCharacters(in: .whitespacesAndNewlines))?.host {
                 rows.append(("Domain", host))
             }
-        case .text, .code:
+        case .text:
             rows.append(("Characters", item.text.count.formatted()))
         case .color:
             if let colorComponents {
@@ -1853,7 +1909,6 @@ private struct PreviewContent: View {
     private var typeLabel: String {
         switch type {
         case .url: return "Link"
-        case .code: return "Code"
         case .color: return "Color"
         case .email: return "Email"
         case .image: return "Image"
@@ -1976,8 +2031,6 @@ private struct PreviewContent: View {
     private var previewFont: Font {
         let size: CGFloat = item.text.count > 260 ? 20 : previewBaseSize
         switch type {
-        case .code:
-            return .system(size: size.clamped(to: 13...13), weight: .regular, design: .monospaced)
         case .url:
             return .system(size: size.clamped(to: 12...12), weight: .regular)
         case .email:
@@ -1995,8 +2048,6 @@ private struct PreviewContent: View {
 
     private var previewBaseSize: CGFloat {
         switch type {
-        case .code:
-            return 13
         case .url:
             return 12
         case .email:
@@ -2020,7 +2071,7 @@ private struct PreviewContent: View {
             return Color.syncBlue
         case .color:
             return MainWindowPalette.primaryText
-        case .code, .text:
+        case .text:
             return MainWindowPalette.primaryText
         case .image, .file:
             return MainWindowPalette.primaryText
@@ -2029,8 +2080,6 @@ private struct PreviewContent: View {
 
     private var previewLineSpacing: CGFloat {
         switch type {
-        case .code:
-            return 4
         case .image, .file:
             return 5
         case .text:
@@ -2190,6 +2239,8 @@ private struct FloatingActions: View {
     let onCopy: () -> Void
     let onFileAction: (() -> Void)?
     let fileActionLabel: String?
+    let fileActionIcon: AirclipIconName?
+    let fileActionIsEnabled: Bool
     let onSave: () -> Void
     let onDelete: () -> Void
 
@@ -2203,10 +2254,14 @@ private struct FloatingActions: View {
                     action: onOpenBrowser
                 )
             }
-            if let onFileAction, let fileActionLabel {
-                Button(fileActionLabel, action: onFileAction)
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
+            if let onFileAction, let fileActionLabel, let fileActionIcon {
+                ActionIconButton(
+                    icon: fileActionIcon,
+                    foregroundColor: MainWindowPalette.secondaryText,
+                    help: fileActionLabel,
+                    isEnabled: fileActionIsEnabled,
+                    action: onFileAction
+                )
             } else {
                 CopyActionIconButton(action: onCopy)
                     .keyboardShortcut("c", modifiers: .command)
@@ -2352,6 +2407,7 @@ private struct ActionIconButton: View {
     var foregroundColor: Color = MainWindowPalette.secondaryText
     var hoverForegroundColor: Color?
     let help: String
+    var isEnabled: Bool = true
     let action: () -> Void
 
     @State private var isHovered = false
@@ -2372,9 +2428,12 @@ private struct ActionIconButton: View {
                 .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
         .buttonStyle(.plain)
+        .disabled(!isEnabled)
+        .opacity(isEnabled ? 1 : 0.45)
         .help(help)
         .accessibilityLabel(help)
         .onHover { hovering in
+            guard isEnabled else { return }
             withAnimation(.easeOut(duration: MainWindowMotion.hoverDuration)) {
                 isHovered = hovering
             }
@@ -4395,6 +4454,7 @@ private struct SettingsPanel: View {
 private struct FileDropConfirmationSheet: View {
     let files: [DroppedFileCandidate]
     let spaceName: String
+    let saveAfterSharing: Bool
     let canShare: Bool
     let onCancel: () -> Void
     let onShare: () -> Void
@@ -4415,7 +4475,9 @@ private struct FileDropConfirmationSheet: View {
                 .foregroundStyle(Color.textPrimary)
                 .padding(.bottom, 6)
 
-            Text("Add to \(spaceName)? Other devices in this Space can download the file when they need it. The original stays on this Mac.")
+            Text(saveAfterSharing
+                ? "Add to \(spaceName) and Saved? Other devices in this Space can download the file when they need it. The original stays on this Mac."
+                : "Add to \(spaceName)? Other devices in this Space can download the file when they need it. The original stays on this Mac.")
                 .font(.system(size: 13))
                 .foregroundStyle(Color.textSecondary)
                 .multilineTextAlignment(.center)
@@ -4472,7 +4534,7 @@ private struct FileDropConfirmationSheet: View {
 
             VStack(spacing: 8) {
                 SettingsConfirmationButton(
-                    title: "Share with Space",
+                    title: saveAfterSharing ? "Share and Save" : "Share with Space",
                     fill: canShare ? .accentDeep : .textTertiary,
                     hoverFill: canShare ? Color.accentDeep.opacity(0.86) : .textTertiary,
                     foreground: .white,

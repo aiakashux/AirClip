@@ -95,7 +95,7 @@ object HistoryMutationStore {
 }
 
 enum class ClipKind {
-    URL, CODE, COLOR, EMAIL, IMAGE, FILE, TEXT
+    URL, COLOR, EMAIL, IMAGE, FILE, TEXT
 }
 
 data class FileClipMetadata(
@@ -457,7 +457,6 @@ object ClipHistoryStore {
         val preview = record.preview
         val kind = runCatching { ClipKind.valueOf(record.kind) }
             .getOrElse { detectClipKind(record.displayText) }
-            .let { if (it == ClipKind.CODE) ClipKind.TEXT else it }
         record.copy(
             messageId = messageId,
             fromDeviceId = fromDeviceId,

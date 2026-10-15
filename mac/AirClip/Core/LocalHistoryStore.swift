@@ -175,8 +175,7 @@ enum ClipboardSchemaV2: VersionedSchema {
         }
 
         var clipType: ClipType {
-            let decoded = ClipType(rawValue: kindRaw) ?? ClipType.detect(text)
-            return decoded == .code ? .text : decoded
+            ClipType(rawValue: kindRaw) ?? ClipType.detect(text)
         }
 
         var clipboardPacket: ClipboardPacket {
@@ -224,8 +223,7 @@ enum ClipboardSchemaV3: VersionedSchema {
         }
 
         var clipType: ClipType {
-            let decoded = ClipType(rawValue: kindRaw) ?? ClipType.detect(text)
-            return decoded == .code ? .text : decoded
+            ClipType(rawValue: kindRaw) ?? ClipType.detect(text)
         }
 
         var fileMetadata: FileClipMetadata? {
@@ -300,7 +298,8 @@ final class LocalHistoryStore {
         fromDeviceId: String,
         isLocal: Bool,
         id: UUID = UUID(),
-        receivedAt: Date = Date()
+        receivedAt: Date = Date(),
+        isSaved: Bool = false
     ) {
         let ctx = container.mainContext
         let timestampMs = Int64(receivedAt.timeIntervalSince1970 * 1000)
@@ -328,7 +327,8 @@ final class LocalHistoryStore {
             fileMetadataData: packet.file.flatMap { try? JSONEncoder().encode($0) },
             receivedAt: receivedAt,
             fromDeviceId: fromDeviceId,
-            isLocal: isLocal
+            isLocal: isLocal,
+            isSaved: isSaved
         )
         ctx.insert(item)
         evictOldItems(ctx: ctx)

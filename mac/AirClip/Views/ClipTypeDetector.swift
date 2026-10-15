@@ -6,12 +6,11 @@ import QuickLookThumbnailing
 import AVFoundation
 
 enum ClipboardKind: String, Codable, CaseIterable {
-    case url, code, color, email, image, file, text
+    case url, color, email, image, file, text
 
     var displayName: String {
         switch self {
         case .url: return "URL"
-        case .code: return "Code"
         case .color: return "Color"
         case .email: return "Email"
         case .image: return "Image"
@@ -81,6 +80,13 @@ struct FileClipMetadata: Codable, Hashable {
         mimeType.hasPrefix("image/") || ["png", "jpg", "jpeg", "gif", "webp", "heic", "heif", "bmp", "tif", "tiff"]
             .contains((name as NSString).pathExtension.lowercased())
     }
+
+    var isPlayableMedia: Bool {
+        let ext = (name as NSString).pathExtension.lowercased()
+        return mimeType.hasPrefix("audio/") || mimeType.hasPrefix("video/") ||
+            ["mp3", "m4a", "aac", "wav", "flac", "ogg", "opus", "aiff",
+             "mp4", "m4v", "mov", "mkv", "avi", "webm", "wmv"].contains(ext)
+    }
 }
 
 struct ClipboardPacket: Codable, Hashable {
@@ -98,8 +104,7 @@ struct ClipboardPacket: Codable, Hashable {
     }
 
     var kind: ClipboardKind {
-        let decoded = ClipboardKind(rawValue: kindRaw) ?? .text
-        return decoded == .code ? .text : decoded
+        ClipboardKind(rawValue: kindRaw) ?? .text
     }
 
     var imageData: Data? {
@@ -455,7 +460,7 @@ enum FileClipSource {
 // MARK: - Clip Type — shared between popup and main window
 
 enum ClipType: String, Codable, CaseIterable {
-    case url, code, color, email, image, file, text
+    case url, color, email, image, file, text
 
     var clipboardKind: ClipboardKind {
         ClipboardKind(rawValue: rawValue) ?? .text

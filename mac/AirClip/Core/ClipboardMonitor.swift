@@ -100,11 +100,16 @@ final class ClipboardMonitor {
             return
         }
 
-        for packet in ClipboardCapture.readCurrentPackets(from: NSPasteboard.general) {
+        let packets = ClipboardCapture.readCurrentPackets(from: NSPasteboard.general)
+        for packet in packets {
             let hash = sha256(packet.fingerprint)
             guard !recentHashes.contains(hash) else { continue }
             addHash(hash)
             syncEngine?.sendClipboard(packet: packet)
+        }
+
+        if explicitShare, !packets.isEmpty {
+            StatusBarController.shared.showShareConfirmation()
         }
     }
 

@@ -10,10 +10,10 @@ private enum PopoverMetrics {
     static let width: CGFloat = 372
     static let outerPadding: CGFloat = 24
     static let topPadding: CGFloat = 8
-    static let cardSpacing: CGFloat = 6
+    static let cardSpacing: CGFloat = 4
     static let cardRadius: CGFloat = 16
-    static let cardPaddingHorizontal: CGFloat = 12.5
-    static let cardPaddingVertical: CGFloat = 12.5
+    static let cardPaddingHorizontal: CGFloat = 12
+    static let cardPaddingVertical: CGFloat = 12
     static let footerTopPadding: CGFloat = 8
     static let footerHeight: CGFloat = 36
     static let emptyHeight: CGFloat = 132
@@ -152,7 +152,7 @@ struct PopoverView: View {
     // MARK: - Empty State
 
     private var emptyState: some View {
-        AirclipFigmaEmptyState(text: "Your recent clips will appear here. Copy something on this Mac or a connected device.")
+        AirclipFigmaEmptyState(text: "Copy something to get started.")
         .frame(maxWidth: .infinity)
         .frame(height: PopoverMetrics.emptyHeight)
         .background(
@@ -460,50 +460,43 @@ private struct ClipCard: View {
             RoundedRectangle(cornerRadius: PopoverMetrics.cardRadius, style: .continuous)
                 .fill(.ultraThinMaterial)
             RoundedRectangle(cornerRadius: PopoverMetrics.cardRadius, style: .continuous)
-                .fill(colorScheme == .dark ? Color.bgElevated.opacity(0.76) : Color.white.opacity(0.65))
-                HStack(spacing: 0) {
-                    if type == .url {
-                        Button(action: onTap) {
-                            actionLabel(
-                                icon: .openBrowser,
-                                title: "Open",
-                                iconSize: 18,
-                                color: isOpenActionHovered ? .accentDeep : .accent,
-                                shimmer: isOpenActionHovered
-                            )
-                        }
-                        .buttonStyle(PopoverActionButtonStyle(isHovered: isOpenActionHovered))
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .onHover { isOpenActionHovered = $0 }
+                .fill(Color.accent.opacity(colorScheme == .dark ? 0.10 : 0.07))
+            HStack(spacing: 0) {
+                if type == .url {
+                    Button(action: onTap) {
+                        actionLabel(
+                            icon: .openBrowser,
+                            title: "Open",
+                            iconSize: 18,
+                            color: isOpenActionHovered ? .accentDeep : .accent,
+                            shimmer: isOpenActionHovered
+                        )
                     }
-                    Button(action: type == .file ? performFileAction : onCopy) {
-                        if type == .file {
-                            fileActionLabel
-                        } else {
-                            actionLabel(
-                                icon: .copy,
-                                title: "Click to Copy",
-                                color: isCopyActionHovered ? .accentDeep : .accent,
-                                shimmer: isCopyActionHovered
-                            )
-                        }
-                    }
-                    .buttonStyle(PopoverActionButtonStyle(isHovered: isCopyActionHovered))
+                    .buttonStyle(PopoverActionButtonStyle(isHovered: isOpenActionHovered))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .disabled(type == .file && isFileDownloading)
-                    .onHover { isCopyActionHovered = $0 }
+                    .onHover { isOpenActionHovered = $0 }
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-                .padding(1)
-        }
-            .clipShape(RoundedRectangle(cornerRadius: PopoverMetrics.cardRadius, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: PopoverMetrics.cardRadius, style: .continuous)
-                    .strokeBorder(
-                        colorScheme == .dark ? Color.borderDefault : Color(hex: "#E1E4EA"),
-                        lineWidth: 1
-                    )
+                Button(action: type == .file ? performFileAction : onCopy) {
+                    if type == .file {
+                        fileActionLabel
+                    } else {
+                        actionLabel(
+                            icon: .copy,
+                            title: "Click to Copy",
+                            color: isCopyActionHovered ? .accentDeep : .accent,
+                            shimmer: isCopyActionHovered
+                        )
+                    }
+                }
+                .buttonStyle(PopoverActionButtonStyle(isHovered: isCopyActionHovered))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .disabled(type == .file && isFileDownloading)
+                .onHover { isCopyActionHovered = $0 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+            .padding(1)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: PopoverMetrics.cardRadius, style: .continuous))
         .transition(.opacity)
     }
 
@@ -570,10 +563,6 @@ private struct ClipCard: View {
         .textSubtle
     }
 
-    private var iconContainerBorderColor: Color {
-        .borderSubtle
-    }
-
     private var imageBorderColor: Color {
         Color(hex: "#DADDDF")
     }
@@ -582,7 +571,7 @@ private struct ClipCard: View {
     private var contentView: some View {
         switch type {
         case .file:
-            HStack(spacing: 10) {
+            HStack(alignment: .top, spacing: 10) {
                 if item.fileMetadata?.isImage == true,
                    let thumbnail = item.fileMetadata?.thumbnailImage {
                     Image(nsImage: thumbnail)
@@ -598,11 +587,11 @@ private struct ClipCard: View {
                     fileTypeIconBadge(
                         iconName: item.fileMetadata?.iconAssetName ?? "FileIconDocument",
                         accent: item.fileMetadata?.iconAccentColor ?? Color(hex: "#33A1FE"),
-                        iconSize: 16,
+                        iconSize: 20,
                         containerSize: 28
                     )
                 }
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 2) {
                     Text(item.fileMetadata?.name ?? item.text)
                         .font(.system(size: 14, weight: .medium))
                         .foregroundColor(primaryTextColor)
@@ -612,7 +601,7 @@ private struct ClipCard: View {
             }
         case .url:
             HStack(alignment: .top, spacing: 12) {
-                typeBadge(background: Color.accent.opacity(0.16)) {
+                typeBadge(background: Color.accent.opacity(0.07)) {
                     AirclipIcon(.link, size: 14)
                         .foregroundColor(linkTextColor)
                 }
@@ -631,26 +620,6 @@ private struct ClipCard: View {
                 .task(id: item.id) {
                     linkPreview = await LinkPreviewLoader.preview(for: item.text, includeImage: false)
                 }
-            }
-
-        case .code:
-            HStack(alignment: .center, spacing: 12) {
-                typeBadge(background: Color.warningYellow.opacity(0.16)) {
-                    AirclipIcon(.text, size: 14)
-                        .foregroundColor(Color.warningYellow)
-                }
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(item.text)
-                        .font(.system(size: 13, weight: .regular, design: .monospaced))
-                        .foregroundColor(codeTextColor)
-                        .lineSpacing(4.5)
-                        .lineLimit(2)
-                        .truncationMode(.tail)
-                        .frame(minHeight: 19.5, alignment: .top)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    metaRowJustified
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
             }
 
         case .color:
@@ -692,8 +661,8 @@ private struct ClipCard: View {
             }
 
         case .email:
-            HStack(alignment: .center, spacing: 12) {
-                typeBadge(background: Color.syncBlue.opacity(0.16)) {
+            HStack(alignment: .top, spacing: 12) {
+                typeBadge(background: Color.syncBlue.opacity(0.07)) {
                     AirclipIcon(.text, size: 14)
                         .foregroundColor(Color.syncBlue)
                 }
@@ -712,8 +681,8 @@ private struct ClipCard: View {
             }
 
         case .text:
-            HStack(alignment: .center, spacing: 12) {
-                typeBadge(background: Color.encryptedGreen.opacity(0.10)) {
+            HStack(alignment: .top, spacing: 12) {
+                typeBadge(background: Color.encryptedGreen.opacity(0.07)) {
                     AirclipIcon(.text, size: 14)
                         .foregroundColor(Color.encryptedGreen)
                 }
@@ -826,8 +795,6 @@ private struct ClipCard: View {
         ZStack {
             RoundedRectangle(cornerRadius: 6, style: .continuous)
                 .fill(background)
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .strokeBorder(iconContainerBorderColor, lineWidth: 0.5)
             content()
         }
         .frame(width: 28, height: 28)
@@ -859,7 +826,7 @@ private struct PopoverActionButtonStyle: ButtonStyle {
         configuration.label
             .background(
                 Color(hex: "#6C3EC6").opacity(
-                    configuration.isPressed ? 0.08 : isHovered ? 0.05 : 0
+                    configuration.isPressed ? 0.08 : isHovered ? 0.03 : 0
                 )
             )
             .contentShape(Rectangle())

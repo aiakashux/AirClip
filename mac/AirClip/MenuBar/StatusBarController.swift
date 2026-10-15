@@ -4,16 +4,43 @@ import SwiftData
 import Combine
 import Carbon
 
+private struct MenuBarConfirmationView: View {
+    let message: String
+
+    var body: some View {
+        HStack(spacing: 5) {
+            AirclipIcon(.tick, size: 11)
+                .foregroundColor(.encryptedGreen)
+            Text(message)
+                .font(.airClipCaption)
+                .foregroundColor(.textSecondary)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(
+            Capsule()
+                .fill(Color.bgFloating)
+                .overlay(Capsule().strokeBorder(Color.borderSubtle, lineWidth: 0.5))
+        )
+        .shadow(color: .black.opacity(0.10), radius: 6, x: 0, y: 2)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .allowsHitTesting(false)
+    }
+}
+
 /// Owns the NSStatusItem and a borderless NSPanel that contains the entire app UI.
 @MainActor
 final class StatusBarController: NSObject {
     static let shared = StatusBarController()
     private static let mainWindowSize = NSSize(width: 860, height: 608)
+    private static let popoverPanelSize = NSSize(width: 372, height: 560)
     private static let mainToolbarIdentifier = NSToolbar.Identifier("com.airclip.mainWindowToolbar")
     private static let sidebarToolbarItemIdentifier = NSToolbarItem.Identifier("com.airclip.sidebarToggle")
 
     private var statusItem: NSStatusItem?
     private var panel: NSPanel?
+    private var confirmationPanel: NSPanel?
+    private var confirmationDismissWorkItem: DispatchWorkItem?
     private var mainWindow: NSWindow?
     private var eventMonitor: GlobalEventMonitor?
     private var desktopOpenWorkItem: DispatchWorkItem?
@@ -70,7 +97,7 @@ final class StatusBarController: NSObject {
 
         // Borderless, fully transparent non-activating panel
         let p = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 324, height: 560),
+            contentRect: NSRect(origin: .zero, size: Self.popoverPanelSize),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -426,8 +453,8 @@ final class StatusBarController: NSObject {
             buttonOnScreen = NSRect(x: s.maxX - 40, y: s.maxY - 24, width: 24, height: 24)
         }
 
-        let panelW: CGFloat = 324
-        let panelH: CGFloat = 560
+        let panelW = Self.popoverPanelSize.width
+        let panelH = Self.popoverPanelSize.height
         let gap: CGFloat    = 8
 
         var x = (buttonOnScreen.midX - panelW / 2).rounded()
@@ -468,6 +495,75 @@ final class StatusBarController: NSObject {
             panel?.orderOut(nil)
             panel?.alphaValue = 1   // restore for next open
         })
+    }
+}
+
+extension StatusBarController {
+    func showShareConfirmation() {
+        guard let button = statusItem?.button else { return }
+
+        confirmationDismissWorkItem?.cancel()
+        confirmationPanel?.orderOut(nil)
+
+        let hostingController = NSHostingController(
+            rootView: MenuBarConfirmationView(message: "Added to Airclip")
+        )
+        let panelSize = NSSize(width: 148, height: 34)
+        let toastPanel = NSPanel(
+            contentRect: NSRect(origin: .zero, size: panelSize),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        toastPanel.backgroundColor = .clear
+        toastPanel.isOpaque = false
+        toastPanel.hasShadow = false
+        toastPanel.level = .popUpMenu
+        toastPanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        toastPanel.contentViewController = hostingController
+
+        let buttonInWindow = button.convert(button.bounds, to: nil)
+        let buttonOnScreen = button.window?.convertToScreen(buttonInWindow) ?? .zero
+        let screen = NSScreen.screens.first {
+            $0.frame.contains(NSPoint(x: buttonOnScreen.midX, y: buttonOnScreen.midY))
+        } ?? NSScreen.main
+        var x = (buttonOnScreen.midX - panelSize.width / 2).rounded()
+        if let screen {
+            x = max(screen.frame.minX + 8, min(x, screen.frame.maxX - panelSize.width - 8))
+        }
+        let y = (buttonOnScreen.minY - panelSize.height - 6).rounded()
+        toastPanel.setFrame(
+            NSRect(x: x, y: y, width: panelSize.width, height: panelSize.height),
+            display: false
+        )
+        toastPanel.alphaValue = 0
+        toastPanel.orderFrontRegardless()
+        confirmationPanel = toastPanel
+
+        let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = reduceMotion ? 0.01 : 0.16
+            context.timingFunction = CAMediaTimingFunction(controlPoints: 0.25, 0.46, 0.45, 0.94)
+            toastPanel.animator().alphaValue = 1
+        }
+
+        let workItem = DispatchWorkItem { [weak self, weak toastPanel] in
+            guard let self, let toastPanel, self.confirmationPanel === toastPanel else { return }
+            NSAnimationContext.runAnimationGroup({ context in
+                context.duration = reduceMotion ? 0.01 : 0.14
+                context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                toastPanel.animator().alphaValue = 0
+            }, completionHandler: { [weak self, weak toastPanel] in
+                Task { @MainActor in
+                    toastPanel?.orderOut(nil)
+                    if self?.confirmationPanel === toastPanel {
+                        self?.confirmationPanel = nil
+                    }
+                }
+            })
+        }
+        confirmationDismissWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.8, execute: workItem)
     }
 }
 

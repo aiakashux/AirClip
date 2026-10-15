@@ -775,7 +775,6 @@ private fun FeedClipItem(
             ClipKind.IMAGE -> ImageFeedItem(record, timeStr)
             ClipKind.FILE -> FileFeedItem(record, timeStr)
             ClipKind.COLOR -> ColorFeedItem(record, timeStr)
-            ClipKind.CODE  -> TextFeedItem(record, timeStr)
             ClipKind.EMAIL -> TextFeedItem(record, timeStr)
         }
     }
@@ -792,9 +791,9 @@ private fun FileFeedItem(record: ClipItemRecord, timeStr: String) {
         FileVisual(
             record,
             28.dp,
-            showBorder = false,
+            showBorder = true,
             backgroundOpacity = 0.07f,
-            iconSize = 16.dp,
+            iconSize = 20.dp,
         )
         Column(modifier = Modifier.weight(1f)) {
             Text(record.file?.name ?: record.displayText, fontSize = 18.sp, color = c.textPrimary,
@@ -886,6 +885,15 @@ private fun isImageFile(name: String, mimeType: String): Boolean =
     mimeType.startsWith("image/") || name.substringAfterLast('.', "").lowercase(Locale.ROOT) in setOf(
         "png", "jpg", "jpeg", "gif", "webp", "heic", "heif", "bmp", "tif", "tiff",
     )
+
+private fun isPlayableFile(name: String, mimeType: String): Boolean {
+    val extension = name.substringAfterLast('.', "").lowercase(Locale.ROOT)
+    return mimeType.startsWith("audio/") || mimeType.startsWith("video/") ||
+        extension in setOf(
+            "mp3", "m4a", "aac", "wav", "flac", "ogg", "opus", "aiff",
+            "mp4", "m4v", "mov", "mkv", "avi", "webm", "wmv",
+        )
+}
 
 private fun formatFileSize(bytes: Long): String = when {
     bytes >= 1_000_000_000 -> String.format(Locale.US, "%.1f GB", bytes / 1_000_000_000.0)
@@ -1221,6 +1229,7 @@ private fun ClipPreviewSheet(
     val fileTransfers by SyncEngine.fileTransfers.collectAsState()
     val fileTransfer = record.file?.id?.let(fileTransfers::get)
     val fileAvailable = remember(record, fileTransfer) { SyncEngine.availableFile(record) != null }
+    val playableFile = record.file?.let { isPlayableFile(it.name, it.mimeType) } == true
     val temporaryPreviewFile = remember(record, fileTransfer) { SyncEngine.availablePreviewFile(record) }
     val bitmap = if (kind == ClipKind.IMAGE) rememberPreviewBitmap(record) else null
     val linkPreview = if (kind == ClipKind.URL) rememberLinkPreview(record) else null
@@ -1453,13 +1462,26 @@ private fun ClipPreviewSheet(
                         if (kind == ClipKind.FILE) {
                             if (fileTransfer?.phase != "downloading") {
                                 Icon(
-                                    painter = painterResource(if (fileAvailable) R.drawable.ic_file_open else R.drawable.ic_file_download),
+                                    painter = painterResource(
+                                        when {
+                                            !fileAvailable -> R.drawable.ic_file_download
+                                            playableFile -> R.drawable.ic_file_play
+                                            else -> R.drawable.ic_file_open
+                                        },
+                                    ),
                                     contentDescription = null,
                                     modifier = Modifier.size(16.dp),
                                 )
                                 Spacer(Modifier.width(8.dp))
                             }
-                            Text(if (fileAvailable) "Open" else if (fileTransfer?.phase == "downloading") "Downloading…" else "Download")
+                            Text(
+                                when {
+                                    fileTransfer?.phase == "downloading" -> "Downloading…"
+                                    fileAvailable && playableFile -> "Play"
+                                    fileAvailable -> "Open"
+                                    else -> "Download"
+                                },
+                            )
                         } else {
                         CopyConfirmationIcon(
                             progress = copyMorphProgress,
@@ -1804,7 +1826,6 @@ private fun recordKind(record: ClipItemRecord): ClipKind =
     runCatching { ClipKind.valueOf(record.kind) }.getOrDefault(ClipKind.TEXT)
         .let {
             when {
-                it == ClipKind.CODE -> ClipKind.TEXT
                 it == ClipKind.TEXT && parseClipboardColor(record.displayText) != null -> ClipKind.COLOR
                 else -> it
             }

@@ -63,7 +63,7 @@ final class SyncEngine: ObservableObject {
 
     // MARK: - Outbound
 
-    func sendClipboard(packet: ClipboardPacket, prepared: Bool = false) {
+    func sendClipboard(packet: ClipboardPacket, prepared: Bool = false, isSaved: Bool = false) {
         guard SyncModeStore.shared.mode.allowsOutboundSync else { return }
         if packet.kind == .file, !prepared, let id = packet.file?.id {
             Task {
@@ -74,7 +74,7 @@ final class SyncEngine: ObservableObject {
                 if let thumbnail = await FileClipSource.thumbnail(for: id) {
                     enriched.file?.thumbnailBase64 = thumbnail.base64EncodedString()
                 }
-                sendClipboard(packet: enriched, prepared: true)
+                sendClipboard(packet: enriched, prepared: true, isSaved: isSaved)
             }
             return
         }
@@ -86,7 +86,8 @@ final class SyncEngine: ObservableObject {
             fromDeviceId: myId,
             isLocal: true,
             id: messageId,
-            receivedAt: timestamp
+            receivedAt: timestamp,
+            isSaved: isSaved
         )
         PeerManager.shared.broadcast(
             packet: packet,

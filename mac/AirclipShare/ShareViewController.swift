@@ -7,15 +7,20 @@ final class ShareViewController: NSViewController {
     private var didProcessRequest = false
 
     override func loadView() {
-        let label = NSTextField(labelWithString: "Adding files to Airclip…")
-        label.alignment = .center
-        view = NSView(frame: NSRect(x: 0, y: 0, width: 280, height: 72))
-        label.frame = view.bounds.insetBy(dx: 12, dy: 16)
-        view.addSubview(label)
+        // Finder hosts a share extension's view in a transient window. Keep that
+        // host effectively invisible; the main app presents its own confirmation
+        // directly beneath the Airclip menu-bar item after capture succeeds.
+        preferredContentSize = NSSize(width: 1, height: 1)
+        view = NSView(frame: NSRect(x: 0, y: 0, width: 1, height: 1))
+        view.isHidden = true
     }
 
-    override func viewDidAppear() {
-        super.viewDidAppear()
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        processSharedFiles()
+    }
+
+    private func processSharedFiles() {
         guard !didProcessRequest else { return }
         didProcessRequest = true
         let providers = (extensionContext?.inputItems as? [NSExtensionItem])?

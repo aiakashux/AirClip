@@ -20,6 +20,9 @@ enum AirclipIconName: String {
     case plus
     case arrowRight
     case arrowUpRight
+    case fileDownload
+    case fileOpen
+    case filePlay
     case openBrowser
     case arrowLeft
     case lock
@@ -149,6 +152,9 @@ enum AirclipIconRenderer {
         case .bookmarkAdd: return "UnifiedSave"
         case .bookmarkCheck: return "UnifiedSaved"
         case .arrowUpRight: return "UnifiedOpenExternal"
+        case .fileDownload: return "UnifiedFileDownload"
+        case .fileOpen: return "UnifiedFileOpen"
+        case .filePlay: return "UnifiedFilePlay"
         case .openBrowser: return nil
         case .clipboard: return "UnifiedClipboard"
         case .text: return "UnifiedText"
