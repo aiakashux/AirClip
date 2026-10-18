@@ -18,7 +18,7 @@ class ClipHistoryDeduplicationTest {
     }
 
     @Test
-    fun `reconciles live and history records for the same logical clip`() {
+    fun `repeated content keeps one record and promotes the newest copy`() {
         val live = record(
             messageId = "lan-random",
             timestampMs = 10_000L,
@@ -28,11 +28,11 @@ class ClipHistoryDeduplicationTest {
             timestampMs = 10_645L,
         )
 
-        assertEquals(listOf(live), ClipHistoryStore.deduplicate(listOf(live, history)))
+        assertEquals(listOf(history), ClipHistoryStore.deduplicate(listOf(live, history)))
     }
 
     @Test
-    fun `keeps repeated content outside reconciliation window`() {
+    fun `promotes repeated content even when the earlier copy is old`() {
         val first = record(
             messageId = "first",
             timestampMs = 10_000L,
@@ -42,11 +42,11 @@ class ClipHistoryDeduplicationTest {
             timestampMs = 12_001L,
         )
 
-        assertEquals(listOf(first, later), ClipHistoryStore.deduplicate(listOf(first, later)))
+        assertEquals(listOf(later), ClipHistoryStore.deduplicate(listOf(first, later)))
     }
 
     @Test
-    fun `keeps same content from different devices`() {
+    fun `promotes repeated content copied on another device`() {
         val mac = record(
             messageId = "mac",
             timestampMs = 10_000L,
@@ -57,7 +57,7 @@ class ClipHistoryDeduplicationTest {
             fromDeviceId = "android-device",
         )
 
-        assertEquals(listOf(mac, android), ClipHistoryStore.deduplicate(listOf(mac, android)))
+        assertEquals(listOf(android), ClipHistoryStore.deduplicate(listOf(mac, android)))
     }
 
     @Test
@@ -75,7 +75,27 @@ class ClipHistoryDeduplicationTest {
             kind = ClipKind.IMAGE,
         )
 
-        assertEquals(listOf(androidShare), ClipHistoryStore.deduplicate(listOf(androidShare, macEcho)))
+        assertEquals(listOf(macEcho), ClipHistoryStore.deduplicate(listOf(androidShare, macEcho)))
+    }
+
+    @Test
+    fun `same file metadata promotes newest copy even when transfer ids differ`() {
+        val original = record(
+            messageId = "old-file",
+            timestampMs = 10_000L,
+            kind = ClipKind.FILE,
+        ).copy(file = file(id = "transfer-1"), sourceFilePath = "/tmp/report.pdf")
+        val copiedAgain = record(
+            messageId = "new-file",
+            timestampMs = 80_000L,
+            kind = ClipKind.FILE,
+        ).copy(file = file(id = "transfer-2"), sourceFilePath = "/tmp/report.pdf")
+
+        val result = ClipHistoryStore.deduplicate(listOf(original, copiedAgain)).single()
+
+        assertEquals("new-file", result.messageId)
+        assertEquals(80_000L, result.timestampMs)
+        assertEquals("/tmp/report.pdf", result.sourceFilePath)
     }
 
     @Test
@@ -167,5 +187,13 @@ class ClipHistoryDeduplicationTest {
         preview = preview,
         contentText = contentText,
         kind = kind.name,
+    )
+
+    private fun file(id: String) = FileClipMetadata(
+        id = id,
+        name = "report.pdf",
+        size = 1_024L,
+        mimeType = "application/pdf",
+        modifiedAtMs = 123_456L,
     )
 }

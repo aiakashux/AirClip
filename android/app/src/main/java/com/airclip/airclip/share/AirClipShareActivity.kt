@@ -73,16 +73,16 @@ class AirclipShareActivity : Activity() {
             return ShareResult("Airclip is not ready to share.")
         }
 
-        SyncEngine.markLocalActivity()
-        sharedItems.forEach { item ->
+        val sharedCount = dispatchShareBatch(sharedItems) { item ->
             when (item) {
-                is SharedItem.Image -> SyncEngine.sendImageClip(item.label, item.imageDataBase64)
-                is SharedItem.Text -> SyncEngine.sendClip(item.text)
-                is SharedItem.File -> SyncEngine.sendFileClip(item.metadata, item.path)
+                is SharedItem.Image -> SyncEngine.sendImageClipAndWait(item.label, item.imageDataBase64)
+                is SharedItem.Text -> SyncEngine.sendClipAndWait(item.text)
+                is SharedItem.File -> SyncEngine.sendFileClipAndWait(item.metadata, item.path)
             }
         }
+        if (sharedCount == 0) return ShareResult("Airclip could not finish sharing these items.")
         return ShareResult(
-            if (sharedItems.size == 1) "Shared to Airclip" else "Shared ${sharedItems.size} items to Airclip"
+            if (sharedCount == 1) "Shared to Airclip" else "Shared $sharedCount items to Airclip"
         )
     }
 
@@ -95,7 +95,9 @@ class AirclipShareActivity : Activity() {
             val isImage = mimeType.startsWith("image/") || extension in setOf(
                 "png", "jpg", "jpeg", "gif", "webp", "heic", "heif", "bmp", "tif", "tiff"
             )
-            val item = if (isImage) imageItem(uri) ?: fileItem(uri, mimeType) else fileItem(uri, mimeType)
+            // Keep every recognized image on the image clipboard path. Falling back to
+            // File here turns image attachments into downloadable file entries.
+            val item = if (isImage) imageItem(uri) else fileItem(uri, mimeType)
             item?.let(items::add)
         }
 

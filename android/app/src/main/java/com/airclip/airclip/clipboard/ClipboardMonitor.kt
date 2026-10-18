@@ -13,8 +13,7 @@ import kotlinx.coroutines.flow.callbackFlow
  * to be registered on the main thread. callbackFlow bridges the callback safely.
  *
  * Emits non-empty, trimmed text strings only. Images/other MIME types are ignored.
- * Never emits the same reference twice in a row (Android fires the callback on any copy,
- * including programmatic writes; loop-prevention is handled upstream by RecentHashCache).
+ * Programmatic writes are filtered by SyncEngine's one-shot suppression token.
  */
 object ClipboardMonitor {
 
@@ -26,11 +25,14 @@ object ClipboardMonitor {
                 val clip = cm.primaryClip ?: return@OnPrimaryClipChangedListener
                 if (clip.itemCount == 0) return@OnPrimaryClipChangedListener
                 val text = clip.getItemAt(0)
-                    .coerceToText(context)
+                    .text
                     ?.toString()
                     ?.trim()
                     .takeIf { !it.isNullOrEmpty() }
                     ?: return@OnPrimaryClipChangedListener
+                if (com.airclip.airclip.SyncEngine.consumeSuppressedClipboardText(text)) {
+                    return@OnPrimaryClipChangedListener
+                }
                 trySend(text)   // non-blocking; downstream channel handles backpressure
             } catch (_: Exception) {
                 // Ignore — clipboard may be unavailable (e.g. Android 12+ in background)

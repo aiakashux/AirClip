@@ -108,7 +108,7 @@ struct ClipPrimaryButton: View {
             ZStack {
                 RoundedRectangle(cornerRadius: Radius.md)
                     .fill(
-                        Color.accentDeep.opacity(isDisabled ? 0.35 : 1)
+                        Color.primaryButtonFill.opacity(isDisabled ? 0.35 : 1)
                     )
                     .frame(height: Layout.buttonHeight)
 

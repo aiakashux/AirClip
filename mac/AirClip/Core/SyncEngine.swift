@@ -10,6 +10,204 @@ struct FileTransferProgress: Equatable {
 }
 
 private let filePreviewMaxBytes: Int64 = 3 * 1024 * 1024
+private let fileAutoDownloadMaxBytes: Int64 = 3 * 1024 * 1024
+
+@MainActor
+final class DownloadLocationStore: ObservableObject {
+    static let shared = DownloadLocationStore()
+
+    @Published private(set) var folderURL: URL
+
+    private let folderPathKey = "fileDownloadFolderPath"
+    private let folderBookmarkKey = "fileDownloadFolderBookmark"
+    private let filePathsKey = "downloadedFilePaths"
+    private let fileBookmarksKey = "downloadedFileBookmarks"
+    private let transferFolderBookmarksKey = "downloadTransferFolderBookmarks"
+    private var activeSecurityScopes: [URL] = []
+
+    private init() {
+        folderURL = Self.defaultDownloadsURL
+        if let restored = Self.restoreURL(from: UserDefaults.standard.data(forKey: folderBookmarkKey)) {
+            folderURL = restored
+        } else if let path = UserDefaults.standard.string(forKey: folderPathKey), !path.isEmpty {
+            folderURL = URL(fileURLWithPath: path, isDirectory: true)
+        }
+        activateSecurityScope(for: folderURL)
+    }
+
+    static var defaultDownloadsURL: URL {
+        FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
+            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Downloads", isDirectory: true)
+    }
+
+    var usesDefaultDownloadsFolder: Bool {
+        folderURL.standardizedFileURL == Self.defaultDownloadsURL.standardizedFileURL
+    }
+
+    var displayPath: String {
+        (folderURL.path as NSString).abbreviatingWithTildeInPath
+    }
+
+    func setFolder(_ url: URL) throws {
+        let standardized = url.standardizedFileURL
+        let bookmark = try standardized.bookmarkData(
+            options: .withSecurityScope,
+            includingResourceValuesForKeys: nil,
+            relativeTo: nil
+        )
+        UserDefaults.standard.set(standardized.path, forKey: folderPathKey)
+        UserDefaults.standard.set(bookmark, forKey: folderBookmarkKey)
+        folderURL = standardized
+        activateSecurityScope(for: standardized)
+    }
+
+    func resetToDownloads() {
+        UserDefaults.standard.removeObject(forKey: folderPathKey)
+        UserDefaults.standard.removeObject(forKey: folderBookmarkKey)
+        folderURL = Self.defaultDownloadsURL
+    }
+
+    func existingURL(for file: FileClipMetadata) -> URL? {
+        if let bookmark = stringDictionary(forKey: fileBookmarksKey)[file.id]
+            .flatMap({ Data(base64Encoded: $0) }),
+           let url = Self.restoreURL(from: bookmark),
+           fileMatchesMetadata(url, file: file) {
+            activateSecurityScope(for: url)
+            return url
+        }
+
+        if let path = stringDictionary(forKey: filePathsKey)[file.id] {
+            activateTransferFolderScope(for: file.id)
+            let url = URL(fileURLWithPath: path)
+            if fileMatchesMetadata(url, file: file) { return url }
+        }
+
+        guard let legacy = legacyURL(for: file), fileMatchesMetadata(legacy, file: file) else { return nil }
+        guard let destination = destinationURL(for: file) else { return legacy }
+        do {
+            if FileManager.default.fileExists(atPath: destination.path) {
+                try FileManager.default.removeItem(at: destination)
+            }
+            try FileManager.default.moveItem(at: legacy, to: destination)
+            recordCompletedFile(destination, id: file.id)
+            return destination
+        } catch {
+            return legacy
+        }
+    }
+
+    func destinationURL(for file: FileClipMetadata) -> URL? {
+        var paths = stringDictionary(forKey: filePathsKey)
+        if let path = paths[file.id] {
+            activateTransferFolderScope(for: file.id)
+            return URL(fileURLWithPath: path)
+        }
+
+        activateSecurityScope(for: folderURL)
+        do {
+            try FileManager.default.createDirectory(at: folderURL, withIntermediateDirectories: true)
+        } catch {
+            return nil
+        }
+
+        let destination = Self.uniqueDestination(
+            named: file.name,
+            in: folderURL,
+            reservedPaths: Set(paths.values)
+        )
+        paths[file.id] = destination.path
+        UserDefaults.standard.set(paths, forKey: filePathsKey)
+
+        if let bookmark = UserDefaults.standard.data(forKey: folderBookmarkKey) {
+            var transferBookmarks = stringDictionary(forKey: transferFolderBookmarksKey)
+            transferBookmarks[file.id] = bookmark.base64EncodedString()
+            UserDefaults.standard.set(transferBookmarks, forKey: transferFolderBookmarksKey)
+        }
+        return destination
+    }
+
+    func recordCompletedFile(_ url: URL, id: String) {
+        var paths = stringDictionary(forKey: filePathsKey)
+        paths[id] = url.path
+        UserDefaults.standard.set(paths, forKey: filePathsKey)
+
+        if let bookmark = try? url.bookmarkData(
+            options: .withSecurityScope,
+            includingResourceValuesForKeys: nil,
+            relativeTo: nil
+        ) {
+            var bookmarks = stringDictionary(forKey: fileBookmarksKey)
+            bookmarks[id] = bookmark.base64EncodedString()
+            UserDefaults.standard.set(bookmarks, forKey: fileBookmarksKey)
+        }
+    }
+
+    static func uniqueDestination(named originalName: String, in directory: URL, reservedPaths: Set<String> = []) -> URL {
+        let rawName = URL(fileURLWithPath: originalName).lastPathComponent
+        let safeName = rawName.isEmpty || rawName == "." ? "Airclip File" : rawName
+        let source = URL(fileURLWithPath: safeName)
+        let ext = source.pathExtension
+        let stem = source.deletingPathExtension().lastPathComponent
+        var index = 0
+
+        while true {
+            let suffix = index == 0 ? "" : " (\(index))"
+            let filename = ext.isEmpty ? stem + suffix : stem + suffix + "." + ext
+            let candidate = directory.appendingPathComponent(filename, isDirectory: false)
+            let partial = candidate.appendingPathExtension("part")
+            if !FileManager.default.fileExists(atPath: candidate.path),
+               !FileManager.default.fileExists(atPath: partial.path),
+               !reservedPaths.contains(candidate.path) {
+                return candidate
+            }
+            index += 1
+        }
+    }
+
+    private func fileMatchesMetadata(_ url: URL, file: FileClipMetadata) -> Bool {
+        guard FileManager.default.fileExists(atPath: url.path) else { return false }
+        let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize
+        return size == Int(file.size)
+    }
+
+    private func legacyURL(for file: FileClipMetadata) -> URL? {
+        guard let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else { return nil }
+        let ext = URL(fileURLWithPath: file.name).pathExtension
+        return support
+            .appendingPathComponent("AirclipFiles", isDirectory: true)
+            .appendingPathComponent(file.id + (ext.isEmpty ? "" : "." + ext))
+    }
+
+    private func activateTransferFolderScope(for fileID: String) {
+        guard let encoded = stringDictionary(forKey: transferFolderBookmarksKey)[fileID],
+              let bookmark = Data(base64Encoded: encoded),
+              let url = Self.restoreURL(from: bookmark)
+        else { return }
+        activateSecurityScope(for: url)
+    }
+
+    private func activateSecurityScope(for url: URL) {
+        guard !activeSecurityScopes.contains(where: { $0.standardizedFileURL == url.standardizedFileURL }),
+              url.startAccessingSecurityScopedResource()
+        else { return }
+        activeSecurityScopes.append(url)
+    }
+
+    private func stringDictionary(forKey key: String) -> [String: String] {
+        UserDefaults.standard.dictionary(forKey: key) as? [String: String] ?? [:]
+    }
+
+    private static func restoreURL(from bookmark: Data?) -> URL? {
+        guard let bookmark else { return nil }
+        var stale = false
+        return try? URL(
+            resolvingBookmarkData: bookmark,
+            options: .withSecurityScope,
+            relativeTo: nil,
+            bookmarkDataIsStale: &stale
+        )
+    }
+}
 
 /// Orchestrates LAN sync: starts the local server + browser and routes
 /// clipboard data to/from peers. No server dependency — all trust is local.
@@ -119,13 +317,6 @@ final class SyncEngine: ObservableObject {
 
             guard SyncModeStore.shared.mode.keepsLanServiceRunning else { return }
 
-            let hash = clipboardMonitor?.sha256(packet.fingerprint) ?? ""
-            if clipboardMonitor?.containsHash(hash) == true { return }
-
-            // Add hash BEFORE writing to pasteboard so any poll that fires
-            // between the write and the next run-loop tick sees it as known.
-            clipboardMonitor?.addHash(hash)
-
             LocalHistoryStore.shared.insert(
                 packet,
                 fromDeviceId: fromDeviceId,
@@ -133,6 +324,13 @@ final class SyncEngine: ObservableObject {
                 id: UUID(uuidString: messageId) ?? UUID(),
                 receivedAt: Date(timeIntervalSince1970: TimeInterval(timestampMs) / 1000)
             )
+
+            if packet.kind == .file,
+               let file = packet.file,
+               file.size <= fileAutoDownloadMaxBytes,
+               let receivedItem = LocalHistoryStore.shared.fileItem(id: file.id) {
+                downloadFile(receivedItem)
+            }
 
             if packet.kind != .file {
                 clipboardMonitor?.markRemoteUpdateStart()
@@ -218,11 +416,11 @@ final class SyncEngine: ObservableObject {
     }
 
     private static func downloadedURL(for file: FileClipMetadata) -> URL? {
-        guard let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else { return nil }
-        let directory = support.appendingPathComponent("AirclipFiles", isDirectory: true)
-        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let ext = URL(fileURLWithPath: file.name).pathExtension
-        return directory.appendingPathComponent(file.id + (ext.isEmpty ? "" : "." + ext))
+        DownloadLocationStore.shared.existingURL(for: file)
+    }
+
+    private static func downloadDestinationURL(for file: FileClipMetadata) -> URL? {
+        DownloadLocationStore.shared.destinationURL(for: file)
     }
 
     private static func previewURL(for file: FileClipMetadata) -> URL? {
@@ -293,7 +491,7 @@ final class SyncEngine: ObservableObject {
         guard let file = item.fileMetadata,
               item.fromDeviceId != AirclipIdentity.shared.deviceId,
               let peer = PeerManager.shared.peers[item.fromDeviceId],
-              let destination = Self.downloadedURL(for: file)
+              let destination = Self.downloadDestinationURL(for: file)
         else {
             if let file = item.fileMetadata {
                 fileTransfers[file.id] = FileTransferProgress(phase: .failed("Source device is offline"), received: 0, total: file.size)
@@ -369,7 +567,7 @@ final class SyncEngine: ObservableObject {
         else { return }
         let previewOnly = state.temporaryPreview || (json["preview_only"] as? String == "true")
         guard !previewOnly || file.size <= filePreviewMaxBytes,
-              let destination = previewOnly ? Self.previewURL(for: file) : Self.downloadedURL(for: file)
+              let destination = previewOnly ? Self.previewURL(for: file) : Self.downloadDestinationURL(for: file)
         else { return }
         if let error = json["error"] as? String {
             state.phase = .failed(error)
@@ -405,6 +603,9 @@ final class SyncEngine: ObservableObject {
                 guard state.received == file.size else { throw CocoaError(.fileReadCorruptFile) }
                 if FileManager.default.fileExists(atPath: destination.path) { try FileManager.default.removeItem(at: destination) }
                 try FileManager.default.moveItem(at: partial, to: destination)
+                if !previewOnly {
+                    DownloadLocationStore.shared.recordCompletedFile(destination, id: file.id)
+                }
                 state.phase = .downloaded
                 state.temporaryPreview = previewOnly
             } else {

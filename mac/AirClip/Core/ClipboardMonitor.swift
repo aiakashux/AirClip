@@ -1,5 +1,4 @@
 import AppKit
-import CryptoKit
 
 /// Polls NSPasteboard every 500 ms and publishes new local copies to SyncEngine.
 /// Implements all loop-prevention rules.
@@ -10,10 +9,6 @@ final class ClipboardMonitor {
     /// Set true before writing a remote payload to NSPasteboard so the
     /// resulting change-count bump is ignored.
     private(set) var remoteUpdateInProgress = false
-
-    /// Rolling cache of the last 10 SHA-256 hashes of sent/received content.
-    private var recentHashes: [String] = []
-    private let maxHashes = 10
 
     /// Set true before a tap-to-copy write so the resulting change is ignored.
     private var isSuppressed = false
@@ -55,26 +50,15 @@ final class ClipboardMonitor {
         isSuppressed = true
     }
 
-    /// Call before writing a known packet from history so both the immediate
-    /// change-count bump and any delayed duplicate poll are ignored.
+    /// Call before writing a known packet from history so the immediate
+    /// change-count bump is ignored.
     func suppressPacket(_ packet: ClipboardPacket) {
         isSuppressed = true
-        addHash(sha256(packet.fingerprint))
     }
 
     /// Call before writing a remote update to NSPasteboard.
     func markRemoteUpdateStart() {
         remoteUpdateInProgress = true
-    }
-
-    func containsHash(_ hash: String) -> Bool {
-        recentHashes.contains(hash)
-    }
-
-    func addHash(_ hash: String) {
-        guard !recentHashes.contains(hash) else { return }
-        recentHashes.append(hash)
-        if recentHashes.count > maxHashes { recentHashes.removeFirst() }
     }
 
     // MARK: - Polling
@@ -102,21 +86,11 @@ final class ClipboardMonitor {
 
         let packets = ClipboardCapture.readCurrentPackets(from: NSPasteboard.general)
         for packet in packets {
-            let hash = sha256(packet.fingerprint)
-            guard !recentHashes.contains(hash) else { continue }
-            addHash(hash)
             syncEngine?.sendClipboard(packet: packet)
         }
 
         if explicitShare, !packets.isEmpty {
             StatusBarController.shared.showShareConfirmation()
         }
-    }
-
-    // MARK: - Helpers
-
-    func sha256(_ text: String) -> String {
-        let digest = SHA256.hash(data: Data(text.utf8))
-        return digest.map { String(format: "%02x", $0) }.joined()
     }
 }

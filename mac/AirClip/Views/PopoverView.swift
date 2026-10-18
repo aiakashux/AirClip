@@ -125,7 +125,6 @@ struct PopoverView: View {
                 ForEach(Array(recentItems.enumerated()), id: \.element.id) { index, item in
                     ClipCard(
                         item: item,
-                        isKeyboardSelected: keyboardSelection == index,
                         onCopy: { handleCardCopy(item) },
                         onTap: { handleCardTap(item: item) }
                     )
@@ -178,7 +177,7 @@ struct PopoverView: View {
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
                         .frame(height: PopoverMetrics.footerHeight)
-                        .background(Color.accentDeep)
+                        .background(Color.primaryButtonFill)
                         .clipShape(Capsule())
                 }
                 .buttonStyle(FooterPressStyle())
@@ -267,13 +266,20 @@ struct PopoverView: View {
     }
 
     private func handleCardCopy(_ item: ClipboardItem) {
-        guard item.clipType != .file else { handleCardTap(item: item); return }
-
         copyFlowSession &+= 1
         let activeCopyFlow = copyFlowSession
 
-        ClipboardMonitor.shared.suppressPacket(item.clipboardPacket)
-        ClipboardCapture.write(item.clipboardPacket, to: NSPasteboard.general)
+        if item.clipType == .file {
+            let copied = SyncEngine.shared.withAvailableFileURL(for: item) { url in
+                ClipboardMonitor.shared.suppressNextChange()
+                NSPasteboard.general.clearContents()
+                return NSPasteboard.general.writeObjects([url as NSURL])
+            } ?? false
+            guard copied else { return }
+        } else {
+            ClipboardMonitor.shared.suppressPacket(item.clipboardPacket)
+            ClipboardCapture.write(item.clipboardPacket, to: NSPasteboard.general)
+        }
 
         withAnimation(
             reduceMotion
@@ -399,7 +405,6 @@ private struct OpenAirclipFooterButtonStyle: ButtonStyle {
 
 private struct ClipCard: View {
     let item: ClipboardItem
-    let isKeyboardSelected: Bool
     let onCopy: () -> Void
     let onTap: () -> Void
 
@@ -429,14 +434,6 @@ private struct ClipCard: View {
                 }
                 .clipShape(RoundedRectangle(cornerRadius: PopoverMetrics.cardRadius))
                 .shadow(color: .black.opacity(0.08), radius: 4, x: 0, y: 2)
-                .overlay(
-                    RoundedRectangle(cornerRadius: PopoverMetrics.cardRadius)
-                        .strokeBorder(
-                            cardBorderColor,
-                            lineWidth: 0.5
-                        )
-                        .animation(.easeOut(duration: 0.12), value: isHovered)
-                )
         }
         .buttonStyle(CardPressStyle())
         .overlay {
@@ -451,16 +448,12 @@ private struct ClipCard: View {
         }
     }
 
-    private var cardBorderColor: Color {
-        isKeyboardSelected ? Color.borderFocus : Color.borderSubtle
-    }
-
     private var actionOverlay: some View {
         ZStack {
             RoundedRectangle(cornerRadius: PopoverMetrics.cardRadius, style: .continuous)
                 .fill(.ultraThinMaterial)
             RoundedRectangle(cornerRadius: PopoverMetrics.cardRadius, style: .continuous)
-                .fill(Color.accent.opacity(colorScheme == .dark ? 0.10 : 0.07))
+                .fill(colorScheme == .dark ? Color.bgElevated.opacity(0.76) : Color.white.opacity(0.90))
             HStack(spacing: 0) {
                 if type == .url {
                     Button(action: onTap) {
@@ -476,10 +469,30 @@ private struct ClipCard: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .onHover { isOpenActionHovered = $0 }
                 }
-                Button(action: type == .file ? performFileAction : onCopy) {
-                    if type == .file {
+                if type == .file {
+                    Button(action: performFileAction) {
                         fileActionLabel
-                    } else {
+                    }
+                    .buttonStyle(PopoverActionButtonStyle(isHovered: isOpenActionHovered))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .disabled(isFileDownloading)
+                    .onHover { isOpenActionHovered = $0 }
+
+                    if isFileDownloaded {
+                        Button(action: onCopy) {
+                            actionLabel(
+                                icon: .copy,
+                                title: "Click to Copy",
+                                color: isCopyActionHovered ? .accentDeep : .accent,
+                                shimmer: isCopyActionHovered
+                            )
+                        }
+                        .buttonStyle(PopoverActionButtonStyle(isHovered: isCopyActionHovered))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .onHover { isCopyActionHovered = $0 }
+                    }
+                } else {
+                    Button(action: onCopy) {
                         actionLabel(
                             icon: .copy,
                             title: "Click to Copy",
@@ -487,11 +500,10 @@ private struct ClipCard: View {
                             shimmer: isCopyActionHovered
                         )
                     }
+                    .buttonStyle(PopoverActionButtonStyle(isHovered: isCopyActionHovered))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .onHover { isCopyActionHovered = $0 }
                 }
-                .buttonStyle(PopoverActionButtonStyle(isHovered: isCopyActionHovered))
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .disabled(type == .file && isFileDownloading)
-                .onHover { isCopyActionHovered = $0 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             .padding(1)
@@ -519,29 +531,42 @@ private struct ClipCard: View {
         .contentShape(Rectangle())
     }
 
+    @ViewBuilder
     private var fileActionLabel: some View {
-        HStack(spacing: 8) {
-            if isFileDownloaded {
-                AirclipIcon(.arrowUpRight, size: 16)
-            } else if isFileDownloading {
+        if isFileDownloading {
+            HStack(spacing: 8) {
                 ProgressView().controlSize(.small)
-            } else {
-                Image(systemName: "arrow.down.to.line")
-                    .font(.system(size: 16, weight: .medium))
+                Text("Downloading…")
             }
-            Text(isFileDownloaded ? "Open" : isFileDownloading ? "Downloading…" : "Download")
+            .font(.system(size: 13, weight: .medium))
+            .foregroundColor(.accent)
+            .padding(.horizontal, 8)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .contentShape(Rectangle())
+        } else {
+            actionLabel(
+                icon: fileActionIcon,
+                title: fileActionTitle,
+                iconSize: 18,
+                color: isOpenActionHovered ? .accentDeep : .accent,
+                shimmer: isOpenActionHovered
+            )
         }
-        .font(.system(size: 13, weight: .medium))
-        .foregroundColor(isCopyActionHovered ? .accentDeep : .accent)
-        .singleShimmer(isActive: isCopyActionHovered && !isFileDownloading)
-        .padding(.horizontal, 8)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .contentShape(Rectangle())
+    }
+
+    private var fileActionTitle: String {
+        guard isFileDownloaded else { return "Download" }
+        return item.fileMetadata?.isPlayableMedia == true ? "Play" : "Open"
+    }
+
+    private var fileActionIcon: AirclipIconName {
+        guard isFileDownloaded else { return .fileDownload }
+        return item.fileMetadata?.isPlayableMedia == true ? .filePlay : .fileOpen
     }
 
     private func performFileAction() {
-        if let url = syncEngine.availableFileURL(for: item) {
-            NSWorkspace.shared.open(url)
+        if isFileDownloaded {
+            _ = syncEngine.withAvailableFileURL(for: item) { NSWorkspace.shared.open($0) }
         } else if !isFileDownloading {
             syncEngine.downloadFile(item)
         }

@@ -23,6 +23,16 @@ struct FileClipCaptureCheck {
         precondition(packets[1].file?.iconAssetName == "FileIconDocument")
         precondition(packets[0].file?.id != packets[1].file?.id)
 
+        if var repeatedFile = packets[0].file {
+            repeatedFile.id = UUID().uuidString
+            let repeated = ClipboardPacket(kind: .file, text: repeatedFile.name, file: repeatedFile)
+            precondition(packets[0].hasSameContent(as: repeated))
+            precondition(packets[0].fingerprint == repeated.fingerprint)
+            precondition(ClipboardPacket.deduplicatingContent([packets[0], repeated]).count == 1)
+        } else {
+            preconditionFailure("Expected file metadata")
+        }
+
         let modern = NSPasteboard.withUniqueName()
         defer { modern.releaseGlobally() }
         let modernItem = NSPasteboardItem()

@@ -318,6 +318,7 @@ withAnimation(.linear(duration: 0.0)) { selectedItem = item }
 5. **Keyboard first.** Arrow keys navigate. ⌘K = actions. ⌘, = preferences. ⌘W = close. Escape = dismiss.
 6. **Vibrancy.** `NSVisualEffectView` / `.ultraThinMaterial` for the popover background.
 7. **Cursor.** `.pointingHand` on interactive elements. `.iBeam` on text. Never custom.
+8. **Reuse action icons.** Before adding or drawing an icon for an action, search the existing asset catalog and `AirclipIconName` mappings and reuse the established icon for the same action. If no matching asset exists, ask the user for the icon before introducing a substitute.
 
 ---
 

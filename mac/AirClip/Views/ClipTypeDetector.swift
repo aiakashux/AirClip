@@ -87,6 +87,17 @@ struct FileClipMetadata: Codable, Hashable {
             ["mp3", "m4a", "aac", "wav", "flac", "ogg", "opus", "aiff",
              "mp4", "m4v", "mov", "mkv", "avi", "webm", "wmv"].contains(ext)
     }
+
+    func hasSameContent(as other: FileClipMetadata) -> Bool {
+        if id == other.id { return true }
+        guard name == other.name, size == other.size, mimeType == other.mimeType else { return false }
+        guard let modifiedAtMs, let otherModifiedAtMs = other.modifiedAtMs else { return true }
+        return modifiedAtMs == otherModifiedAtMs
+    }
+
+    var contentFingerprint: String {
+        "\(name)|\(size)|\(mimeType)|\(modifiedAtMs.map(String.init) ?? "unknown")"
+    }
 }
 
 struct ClipboardPacket: Codable, Hashable {
@@ -116,9 +127,31 @@ struct ClipboardPacket: Codable, Hashable {
         case .image:
             return "image:\(imageDataBase64 ?? "")"
         case .file:
-            return "file:\(file?.id ?? text)"
+            return "file:\(file?.contentFingerprint ?? text)"
         default:
             return "\(kind.rawValue):\(text)"
+        }
+    }
+
+    func hasSameContent(as other: ClipboardPacket) -> Bool {
+        guard kind == other.kind else { return false }
+        switch kind {
+        case .image:
+            return imageDataBase64 == other.imageDataBase64
+        case .file:
+            if let file, let otherFile = other.file {
+                return file.hasSameContent(as: otherFile)
+            }
+            return text == other.text
+        default:
+            return text == other.text
+        }
+    }
+
+    static func deduplicatingContent(_ packets: [ClipboardPacket]) -> [ClipboardPacket] {
+        packets.reduce(into: []) { unique, packet in
+            guard !unique.contains(where: { $0.hasSameContent(as: packet) }) else { return }
+            unique.append(packet)
         }
     }
 
@@ -280,9 +313,8 @@ enum ClipboardCapture {
         let ext = url.pathExtension.lowercased()
         let imageExtensions = ["png", "jpg", "jpeg", "gif", "webp", "heic", "heif", "bmp", "tif", "tiff"]
         let contentType = UTType(filenameExtension: ext)
-        guard (imageExtensions.contains(ext) || contentType?.conforms(to: .image) == true),
-              let data = try? Data(contentsOf: url),
-              NSImage(data: data) != nil else {
+        guard imageExtensions.contains(ext) || contentType?.conforms(to: .image) == true,
+              let data = try? Data(contentsOf: url) else {
             return nil
         }
 

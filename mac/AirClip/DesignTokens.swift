@@ -60,6 +60,7 @@ extension Color {
 
     static let accent         = adaptive("#A59DFF", light: "#6740BF")  // foreground / focus
     static let accentDeep     = Color(hex: "#6740BF")                   // filled controls
+    static let primaryButtonFill = Color(hex: "#000000")                // filled primary buttons
 
     // MARK: Semantic status
 
@@ -144,17 +145,17 @@ extension Color {
     }
 }
 
-// MARK: - Typography (SF Pro only, no half-point sizes)
+// MARK: - Typography
 
 extension Font {
     // Display
-    static let airClipLargeTitle = Font.system(size: 26, weight: .bold,     design: .default)
-    static let airClipTitle1     = Font.system(size: 20, weight: .semibold, design: .default)
-    static let airClipTitle2     = Font.system(size: 17, weight: .semibold, design: .default)
+    static let airClipLargeTitle = Font.custom("Beary", size: 26)
+    static let airClipTitle1     = Font.custom("Beary", size: 20)
+    static let airClipTitle2     = Font.custom("Beary", size: 17)
 
     // Body
     static let airClipBody       = Font.system(size: 13, weight: .regular,  design: .default)
-    static let airClipBodyMedium = Font.system(size: 13, weight: .medium,   design: .default)
+    static let airClipBodyMedium = Font.custom("Beary", size: 13)
 
     // Small
     static let airClipCaption    = Font.system(size: 11, weight: .regular,  design: .default)

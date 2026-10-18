@@ -1036,16 +1036,51 @@ private fun LinkPreview(preview: LinkPreviewData, modifier: Modifier = Modifier)
 }
 
 @Composable
-private fun UrlFeedItem(record: ClipItemRecord, timeStr: String) {
+private fun LinkFeedVisual(preview: LinkPreviewData) {
+    val imageUrl = preview.imageUrl
+    if (imageUrl == null) {
+        FeedTypeBadge(R.drawable.ic_clip_type_link, LocalAirclipColors.current.accent)
+        return
+    }
+
     val c = LocalAirclipColors.current
+    val shape = RoundedCornerShape(10.dp)
+    val painter = rememberAsyncImagePainter(
+        model = ImageRequest.Builder(LocalContext.current)
+            .data(imageUrl)
+            .size(384)
+            .build(),
+    )
+    val drawable = (painter.state as? AsyncImagePainter.State.Success)?.result?.drawable
+    val ready = drawable != null && drawable.intrinsicWidth > 0 && drawable.intrinsicHeight > 0
+
+    if (ready) {
+        Image(
+            painter = painter,
+            contentDescription = "Preview image from ${preview.site}",
+            contentScale = ContentScale.Crop,
+            modifier = Modifier
+                .size(96.dp)
+                .clip(shape)
+                .background(c.bgElevated)
+                .border(0.5.dp, c.borderSubtle, shape),
+        )
+    } else {
+        FeedTypeBadge(R.drawable.ic_clip_type_link, c.accent)
+    }
+}
+
+@Composable
+private fun UrlFeedItem(record: ClipItemRecord, timeStr: String) {
     val preview = rememberLinkPreview(record)
+    val c = LocalAirclipColors.current
     Column {
         Row(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.padding(vertical = 20.dp),
         ) {
-            FeedTypeBadge(R.drawable.ic_clip_type_link, c.accent)
+            LinkFeedVisual(preview)
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     preview.title,
@@ -1259,11 +1294,6 @@ private fun ClipPreviewSheet(
         copied = false
     }
 
-    LaunchedEffect(record.messageId, record.file?.id) {
-        record.file?.takeIf { it.size <= FILE_PREVIEW_MAX_BYTES }?.let {
-            if (SyncEngine.availablePreviewFile(record) == null) SyncEngine.previewFile(record)
-        }
-    }
     DisposableEffect(record.messageId) {
         onDispose { SyncEngine.clearPreviewFile(record) }
     }

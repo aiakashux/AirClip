@@ -237,42 +237,41 @@ object ClipHistoryStore {
     internal fun deduplicate(items: List<ClipItemRecord>): List<ClipItemRecord> {
         val deduplicated = mutableListOf<ClipItemRecord>()
         for (record in items) {
-            val existingIndex = deduplicated.indexOfFirst { existing ->
-                existing.messageId == record.messageId ||
-                    (
-                        (existing.kind == ClipKind.IMAGE.name || record.kind == ClipKind.IMAGE.name) &&
-                            existing.cipherHash == record.cipherHash
-                    ) ||
-                    (
-                        existing.fromDeviceId == record.fromDeviceId &&
-                            existing.cipherHash == record.cipherHash &&
-                            kotlin.math.abs(existing.timestampMs - record.timestampMs) <=
-                                RECONCILIATION_WINDOW_MS
-                    )
-            }
+            val existingIndex = deduplicated.indexOfFirst { it.hasSameContentAs(record) }
             if (existingIndex < 0) {
                 deduplicated += record
             } else {
                 val existing = deduplicated[existingIndex]
-                val shouldPreserveSaved = record.isSaved && !existing.isSaved
-                val shouldPreserveFullText = existing.contentText == null && record.contentText != null
-                val shouldPreserveImage = existing.imageFileName == null && record.imageFileName != null
-                val shouldPreserveFile = existing.file == null && record.file != null
-                val shouldPreserveSource = existing.sourceFilePath == null && record.sourceFilePath != null
-                if (shouldPreserveSaved || shouldPreserveFullText || shouldPreserveImage || shouldPreserveFile || shouldPreserveSource) {
-                    deduplicated[existingIndex] = existing.copy(
-                        isSaved = existing.isSaved || record.isSaved,
-                        contentText = existing.contentText ?: record.contentText,
-                        imageDataBase64 = existing.imageDataBase64 ?: record.imageDataBase64,
-                        imageFileName = existing.imageFileName ?: record.imageFileName,
-                        file = existing.file ?: record.file,
-                        sourceFilePath = existing.sourceFilePath ?: record.sourceFilePath,
-                        downloadedFilePath = existing.downloadedFilePath ?: record.downloadedFilePath,
-                    )
-                }
+                val newest = if (record.timestampMs >= existing.timestampMs) record else existing
+                val older = if (newest === record) existing else record
+                deduplicated[existingIndex] = newest.copy(
+                    isSaved = existing.isSaved || record.isSaved,
+                    contentText = newest.contentText ?: older.contentText,
+                    imageDataBase64 = newest.imageDataBase64 ?: older.imageDataBase64,
+                    imageFileName = newest.imageFileName ?: older.imageFileName,
+                    file = newest.file ?: older.file,
+                    sourceFilePath = newest.sourceFilePath ?: older.sourceFilePath,
+                    downloadedFilePath = newest.downloadedFilePath ?: older.downloadedFilePath,
+                )
             }
         }
         return deduplicated
+    }
+
+    private fun ClipItemRecord.hasSameContentAs(other: ClipItemRecord): Boolean {
+        if (messageId == other.messageId) return true
+        if (kind != other.kind) return false
+        return when (kind) {
+            ClipKind.FILE.name -> file?.hasSameContentAs(other.file) == true
+            else -> cipherHash == other.cipherHash
+        }
+    }
+
+    private fun FileClipMetadata.hasSameContentAs(other: FileClipMetadata?): Boolean {
+        other ?: return false
+        if (id == other.id) return true
+        if (name != other.name || size != other.size || mimeType != other.mimeType) return false
+        return modifiedAtMs == null || other.modifiedAtMs == null || modifiedAtMs == other.modifiedAtMs
     }
 
     internal fun prepareForStorage(items: List<ClipItemRecord>): List<ClipItemRecord> =
@@ -341,8 +340,8 @@ object ClipHistoryStore {
     /**
      * Merge [newItems] into the persisted list:
      *   1. combine existing + new
-     *   2. deduplicate by messageId or matching source/content within the
-     *      transport reconciliation window (existing wins on conflict)
+     *   2. deduplicate matching content globally, keeping the newest copy's
+     *      timestamp/identity while preserving locally available data
      *   3. drop unsaved items older than the configured history depth
      *   4. sort by timestampMs descending (newest first)
      *   5. trim unsaved items to [MAX_ITEMS], protecting saved clips

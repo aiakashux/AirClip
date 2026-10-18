@@ -257,6 +257,7 @@ final class LocalHistoryStore {
 
     private init() {
         container = Self.makeContainer() ?? Self.makeInMemoryContainer()
+        collapsePersistedDuplicates()
     }
 
     private static func makeContainer() -> ModelContainer? {
@@ -308,15 +309,23 @@ final class LocalHistoryStore {
             fromDeviceId: fromDeviceId,
             timestampMs: timestampMs
         ) else { return }
-        if packet.kind == .image {
-            let imageData = packet.imageData
-            let imageKind = ClipboardKind.image.rawValue
-            let descriptor = FetchDescriptor<ClipboardItem>(
-                predicate: #Predicate { $0.kindRaw == imageKind && $0.imageData == imageData }
+        let matches = matchingItems(for: packet, id: id, in: ctx)
+        if let existing = matches.max(by: { $0.receivedAt < $1.receivedAt }) {
+            let promoted = promote(
+                existing,
+                with: packet,
+                id: id,
+                receivedAt: receivedAt,
+                fromDeviceId: fromDeviceId,
+                isLocal: isLocal,
+                isSaved: isSaved
             )
-            if ((try? ctx.fetchCount(descriptor)) ?? 0) > 0 {
-                return
+            collapse(matches, keeping: existing, in: ctx)
+            try? ctx.save()
+            if promoted && !isLocal {
+                Task { @MainActor in UnreadStore.shared.markUnread() }
             }
+            return
         }
 
         let item = ClipboardItem(
@@ -351,36 +360,22 @@ final class LocalHistoryStore {
             fromDeviceId: fromDeviceId,
             timestampMs: timestampMs
         ) else { return }
-        if let uuid = UUID(uuidString: messageId) {
-            let descriptor = FetchDescriptor<ClipboardItem>(
-                predicate: #Predicate { $0.id == uuid }
+        let resolvedID = UUID(uuidString: messageId)
+        let matches = matchingItems(for: packet, id: resolvedID, in: ctx)
+        if let existing = matches.max(by: { $0.receivedAt < $1.receivedAt }) {
+            _ = promote(
+                existing,
+                with: packet,
+                id: resolvedID ?? existing.id,
+                receivedAt: receivedAt,
+                fromDeviceId: fromDeviceId,
+                isLocal: fromDeviceId == AirclipIdentity.shared.deviceId,
+                isSaved: false
             )
-            if ((try? ctx.fetchCount(descriptor)) ?? 0) > 0 { return }
+            collapse(matches, keeping: existing, in: ctx)
+            try? ctx.save()
+            return
         }
-
-        let alreadyMerged: Bool
-        if packet.kind == .image {
-            let imageData = packet.imageData
-            let imageKind = ClipboardKind.image.rawValue
-            let descriptor = FetchDescriptor<ClipboardItem>(
-                predicate: #Predicate { $0.kindRaw == imageKind && $0.imageData == imageData }
-            )
-            alreadyMerged = ((try? ctx.fetchCount(descriptor)) ?? 0) > 0
-        } else {
-            let text = packet.text
-            let kind = packet.kind.rawValue
-            let earliest = receivedAt.addingTimeInterval(-2)
-            let latest = receivedAt.addingTimeInterval(2)
-            let descriptor = FetchDescriptor<ClipboardItem>(
-                predicate: #Predicate {
-                    $0.fromDeviceId == fromDeviceId &&
-                    $0.receivedAt >= earliest && $0.receivedAt <= latest &&
-                    $0.kindRaw == kind && $0.text == text
-                }
-            )
-            alreadyMerged = ((try? ctx.fetchCount(descriptor)) ?? 0) > 0
-        }
-        guard !alreadyMerged else { return }
 
         let item = ClipboardItem(
             id: UUID(uuidString: messageId) ?? UUID(),
@@ -458,6 +453,80 @@ final class LocalHistoryStore {
             old.filter { !$0.isSaved }.forEach { ctx.delete($0) }
         }
         try? ctx.save()
+    }
+
+    private func matchingItems(
+        for packet: ClipboardPacket,
+        id: UUID?,
+        in ctx: ModelContext
+    ) -> [ClipboardItem] {
+        let kind = packet.kind.rawValue
+        let descriptor = FetchDescriptor<ClipboardItem>(predicate: #Predicate { $0.kindRaw == kind })
+        return (try? ctx.fetch(descriptor))?.filter { item in
+            item.id == id || item.clipboardPacket.hasSameContent(as: packet)
+        } ?? []
+    }
+
+    private func collapsePersistedDuplicates() {
+        let ctx = container.mainContext
+        let descriptor = FetchDescriptor<ClipboardItem>(
+            sortBy: [SortDescriptor(\.receivedAt, order: .reverse)]
+        )
+        guard let items = try? ctx.fetch(descriptor) else { return }
+        var canonical: [ClipboardItem] = []
+        for item in items {
+            if let existing = canonical.first(where: {
+                $0.id == item.id || $0.clipboardPacket.hasSameContent(as: item.clipboardPacket)
+            }) {
+                absorbStoredDetails(from: item, into: existing)
+                ctx.delete(item)
+            } else {
+                canonical.append(item)
+            }
+        }
+        try? ctx.save()
+    }
+
+    private func collapse(_ matches: [ClipboardItem], keeping keeper: ClipboardItem, in ctx: ModelContext) {
+        for duplicate in matches where duplicate !== keeper {
+            absorbStoredDetails(from: duplicate, into: keeper)
+            ctx.delete(duplicate)
+        }
+    }
+
+    private func absorbStoredDetails(from duplicate: ClipboardItem, into keeper: ClipboardItem) {
+        keeper.isSaved = keeper.isSaved || duplicate.isSaved
+        if keeper.imageData == nil { keeper.imageData = duplicate.imageData }
+        if keeper.fileMetadataData == nil { keeper.fileMetadataData = duplicate.fileMetadataData }
+    }
+
+    @discardableResult
+    private func promote(
+        _ item: ClipboardItem,
+        with packet: ClipboardPacket,
+        id: UUID,
+        receivedAt: Date,
+        fromDeviceId: String,
+        isLocal: Bool,
+        isSaved: Bool
+    ) -> Bool {
+        item.isSaved = item.isSaved || isSaved
+        guard receivedAt >= item.receivedAt else {
+            if item.imageData == nil { item.imageData = packet.imageData }
+            if item.fileMetadataData == nil {
+                item.fileMetadataData = packet.file.flatMap { try? JSONEncoder().encode($0) }
+            }
+            return false
+        }
+        item.id = id
+        item.text = packet.text
+        item.kindRaw = packet.kind.rawValue
+        item.imageData = packet.imageData ?? item.imageData
+        item.fileMetadataData = packet.file.flatMap { try? JSONEncoder().encode($0) } ?? item.fileMetadataData
+        item.receivedAt = receivedAt
+        item.fromDeviceId = fromDeviceId
+        item.isLocal = isLocal
+        return true
     }
 
     // Keep at most 500 items by deleting oldest unsaved clips first. Saved clips are protected.

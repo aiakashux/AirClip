@@ -49,6 +49,7 @@
 		AA0200000000000000000038 /* AppUpdateController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000038 /* AppUpdateController.swift */; };
 		AA0200000000000000000039 /* PrivacyAnalytics.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000039 /* PrivacyAnalytics.swift */; };
 		AA0200000000000000000040 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000040 /* PrivacyInfo.xcprivacy */; };
+		AA0200000000000000000041 /* Beary.ttf in Resources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000041 /* Beary.ttf */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -96,6 +97,7 @@
 		AA0100000000000000000038 /* AppUpdateController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppUpdateController.swift; sourceTree = "<group>"; };
 		AA0100000000000000000039 /* PrivacyAnalytics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivacyAnalytics.swift; sourceTree = "<group>"; };
 		AA0100000000000000000040 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		AA0100000000000000000041 /* Beary.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = ../Beary.ttf; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXContainerItemProxy section */
@@ -217,6 +219,7 @@
 			children = (
 				AA010000000000000000000D /* Info.plist */,
 				AA0100000000000000000040 /* PrivacyInfo.xcprivacy */,
+				AA0100000000000000000041 /* Beary.ttf */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -328,6 +331,7 @@
 			files = (
 				AA0200000000000000000023 /* Assets.xcassets in Resources */,
 				AA0200000000000000000040 /* PrivacyInfo.xcprivacy in Resources */,
+				AA0200000000000000000041 /* Beary.ttf in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -36,6 +36,7 @@ data class FileTransferStatus(
 )
 
 const val FILE_PREVIEW_MAX_BYTES = 3L * 1024L * 1024L
+const val FILE_AUTO_DOWNLOAD_MAX_BYTES = 3L * 1024L * 1024L
 
 private const val TAG = "SyncEngine"
 
@@ -63,7 +64,7 @@ object SyncEngine {
     private var keyManager: KeyManager?  = null
     private var httpClient: OkHttpClient? = null
 
-    private val recentHashes = RecentHashSet()
+    private val suppressedClipboardHashes = ConsumableHashSet()
     private val lifecycleGate = SyncEngineLifecycleGate()
     private var connectJob: Job? = null
     private var peerCountJob: Job? = null
@@ -248,129 +249,136 @@ object SyncEngine {
      * Always saves to local history, even if no peers are connected.
      */
     fun sendClip(text: String) {
+        scope.launch {
+            sendClipAndWait(text)
+        }
+    }
+
+    suspend fun sendClipAndWait(text: String): Boolean {
         if (!Prefs.syncMode.allowsManualSend) {
             Log.d(TAG, "Clip send blocked by sync mode")
-            return
+            return false
         }
         markLocalActivity()
-        scope.launch {
-            if (!Prefs.syncMode.allowsManualSend) return@launch
-            try {
-                val plain = text.toByteArray(Charsets.UTF_8)
-                val hash  = plain.sha256Hex()
-                if (recentHashes.isKnown(hash)) return@launch
-                recentHashes.record(hash)
-
-                // Always persist locally
-                val record = ClipItemRecord(
-                    messageId    = UUID.randomUUID().toString(),
-                    seq          = 0L,
-                    fromDeviceId = AirclipIdentity.deviceId ?: "self",
-                    timestampMs  = System.currentTimeMillis(),
-                    cipherHash   = hash.take(16),
-                    preview      = text.take(40),
-                    contentText  = text,
-                    kind         = detectClipKind(text).name,
-                )
-                appContext?.let { ctx ->
-                    val updated = ClipHistoryStore.merge(ctx, listOf(record))
-                    _clipHistory.value = updated
-                }
-
-                // Broadcast to peers if any connected
-                val peers = PeerManager.connectedCount.value
-                if (peers > 0) {
-                    PeerManager.broadcast(plain, record.messageId, record.timestampMs, record.fromDeviceId)
-                    appContext?.let { ctx ->
-                        WidgetState.save(ctx, WidgetState.SYNCED)
-                        WidgetState.notifyWidgets(ctx)
-                    }
-                    Log.d(TAG, "Clip sent hash=${hash.take(12)} len=${text.length} peers=$peers")
-                } else {
-                    Log.d(TAG, "Clip saved locally (no peers) hash=${hash.take(12)}")
-                }
-            } catch (e: Exception) {
-                Log.w(TAG, "sendClip error: ${e.message}")
-            }
-        }
-    }
-
-    fun sendImageClip(label: String, imageDataBase64: String) {
-        if (!Prefs.syncMode.allowsManualSend) {
-            Log.d(TAG, "Image clip send blocked by sync mode")
-            return
-        }
-        markLocalActivity()
-        scope.launch {
-            if (!Prefs.syncMode.allowsManualSend) return@launch
-            try {
-                val displayText = label.ifBlank { "Shared image" }
-                val hash = imageDataBase64.toByteArray(Charsets.UTF_8).sha256Hex()
-                if (recentHashes.isKnown(hash)) return@launch
-                recentHashes.record(hash)
-
-                val record = ClipItemRecord(
-                    messageId = UUID.randomUUID().toString(),
-                    seq = 0L,
-                    fromDeviceId = AirclipIdentity.deviceId ?: "self",
-                    timestampMs = System.currentTimeMillis(),
-                    cipherHash = hash.take(16),
-                    preview = displayText.take(40),
-                    contentText = displayText,
-                    kind = ClipKind.IMAGE.name,
-                    imageDataBase64 = imageDataBase64,
-                )
-                appContext?.let { ctx ->
-                    val updated = ClipHistoryStore.merge(ctx, listOf(record))
-                    _clipHistory.value = updated
-                }
-
-                val peers = PeerManager.connectedCount.value
-                if (peers > 0) {
-                    val plain = ClipboardWirePayload.encode(record).toByteArray(Charsets.UTF_8)
-                    PeerManager.broadcast(plain, record.messageId, record.timestampMs, record.fromDeviceId)
-                    appContext?.let { ctx ->
-                        WidgetState.save(ctx, WidgetState.SYNCED)
-                        WidgetState.notifyWidgets(ctx)
-                    }
-                    Log.d(TAG, "Image clip sent hash=${hash.take(12)} peers=$peers")
-                } else {
-                    Log.d(TAG, "Image clip saved locally (no peers) hash=${hash.take(12)}")
-                }
-            } catch (e: Exception) {
-                Log.w(TAG, "sendImageClip error: ${e.message}")
-            }
-        }
-    }
-
-    fun sendFileClip(file: FileClipMetadata, sourcePath: String) {
-        if (!Prefs.syncMode.allowsManualSend) return
-        scope.launch {
-            val source = File(sourcePath)
-            if (!source.isFile || source.length() != file.size) return@launch
+        return try {
+            val plain = text.toByteArray(Charsets.UTF_8)
+            val hash = plain.sha256Hex()
             val record = ClipItemRecord(
                 messageId = UUID.randomUUID().toString(),
                 seq = 0L,
                 fromDeviceId = AirclipIdentity.deviceId ?: "self",
                 timestampMs = System.currentTimeMillis(),
-                cipherHash = file.id.toByteArray().sha256Hex().take(16),
-                preview = file.name.take(40),
-                contentText = file.name,
-                kind = ClipKind.FILE.name,
-                file = file,
-                sourceFilePath = sourcePath,
+                cipherHash = hash.take(16),
+                preview = text.take(40),
+                contentText = text,
+                kind = detectClipKind(text).name,
             )
             appContext?.let { ctx ->
-                _clipHistory.value = ClipHistoryStore.merge(ctx, listOf(record))
+                val updated = ClipHistoryStore.merge(ctx, listOf(record))
+                _clipHistory.value = updated
             }
-            if (PeerManager.connectedCount.value > 0) {
-                PeerManager.broadcast(
-                    ClipboardWirePayload.encode(record).toByteArray(Charsets.UTF_8),
-                    record.messageId, record.timestampMs, record.fromDeviceId,
-                    type = "file_clip",
-                )
+
+            val peers = PeerManager.connectedCount.value
+            if (peers > 0) {
+                PeerManager.broadcast(plain, record.messageId, record.timestampMs, record.fromDeviceId)
+                appContext?.let { ctx ->
+                    WidgetState.save(ctx, WidgetState.SYNCED)
+                    WidgetState.notifyWidgets(ctx)
+                }
+                Log.d(TAG, "Clip sent hash=${hash.take(12)} len=${text.length} peers=$peers")
+            } else {
+                Log.d(TAG, "Clip saved locally (no peers) hash=${hash.take(12)}")
             }
+            true
+        } catch (e: Exception) {
+            Log.w(TAG, "sendClip error: ${e.message}")
+            false
         }
+    }
+
+    fun sendImageClip(label: String, imageDataBase64: String) {
+        scope.launch {
+            sendImageClipAndWait(label, imageDataBase64)
+        }
+    }
+
+    suspend fun sendImageClipAndWait(label: String, imageDataBase64: String): Boolean {
+        if (!Prefs.syncMode.allowsManualSend) {
+            Log.d(TAG, "Image clip send blocked by sync mode")
+            return false
+        }
+        markLocalActivity()
+        return try {
+            val displayText = label.ifBlank { "Shared image" }
+            val hash = imageDataBase64.toByteArray(Charsets.UTF_8).sha256Hex()
+            val record = ClipItemRecord(
+                messageId = UUID.randomUUID().toString(),
+                seq = 0L,
+                fromDeviceId = AirclipIdentity.deviceId ?: "self",
+                timestampMs = System.currentTimeMillis(),
+                cipherHash = hash.take(16),
+                preview = displayText.take(40),
+                contentText = displayText,
+                kind = ClipKind.IMAGE.name,
+                imageDataBase64 = imageDataBase64,
+            )
+            appContext?.let { ctx ->
+                val updated = ClipHistoryStore.merge(ctx, listOf(record))
+                _clipHistory.value = updated
+            }
+
+            val peers = PeerManager.connectedCount.value
+            if (peers > 0) {
+                val plain = ClipboardWirePayload.encode(record).toByteArray(Charsets.UTF_8)
+                PeerManager.broadcast(plain, record.messageId, record.timestampMs, record.fromDeviceId)
+                appContext?.let { ctx ->
+                    WidgetState.save(ctx, WidgetState.SYNCED)
+                    WidgetState.notifyWidgets(ctx)
+                }
+                Log.d(TAG, "Image clip sent hash=${hash.take(12)} peers=$peers")
+            } else {
+                Log.d(TAG, "Image clip saved locally (no peers) hash=${hash.take(12)}")
+            }
+            true
+        } catch (e: Exception) {
+            Log.w(TAG, "sendImageClip error: ${e.message}")
+            false
+        }
+    }
+
+    fun sendFileClip(file: FileClipMetadata, sourcePath: String) {
+        scope.launch {
+            sendFileClipAndWait(file, sourcePath)
+        }
+    }
+
+    suspend fun sendFileClipAndWait(file: FileClipMetadata, sourcePath: String): Boolean {
+        if (!Prefs.syncMode.allowsManualSend) return false
+        val source = File(sourcePath)
+        if (!source.isFile || source.length() != file.size) return false
+        val record = ClipItemRecord(
+            messageId = UUID.randomUUID().toString(),
+            seq = 0L,
+            fromDeviceId = AirclipIdentity.deviceId ?: "self",
+            timestampMs = System.currentTimeMillis(),
+            cipherHash = file.id.toByteArray().sha256Hex().take(16),
+            preview = file.name.take(40),
+            contentText = file.name,
+            kind = ClipKind.FILE.name,
+            file = file,
+            sourceFilePath = sourcePath,
+        )
+        appContext?.let { ctx ->
+            _clipHistory.value = ClipHistoryStore.merge(ctx, listOf(record))
+        }
+        if (PeerManager.connectedCount.value > 0) {
+            PeerManager.broadcast(
+                ClipboardWirePayload.encode(record).toByteArray(Charsets.UTF_8),
+                record.messageId, record.timestampMs, record.fromDeviceId,
+                type = "file_clip",
+            )
+        }
+        return true
     }
 
     fun availableFile(record: ClipItemRecord): File? {
@@ -577,12 +585,6 @@ object SyncEngine {
                 val hashSource = payload.imageDataBase64 ?: text
                 val hash = hashSource.toByteArray(Charsets.UTF_8).sha256Hex()
 
-                if (recentHashes.isKnown(hash)) {
-                    Log.d(TAG, "Echo suppressed from ${fromDeviceId.take(8)}")
-                    return@launch
-                }
-                recentHashes.record(hash)
-
                 val record = ClipItemRecord(
                     messageId    = messageId,
                     seq          = 0L,
@@ -595,16 +597,19 @@ object SyncEngine {
                     imageDataBase64 = payload.imageDataBase64,
                     file = payload.file,
                 )
-                if (payload.kind == ClipKind.FILE) {
-                    // A remote file entry is metadata only until the user downloads it.
-                } else if (payload.kind != ClipKind.IMAGE || !ImageClipboard.copy(ctx, record)) {
+                val shouldAutoDownload = payload.kind == ClipKind.FILE &&
+                    record.file?.size?.let { it <= FILE_AUTO_DOWNLOAD_MAX_BYTES } == true
+                if (payload.kind != ClipKind.FILE &&
+                    (payload.kind != ClipKind.IMAGE || !ImageClipboard.copy(ctx, record))) {
                     val clip = ClipData.newPlainText("Airclip", text)
                     val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    suppressClipboardText(text)
                     cm.setPrimaryClip(clip)
                 }
                 val updated = ClipHistoryStore.merge(ctx, listOf(record))
                 _remoteInsertionId.value = messageId
                 _clipHistory.value = updated
+                if (shouldAutoDownload) downloadFile(record)
                 scope.launch {
                     delay(350)
                     if (_remoteInsertionId.value == messageId) _remoteInsertionId.value = null
@@ -759,10 +764,15 @@ object SyncEngine {
      * Call BEFORE writing [text] to the system clipboard from a tap-to-copy action.
      */
     fun suppressHistoryItem(record: ClipItemRecord) {
-        val hashSource = record.imageDataBase64 ?: record.displayText
-        val hash = hashSource.toByteArray(Charsets.UTF_8).sha256Hex()
-        recentHashes.record(hash)
+        suppressClipboardText(record.displayText)
     }
+
+    private fun suppressClipboardText(text: String) {
+        suppressedClipboardHashes.record(text.toByteArray(Charsets.UTF_8).sha256Hex())
+    }
+
+    fun consumeSuppressedClipboardText(text: String): Boolean =
+        suppressedClipboardHashes.consume(text.toByteArray(Charsets.UTF_8).sha256Hex())
 
     // ── History ───────────────────────────────────────────────────────────────
 
@@ -792,7 +802,7 @@ object SyncEngine {
     suspend fun clearLocalSession(context: Context) {
         ClipHistoryStore.clear(context)
         HistoryMutationStore.reset(context)
-        recentHashes.clear()
+        suppressedClipboardHashes.clear()
         _clipHistory.value = emptyList()
     }
 }
@@ -804,11 +814,11 @@ private fun ByteArray.sha256Hex(): String {
     return md.digest(this).joinToString("") { "%02x".format(it) }
 }
 
-/** Bounded recent-hash set to suppress duplicate or echoed clipboard items. */
-private class RecentHashSet(private val maxSize: Int = 50) {
+/** Bounded one-shot hash set for clipboard writes performed by AirClip itself. */
+private class ConsumableHashSet(private val maxSize: Int = 50) {
     private val hashes = ArrayDeque<String>(maxSize + 1)
 
-    @Synchronized fun isKnown(hash: String): Boolean = hashes.contains(hash)
+    @Synchronized fun consume(hash: String): Boolean = hashes.remove(hash)
 
     @Synchronized fun record(hash: String) {
         if (hashes.contains(hash)) return

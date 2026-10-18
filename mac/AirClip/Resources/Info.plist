@@ -12,6 +12,8 @@
 	<string>$(PRODUCT_NAME)</string>
 	<key>CFBundlePackageType</key>
 	<string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
+	<key>ATSApplicationFontsPath</key>
+	<string>.</string>
 	<key>CFBundleShortVersionString</key>
 	<string>2.0</string>
 	<key>CFBundleVersion</key>

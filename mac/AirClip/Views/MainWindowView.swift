@@ -388,35 +388,39 @@ struct MainWindowView: View {
 
         let group = DispatchGroup()
         let lock = NSLock()
-        var urls: [URL] = []
-        for provider in fileProviders {
+        var indexedURLs: [(Int, URL)] = []
+        for (index, provider) in fileProviders.enumerated() {
             group.enter()
             provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
                 if let url = Self.fileURL(from: item) {
                     lock.lock()
-                    urls.append(url)
+                    indexedURLs.append((index, url))
                     lock.unlock()
                 }
                 group.leave()
             }
         }
-        group.notify(queue: .main) {
+        group.notify(queue: .global(qos: .userInitiated)) {
             lock.lock()
-            let loadedURLs = urls
+            let loadedURLs = indexedURLs.sorted { $0.0 < $1.0 }.map(\.1)
             lock.unlock()
             var seen = Set<String>()
             let candidates = loadedURLs
                 .filter { seen.insert($0.standardizedFileURL.path).inserted }
                 .compactMap(DroppedFileCandidate.init(url:))
-            guard !candidates.isEmpty else {
-                showUnsupportedDropAlert = true
-                return
+            DispatchQueue.main.async {
+                guard !candidates.isEmpty else {
+                    showUnsupportedDropAlert = true
+                    return
+                }
+                droppedFiles = candidates
+                saveDroppedFiles = activePage == .saved
+                dropSpaceName = identity.spaceName.trimmingCharacters(in: .whitespacesAndNewlines)
+                if dropSpaceName.isEmpty || dropSpaceName == "?" {
+                    dropSpaceName = "your Airclip Space"
+                }
+                showFileDropConfirmation = true
             }
-            droppedFiles = candidates
-            saveDroppedFiles = activePage == .saved
-            dropSpaceName = identity.spaceName.trimmingCharacters(in: .whitespacesAndNewlines)
-            if dropSpaceName.isEmpty { dropSpaceName = "your Airclip Space" }
-            showFileDropConfirmation = true
         }
         return true
     }
@@ -904,7 +908,7 @@ private struct ClipboardWorkspace: View {
                 .frame(height: 28)
         }
         .buttonStyle(.borderedProminent)
-        .tint(.accentDeep)
+        .tint(.primaryButtonFill)
         .padding(.horizontal, MainWindowLayout.listSearchHorizontalInset)
         .padding(.bottom, 8)
     }
@@ -1172,6 +1176,13 @@ private struct ClipboardWorkspace: View {
                     Label(fileActionLabel(item), systemImage: fileActionSystemImage(item))
                 }
                 .disabled(!fileActionIsEnabled(item))
+                if syncEngine.availableFileURL(for: item) != nil {
+                    Button {
+                        copy(item)
+                    } label: {
+                        Label("Copy", systemImage: "doc.on.doc")
+                    }
+                }
             } else {
                 Button {
                     copy(item)
@@ -1413,6 +1424,7 @@ private struct ClipboardWorkspace: View {
                 FloatingActions(
                     isSaved: selectedItem.isSaved,
                     isFile: selectedItem.clipType == .file,
+                    fileIsAvailable: selectedItem.clipType == .file && syncEngine.availableFileURL(for: selectedItem) != nil,
                     onOpenBrowser: selectedItem.clipType == .url ? { openInBrowser(selectedItem) } : nil,
                     onCopy: { copy(selectedItem) },
                     onFileAction: selectedItem.clipType == .file ? { fileAction(selectedItem) } : nil,
@@ -1453,11 +1465,12 @@ private struct ClipboardWorkspace: View {
 
     private func copy(_ item: ClipboardItem) {
         if item.clipType == .file {
-            _ = syncEngine.withAvailableFileURL(for: item) { url in
+            let copied = syncEngine.withAvailableFileURL(for: item) { url in
                 ClipboardMonitor.shared.suppressNextChange()
                 NSPasteboard.general.clearContents()
-                NSPasteboard.general.writeObjects([url as NSURL])
-            }
+                return NSPasteboard.general.writeObjects([url as NSURL])
+            } ?? false
+            if copied { AirclipAlertCenter.shared.show("Copied to clipboard", kind: .success) }
             return
         }
         ClipboardMonitor.shared.suppressPacket(item.clipboardPacket)
@@ -1779,11 +1792,6 @@ private struct PreviewContent: View {
             }
         }
         .frame(maxWidth: .infinity)
-        .task(id: item.id) {
-            guard let file = item.fileMetadata, file.size <= 3 * 1024 * 1024,
-                  !item.isLocal, syncEngine.availablePreviewURL(for: item) == nil else { return }
-            syncEngine.previewFile(item)
-        }
         .onDisappear {
             syncEngine.clearPreviewFile(for: item)
         }
@@ -2235,6 +2243,7 @@ private extension Comparable {
 private struct FloatingActions: View {
     let isSaved: Bool
     let isFile: Bool
+    let fileIsAvailable: Bool
     let onOpenBrowser: (() -> Void)?
     let onCopy: () -> Void
     let onFileAction: (() -> Void)?
@@ -2262,7 +2271,8 @@ private struct FloatingActions: View {
                     isEnabled: fileActionIsEnabled,
                     action: onFileAction
                 )
-            } else {
+            }
+            if !isFile || fileIsAvailable {
                 CopyActionIconButton(action: onCopy)
                     .keyboardShortcut("c", modifiers: .command)
             }
@@ -3743,6 +3753,7 @@ private struct SettingsPanel: View {
     @ObservedObject private var popoverShortcutStore = PasteShortcutStore.popover
     @ObservedObject private var analytics = PrivacyAnalytics.shared
     @ObservedObject private var updateController = AppUpdateController.shared
+    @ObservedObject private var downloadLocation = DownloadLocationStore.shared
 
     @State private var historyDepth: Int = HistoryRetentionPolicy.selectedIndex()
     @State private var showResetAlert = false
@@ -3770,6 +3781,12 @@ private struct SettingsPanel: View {
                             appearanceChooser
                                 .frame(width: 220)
                         }
+                    }
+                }
+
+                settingsSection("Files") {
+                    settingsGroup {
+                        downloadLocationMenuRow
                     }
                 }
 
@@ -3817,33 +3834,34 @@ private struct SettingsPanel: View {
                             title: "Check for Updates",
                             subtitle: updateController.updateStatus ?? "Checks automatically at most once daily.",
                             tint: MainWindowPalette.primaryText,
+                            iconFill: MainWindowPalette.activeFill,
                             hoverFill: MainWindowPalette.hoverFill
                         ) {
                             AppUpdateController.shared.checkForUpdates()
                         }
                         settingsDivider
-                        settingsRow(
-                            icon: .shield,
-                            iconTint: MainWindowPalette.secondaryText,
-                            iconFill: MainWindowPalette.activeFill,
-                            title: "Help improve Airclip",
-                            subtitle: "Anonymous feature counts help us improve Airclip. Clipboard content is never shared."
-                        ) {
-                            Menu {
-                                Button {
-                                    analytics.isEnabled = true
-                                    analytics.flushIfDue()
-                                } label: {
-                                    if analytics.isEnabled { Label("Allow", systemImage: "checkmark") }
-                                    else { Text("Allow") }
-                                }
-                                Button {
-                                    analytics.isEnabled = false
-                                } label: {
-                                    if !analytics.isEnabled { Label("Don't allow", systemImage: "checkmark") }
-                                    else { Text("Don't allow") }
-                                }
+                        Menu {
+                            Button {
+                                analytics.isEnabled = true
+                                analytics.flushIfDue()
                             } label: {
+                                if analytics.isEnabled { Label("Allow", systemImage: "checkmark") }
+                                else { Text("Allow") }
+                            }
+                            Button {
+                                analytics.isEnabled = false
+                            } label: {
+                                if !analytics.isEnabled { Label("Don't allow", systemImage: "checkmark") }
+                                else { Text("Don't allow") }
+                            }
+                        } label: {
+                            settingsRow(
+                                icon: .shield,
+                                iconTint: MainWindowPalette.secondaryText,
+                                iconFill: MainWindowPalette.activeFill,
+                                title: "Help improve Airclip",
+                                subtitle: "Anonymous feature counts help us improve Airclip. Clipboard content is never shared."
+                            ) {
                                 HStack(spacing: 6) {
                                     Text(analytics.isEnabled ? "Allowed" : "Not allowed")
                                     Image(systemName: "chevron.down")
@@ -3851,18 +3869,14 @@ private struct SettingsPanel: View {
                                 }
                                 .font(.system(size: 11.5, weight: .medium))
                                 .foregroundColor(MainWindowPalette.secondaryText)
-                                .padding(.horizontal, 9)
-                                .frame(height: 28)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                        .strokeBorder(Color.borderDefault, lineWidth: 0.5)
-                                )
+                                .frame(width: 180, alignment: .trailing)
                             }
-                            .menuStyle(.borderlessButton)
-                            .accessibilityLabel("Anonymous analytics")
-                            .accessibilityValue(analytics.isEnabled ? "Allowed" : "Not allowed")
-                            .accessibilityHint("Choose whether to share anonymous feature counts")
                         }
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Anonymous analytics")
+                        .accessibilityValue(analytics.isEnabled ? "Allowed" : "Not allowed")
+                        .accessibilityHint("Choose whether to share anonymous feature counts")
                     }
                 }
 
@@ -3873,6 +3887,7 @@ private struct SettingsPanel: View {
                             title: "Clear History",
                             subtitle: "Removes clips and saved items from every device in this space.",
                             tint: MainWindowPalette.destructive,
+                            iconFill: MainWindowPalette.destructive.opacity(0.12),
                             hoverFill: MainWindowPalette.hoverFill
                         ) {
                             showClearHistoryAlert = true
@@ -3883,6 +3898,7 @@ private struct SettingsPanel: View {
                             title: "Leave Space",
                             subtitle: "Disconnects this Mac and clears Airclip data.",
                             tint: MainWindowPalette.destructive,
+                            iconFill: MainWindowPalette.destructive.opacity(0.12),
                             hoverFill: MainWindowPalette.hoverFill
                         ) {
                             showResetAlert = true
@@ -4195,6 +4211,64 @@ private struct SettingsPanel: View {
         .animation(.easeOut(duration: 0.12), value: appearanceStore.rawValue)
     }
 
+    private var downloadLocationMenuRow: some View {
+        Menu {
+            Button {
+                downloadLocation.resetToDownloads()
+            } label: {
+                if downloadLocation.usesDefaultDownloadsFolder {
+                    Label("Downloads", systemImage: "checkmark")
+                } else {
+                    Text("Downloads")
+                }
+            }
+            Divider()
+            Button("Choose Folder…") {
+                chooseDownloadFolder()
+            }
+        } label: {
+            settingsRow(
+                icon: .fileDownload,
+                iconTint: MainWindowPalette.secondaryText,
+                iconFill: MainWindowPalette.activeFill,
+                title: "Download location",
+                subtitle: downloadLocation.displayPath
+            ) {
+                HStack(spacing: 8) {
+                    Text(downloadLocation.folderURL.lastPathComponent)
+                        .font(.system(size: 13))
+                        .foregroundColor(MainWindowPalette.secondaryText)
+                        .lineLimit(1)
+                    AirclipIcon(.chevronDown, size: 12)
+                        .foregroundColor(MainWindowPalette.secondaryText)
+                }
+                .frame(width: 180, alignment: .trailing)
+            }
+            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        }
+        .frame(maxWidth: .infinity, alignment: .trailing)
+        .buttonStyle(.plain)
+    }
+
+    private func chooseDownloadFolder() {
+        let panel = NSOpenPanel()
+        panel.title = "Choose Download Folder"
+        panel.message = "Airclip will save future downloaded files in this folder."
+        panel.prompt = "Choose"
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.canCreateDirectories = true
+        panel.directoryURL = downloadLocation.folderURL
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        do {
+            try downloadLocation.setFolder(url)
+        } catch {
+            AirclipAlertCenter.shared.show("Could not use that folder", kind: .danger)
+        }
+    }
+
     private var syncModeChooser: some View {
         HStack(spacing: 4) {
             ForEach(SyncMode.allCases, id: \.rawValue) { mode in
@@ -4461,23 +4535,40 @@ private struct FileDropConfirmationSheet: View {
 
     private var visibleFiles: [DroppedFileCandidate] { Array(files.prefix(5)) }
 
+    private var title: String {
+        files.count == 1
+            ? "Share this file with Your Space?"
+            : "Share \(files.count) files with Your Space?"
+    }
+
+    private var message: String {
+        let transferCopy = files.count == 1
+            ? "The original stays on this Mac. Other devices download it only when needed."
+            : "The originals stay on this Mac. Other devices download them only when needed."
+        return saveAfterSharing ? "\(transferCopy) \(files.count == 1 ? "It’ll" : "They’ll") also be added to Saved." : transferCopy
+    }
+
+    private var shareButtonTitle: String {
+        if saveAfterSharing { return files.count == 1 ? "Share & Save" : "Share & Save \(files.count) Files" }
+        return files.count == 1 ? "Share File" : "Share \(files.count) Files"
+    }
+
     var body: some View {
         VStack(spacing: 0) {
-            Image(systemName: "square.and.arrow.up")
-                .font(.system(size: 22, weight: .medium))
-                .foregroundStyle(Color.accent)
-                .frame(width: 52, height: 52)
-                .background(Color.accent.opacity(0.12), in: Circle())
+            Image("ShareModalIcon")
+                .renderingMode(.original)
+                .resizable()
+                .frame(width: 28, height: 28)
+                .padding(14)
+                .background(Color(hex: "#E8E3F6"), in: Circle())
                 .padding(.bottom, 16)
 
-            Text(files.count == 1 ? "Share this file?" : "Share these files?")
-                .font(.system(size: 19, weight: .semibold))
+            Text(title)
+                .font(.custom("Beary", size: 19))
                 .foregroundStyle(Color.textPrimary)
                 .padding(.bottom, 6)
 
-            Text(saveAfterSharing
-                ? "Add to \(spaceName) and Saved? Other devices in this Space can download the file when they need it. The original stays on this Mac."
-                : "Add to \(spaceName)? Other devices in this Space can download the file when they need it. The original stays on this Mac.")
+            Text(message)
                 .font(.system(size: 13))
                 .foregroundStyle(Color.textSecondary)
                 .multilineTextAlignment(.center)
@@ -4534,9 +4625,9 @@ private struct FileDropConfirmationSheet: View {
 
             VStack(spacing: 8) {
                 SettingsConfirmationButton(
-                    title: saveAfterSharing ? "Share and Save" : "Share with Space",
-                    fill: canShare ? .accentDeep : .textTertiary,
-                    hoverFill: canShare ? Color.accentDeep.opacity(0.86) : .textTertiary,
+                    title: shareButtonTitle,
+                    fill: canShare ? .primaryButtonFill : .textTertiary,
+                    hoverFill: canShare ? Color.primaryButtonFill.opacity(0.86) : .textTertiary,
                     foreground: .white,
                     action: onShare
                 )
@@ -4581,7 +4672,7 @@ private struct SettingsDestructiveConfirmationSheet: View {
             .padding(.bottom, 20)
 
             Text(title)
-                .font(.system(size: 20, weight: .semibold))
+                .font(.custom("Beary", size: 20))
                 .foregroundColor(.textPrimary)
                 .padding(.bottom, 8)
 
@@ -4645,7 +4736,7 @@ private struct SettingsConfirmationButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 15, weight: .medium))
+            .font(.custom("Beary", size: 15))
             .foregroundColor(foreground)
             .frame(maxWidth: .infinity)
             .frame(height: 44)
@@ -4791,6 +4882,7 @@ private struct SettingsActionRow: View {
     let title: String
     let subtitle: String
     let tint: Color
+    let iconFill: Color
     let hoverFill: Color
     let action: () -> Void
 
@@ -4799,10 +4891,14 @@ private struct SettingsActionRow: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 10) {
-                AirclipIcon(icon, size: 14)
-                    .foregroundColor(tint)
-                    .frame(width: 16)
+            HStack(spacing: 12) {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(iconFill)
+                    .frame(width: 34, height: 34)
+                    .overlay(
+                        AirclipIcon(icon, size: 16)
+                            .foregroundColor(tint)
+                    )
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
                         .font(.system(size: 13))
