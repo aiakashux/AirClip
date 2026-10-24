@@ -195,7 +195,10 @@ object LanBrowser {
     private fun connectToPeer(host: String, port: Int, peerHint: String) {
         val myDeviceId = AirclipIdentity.deviceId ?: return PeerManager.onPeerDisconnected(peerHint)
         val myAirclipId = AirclipIdentity.airClipId ?: return PeerManager.onPeerDisconnected(peerHint)
-        val myPubKey = keyManager?.getPublicKeyBase64() ?: return PeerManager.onPeerDisconnected(peerHint)
+        // NSD may resolve a service while a new KeyManager is still loading or
+        // after discovery stops. Skip that result instead of crashing its thread.
+        val myPubKey = keyManager?.publicKeyBase64OrNull()
+            ?: return PeerManager.onPeerDisconnected(peerHint)
         val client = httpClient ?: return PeerManager.onPeerDisconnected(peerHint)
 
         Log.d(TAG, "Connecting to ${peerHint.take(8)} at $host:$port")
@@ -244,12 +247,12 @@ object LanBrowser {
                 val peerId  = msg["device_id"]  ?: return closeWith(ws, "missing device_id")
                 val peerKey = msg["public_key"] ?: return closeWith(ws, "missing public_key")
 
-                if (!AirclipIdentity.pairedDevices.containsKey(peerId)) {
+                if (!matchesPairedKey(AirclipIdentity.pairedDevices[peerId]?.publicKey, peerKey)) {
                     return closeWith(ws, "unpaired device")
                 }
 
-                // Trust is implicit: server already validated our airclip_id in handleAuth.
-                // We accept auth_ok at face value.
+                // Never replace a pairing key from an unauthenticated auth_ok response.
+                // A future protocol must also prove private-key possession.
                 authenticated = true
                 authenticatedPeerId = peerId
                 connectionId = java.util.UUID.randomUUID().toString()
@@ -320,7 +323,7 @@ object LanBrowser {
                         ws.send(PeerManager.gson.toJson(ack))
                     }
                     "heartbeat_ack" -> {
-                        PeerManager.markPeerSeen(authenticatedPeerId ?: peerHint, msg["ssid"])
+                        PeerManager.markPeerHeartbeatAck(authenticatedPeerId ?: peerHint, msg["ssid"])
                     }
                     "app_activity" -> {
                         val ts = msg["ts"]?.toLongOrNull() ?: System.currentTimeMillis()

@@ -30,13 +30,13 @@ Server → Client (success):
 }
 ```
 
-Peer rejected if `airclip_id` or `device_id` not in local registry. Connection closed immediately.
+Reconnects are rejected when the space/device is not trusted or the presented public key differs from the saved pairing key. Reconnect messages cannot rotate pairing keys. **This key pin is not proof of private-key possession:** the current protocol still needs authenticated sessions and replay protection before release.
 
 ## Pairing Messages
 
 ### pair_probe
 ```json
-{ "type": "pair_probe", "code": "12345678" }
+{ "type": "pair_probe", "code": "123456" }
 ```
 Response:
 ```json
@@ -48,7 +48,7 @@ or `{ "type": "pair_reject", "reason": "invalid_code" }`
 ```json
 {
   "type": "pair_request",
-  "code": "12345678",
+  "code": "123456",
   "device_id": "...",
   "device_name": "Pixel",
   "platform": "android",
@@ -135,3 +135,7 @@ Every 15 seconds while connected.
 Reply: `{ "type": "heartbeat_ack", "ts": "...", "ssid": "optional" }`
 
 Refreshes `lastSeenMs` and device presence UI.
+
+## File metadata validation
+
+Transfer/cache identifiers must match `[A-Za-z0-9_-]{1,128}`. File sizes must be nonnegative and names must be nonempty without NUL characters. Both clients reject unsafe remote metadata; cache path access also validates persisted records. This does not replace sender authentication or transfer-integrity testing.

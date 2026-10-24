@@ -1,5 +1,6 @@
 package com.airclip.airclip
 
+import com.airclip.airclip.lan.PeerHeartbeatPolicy
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -20,5 +21,12 @@ class UpdatePolicyTest {
         assertFalse(UpdatePolicy.isValidUpdate(valid.copy(versionCode = 2), installedVersionCode = 2))
         assertFalse(UpdatePolicy.isValidUpdate(valid.copy(downloadUrl = "http://airclip-silk.vercel.app/#downloads"), 2))
         assertFalse(UpdatePolicy.isValidUpdate(valid.copy(downloadUrl = "https://example.com/app.apk"), 2))
+    }
+
+    @Test
+    fun heartbeatTimeoutAllowsNormalIntervalJitterButExpiresSilentPeers() {
+        val lastAck = 100_000L
+        assertFalse(PeerHeartbeatPolicy.hasTimedOut(lastAck, lastAck + PeerHeartbeatPolicy.TIMEOUT_MS - 1))
+        assertTrue(PeerHeartbeatPolicy.hasTimedOut(lastAck, lastAck + PeerHeartbeatPolicy.TIMEOUT_MS))
     }
 }

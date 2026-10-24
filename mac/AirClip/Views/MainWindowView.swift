@@ -67,8 +67,8 @@ private final class QuickLookImagePreviewer: NSObject, QLPreviewPanelDataSource 
 
 private enum MainPage: String, CaseIterable {
     case home = "Home"
+    case saved = "Saved Items"
     case devices = "Devices"
-    case saved = "Saved"
     case settings = "Settings"
 
     var icon: AirclipIconName {
@@ -82,39 +82,48 @@ private enum MainPage: String, CaseIterable {
 }
 
 private enum MainWindowLayout {
-    static let windowWidth: CGFloat = 860
-    static let windowHeight: CGFloat = 608
-    static let sidebarLeadingPadding: CGFloat = 12
-    static let sidebarTrailingPadding: CGFloat = 0
-    static let mainCardLeadingInset: CGFloat = 12
-    static let mainCardTrailingInset: CGFloat = 12
-    static let mainCardTopInset: CGFloat = 8
-    static let mainCardBottomInset: CGFloat = 12
-    static let mainCardCornerRadius: CGFloat = 10
+    static let windowWidth: CGFloat = 940
+    static let windowHeight: CGFloat = 674
+    static let mainCardLeadingInset: CGFloat = 0
+    static let mainCardTrailingInset: CGFloat = 0
+    static let mainCardTopInset: CGFloat = 0
+    static let mainCardBottomInset: CGFloat = 0
+    static let mainCardCornerRadius: CGFloat = 0
     static let contentHeight: CGFloat = windowHeight
     static let contentWidth: CGFloat = windowWidth
-    static let sidebarWidth: CGFloat = 140
-    static let sidebarInnerWidth: CGFloat = sidebarWidth - sidebarLeadingPadding - sidebarTrailingPadding
+    static let sidebarHorizontalPadding: CGFloat = 8
+    static let sidebarWidth: CGFloat = navItemSize + (sidebarHorizontalPadding * 2)
+    static let sidebarInnerWidth: CGFloat = navItemSize
     static let mainCardWidth: CGFloat = windowWidth - sidebarWidth
-    static let listWidth: CGFloat = 256
-    static let listSearchHorizontalInset: CGFloat = 12
-    static let listHeaderHorizontalInset: CGFloat = 12
-    static let listRowHorizontalInset: CGFloat = 12
+    static let listWidth: CGFloat = 362
+    static let listSearchHorizontalInset: CGFloat = 16
+    static let searchBarContentHorizontalInset: CGFloat = 16
+    static let listHeaderHorizontalInset: CGFloat = 24
+    static let listRowHorizontalInset: CGFloat = 16
     static let listSearchHeight: CGFloat = 60
+    static let filterRowTopGap: CGFloat = 8
+    static let filterScrollTargetSize: CGFloat = 40
     static let previewMinWidth: CGFloat = 240
-    static let navItemHeight: CGFloat = 32
+    static let navIconSize: CGFloat = 20
+    static let navItemPadding: CGFloat = 10
+    static let navItemSize: CGFloat = navIconSize + (navItemPadding * 2)
     static let navCornerRadius: CGFloat = 10
-    static let rowWidth: CGFloat = 232
-    static let rowHeight: CGFloat = 70
-    static let rowIconWidth: CGFloat = 14
-    static let actionBarWidth: CGFloat = 154
-    static let actionBarHeight: CGFloat = 50
+    static let navTooltipGap: CGFloat = 8
+    static let navTooltipFontSize: CGFloat = 12
+    static let navTooltipHorizontalPadding: CGFloat = 8
+    static let navTooltipVerticalPadding: CGFloat = 8
+    static let navTooltipCornerRadius: CGFloat = 6
+    static let rowWidth: CGFloat = 330
+    static let rowHeight: CGFloat = 52
+    static let rowIconWidth: CGFloat = 16
+    static let actionBarWidth: CGFloat = 148
+    static let actionBarHeight: CGFloat = 44
     static let previewTopInset: CGFloat = 32
     static let previewLeadingInset: CGFloat = 32
     static let previewTrailingInset: CGFloat = 32
     static let previewBottomInset: CGFloat = 108
-    static let previewActionTrailingInset: CGFloat = 16
-    static let previewActionBottomInset: CGFloat = 16
+    static let previewActionTrailingInset: CGFloat = 20
+    static let previewActionBottomInset: CGFloat = 20
     static let settingsInset: CGFloat = 24
     static let settingsMaxWidth: CGFloat = 520
     static let devicesHorizontalInset: CGFloat = 24
@@ -139,8 +148,8 @@ private enum MainWindowLayout {
     static let imageBadgeForeground = Color(hex: "#DB438A")
     static let imagePreviewBadgeFill = Color.white.opacity(0.50)
     static let fileIconFallbackColor = Color(hex: "#33A1FE")
-    static let colorBadgeFill = Color(hex: "#4D4D4D").opacity(0.12)
-    static let colorBadgeForeground = Color(hex: "#4D4D4D")
+    static let colorBadgeFill = Color.textSecondary.opacity(0.12)
+    static let colorBadgeForeground = Color.textSecondary
     static let badgeBorder = Color(hex: "#808080").opacity(0.2)
     static let codeTitleText = Color.textSubtle
     static let searchBackground = MainWindowPalette.searchIdleFill
@@ -151,7 +160,7 @@ private enum MainWindowLayout {
 }
 
 private enum MainWindowPalette {
-    static let shell = Color.bgBase.opacity(0.88)
+    static let shell = Color.mainWindowShell
     static let shellGlassTint = Color.glassTint.opacity(0.06)
     static let card = Color.bgElevated
     static let primaryText = Color.textPrimary
@@ -179,11 +188,11 @@ private enum MainWindowPalette {
     static let sidebarActiveFill = Color.sidebarSelected
     static let sidebarActiveBorder = Color.sidebarSelectedBorder
     static let sidebarItemBorder = Color.borderSubtle
-    static let searchIdleFill = Color.bgFloating.opacity(0.40)
+    static let searchIdleFill = Color.mainWindowSearchFill
     static let searchIdleBorder = Color.borderDefault
     static let sectionHeaderText = Color.textSecondary
-    static let listTitleText = Color.textPrimary
-    static let listMetaText = Color.textSecondary
+    static let listTitleText = Color.mainWindowBrand
+    static let listMetaText = Color.mainWindowMeta
 }
 
 private enum MainWindowMotion {
@@ -218,7 +227,6 @@ struct MainWindowView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
     @State private var activePage: MainPage = .home
-    @State private var isNavigationCollapsed = false
     @State private var isFileDropTargeted = false
     @State private var droppedFiles: [DroppedFileCandidate] = []
     @State private var dropSpaceName = ""
@@ -230,12 +238,8 @@ struct MainWindowView: View {
         allItems.filter(\.isSaved).count
     }
 
-    private var currentSidebarWidth: CGFloat {
-        isNavigationCollapsed ? 0 : MainWindowLayout.sidebarWidth
-    }
-
     private var currentDetailAreaWidth: CGFloat {
-        MainWindowLayout.contentWidth - currentSidebarWidth
+        MainWindowLayout.contentWidth - MainWindowLayout.sidebarWidth
     }
 
     private var currentMainCardWidth: CGFloat {
@@ -261,43 +265,23 @@ struct MainWindowView: View {
         )
     }
 
-    private var navigationCollapsedBinding: Binding<Bool> {
-        Binding(
-            get: { isNavigationCollapsed },
-            set: { collapsed in
-                withAnimation(.timingCurve(0.25, 0.46, 0.45, 0.94, duration: MainWindowMotion.sidebarDuration)) {
-                    isNavigationCollapsed = collapsed
-                }
-            }
-        )
-    }
-
     var body: some View {
         HStack(spacing: 0) {
             sidebarColumn
-                .frame(width: currentSidebarWidth)
-                .opacity(isNavigationCollapsed ? 0 : 1)
-                .clipped()
-                .allowsHitTesting(!isNavigationCollapsed)
-
             detailContent
                 .frame(width: currentDetailAreaWidth, height: MainWindowLayout.contentHeight, alignment: .topLeading)
                 .blur(radius: showsFileDropOverlay ? 8 : 0, opaque: false)
                 .clipped()
                 .overlay {
-                    if showsFileDropOverlay {
-                        fileDropOverlay
-                    }
+                    if showsFileDropOverlay { fileDropOverlay }
                 }
         }
         .frame(width: MainWindowLayout.contentWidth, height: MainWindowLayout.contentHeight, alignment: .topLeading)
-        .frame(width: MainWindowLayout.windowWidth, height: MainWindowLayout.windowHeight, alignment: .topLeading)
         .background(MainWindowPalette.shell)
         .overlay(alignment: .bottom) {
             if let alert = alertCenter.current {
                 AirclipBottomAlert(
                     item: alert,
-                    onDismiss: alertCenter.dismiss,
                     onAction: alertCenter.performAction
                 )
                 .padding(.horizontal, 24)
@@ -309,10 +293,6 @@ struct MainWindowView: View {
         .animation(
             reduceMotion ? .easeInOut(duration: 0.12) : .timingCurve(0.16, 1, 0.3, 1, duration: 0.22),
             value: alertCenter.current?.id
-        )
-        .animation(
-            .timingCurve(0.25, 0.46, 0.45, 0.94, duration: MainWindowMotion.sidebarDuration),
-            value: isNavigationCollapsed
         )
         .onDrop(of: [UTType.fileURL], isTargeted: fileDropTargetBinding, perform: receiveFileDrop)
         .sheet(isPresented: $showFileDropConfirmation, onDismiss: { droppedFiles = [] }) {
@@ -331,27 +311,13 @@ struct MainWindowView: View {
             Text("Airclip can share individual files. Folders and items without an accessible file are not added to your Space.")
         }
         .onReceive(NotificationCenter.default.publisher(for: .openSettingsTab)) { _ in
-            withAnimation(.timingCurve(0.25, 0.46, 0.45, 0.94, duration: MainWindowMotion.sidebarDuration)) {
-                activePage = .settings
-                isNavigationCollapsed = false
-            }
+            activePage = .settings
         }
         .onReceive(NotificationCenter.default.publisher(for: .openHomeTab)) { _ in
-            withAnimation(.timingCurve(0.25, 0.46, 0.45, 0.94, duration: MainWindowMotion.sidebarDuration)) {
-                activePage = .home
-                isNavigationCollapsed = false
-            }
+            activePage = .home
         }
         .onReceive(NotificationCenter.default.publisher(for: .openDevicesTab)) { _ in
-            withAnimation(.timingCurve(0.25, 0.46, 0.45, 0.94, duration: MainWindowMotion.sidebarDuration)) {
-                activePage = .devices
-                isNavigationCollapsed = false
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .toggleMainWindowSidebar)) { _ in
-            withAnimation(.timingCurve(0.25, 0.46, 0.45, 0.94, duration: MainWindowMotion.sidebarDuration)) {
-                isNavigationCollapsed.toggle()
-            }
+            activePage = .devices
         }
     }
 
@@ -459,8 +425,8 @@ struct MainWindowView: View {
 
     private var sidebarColumn: some View {
         VStack(alignment: .leading, spacing: 0) {
-            VStack(spacing: 6) {
-                ForEach(MainPage.allCases, id: \.self) { page in
+            VStack(spacing: 12) {
+                ForEach([MainPage.home, .saved, .devices], id: \.self) { page in
                     SidebarNavItem(
                         page: page,
                         isActive: activePage == page,
@@ -474,18 +440,24 @@ struct MainWindowView: View {
             }
             .padding(.top, 16)
 
-            Spacer()
+            Spacer(minLength: 20)
 
-            SidebarBrandMark()
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.leading, 10)
-                .padding(.bottom, 24)
+            SidebarNavItem(page: .settings, isActive: activePage == .settings, count: nil) {
+                activePage = .settings
+            }
+            .padding(.bottom, 8)
         }
         .frame(width: MainWindowLayout.sidebarInnerWidth, height: MainWindowLayout.contentHeight)
-        .padding(.leading, MainWindowLayout.sidebarLeadingPadding)
-        .padding(.trailing, MainWindowLayout.sidebarTrailingPadding)
+        .padding(.horizontal, MainWindowLayout.sidebarHorizontalPadding)
         .frame(width: MainWindowLayout.sidebarWidth, height: MainWindowLayout.contentHeight)
         .background(MainWindowPalette.shell)
+        .overlay(alignment: .trailing) {
+            Rectangle()
+                .fill(Color.black.opacity(0.05))
+                .frame(width: 1)
+        }
+        // Sidebar tooltips extend into the detail column and must render above it.
+        .zIndex(1)
     }
 
     @ViewBuilder
@@ -498,14 +470,12 @@ struct MainWindowView: View {
                         filter: .all,
                         workspaceWidth: currentMainCardWidth,
                         workspaceHeight: currentMainCardHeight,
-                        isNavigationCollapsed: navigationCollapsedBinding
                     )
                 case .saved:
                     ClipboardWorkspace(
                         filter: .saved,
                         workspaceWidth: currentMainCardWidth,
                         workspaceHeight: currentMainCardHeight,
-                        isNavigationCollapsed: navigationCollapsedBinding
                     )
                 case .devices:
                     DevicesPanel()
@@ -518,20 +488,13 @@ struct MainWindowView: View {
             .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: activePage)
             .frame(width: currentMainCardWidth, height: currentMainCardHeight)
             .background(MainWindowPalette.card)
-            .clipShape(RoundedRectangle(cornerRadius: MainWindowLayout.mainCardCornerRadius, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: MainWindowLayout.mainCardCornerRadius, style: .continuous)
-                    .strokeBorder(MainWindowPalette.divider.opacity(0.72), lineWidth: 0.5)
+            .overlay(alignment: .leading) {
+                MainWindowPalette.divider.frame(width: 0.5)
             }
-            .shadow(color: Color.black.opacity(0.10), radius: 24, x: 0, y: 8)
             .padding(.leading, MainWindowLayout.mainCardLeadingInset)
             .padding(.top, MainWindowLayout.mainCardTopInset)
         }
         .frame(width: currentDetailAreaWidth, height: MainWindowLayout.contentHeight, alignment: .topLeading)
-        .animation(
-            .timingCurve(0.25, 0.46, 0.45, 0.94, duration: MainWindowMotion.sidebarDuration),
-            value: isNavigationCollapsed
-        )
     }
 }
 
@@ -551,7 +514,29 @@ private struct SidebarNavItem: View {
             rowLabel
         }
         .buttonStyle(.plain)
-        .help(page.rawValue)
+        .overlay(alignment: .leading) {
+            if isHovered {
+                HStack(spacing: MainWindowLayout.navTooltipGap) {
+                    // This spacer aligns the tooltip to the 40pt target's trailing edge.
+                    Color.clear
+                        .frame(width: (MainWindowLayout.sidebarInnerWidth + MainWindowLayout.navItemSize) / 2)
+
+                    Text(page.rawValue)
+                        .font(.system(size: MainWindowLayout.navTooltipFontSize, weight: .regular))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, MainWindowLayout.navTooltipHorizontalPadding)
+                        .padding(.vertical, MainWindowLayout.navTooltipVerticalPadding)
+                        .background(Color.black, in: RoundedRectangle(cornerRadius: MainWindowLayout.navTooltipCornerRadius))
+                        .fixedSize()
+                }
+                .fixedSize()
+                .transition(.opacity)
+                .zIndex(10)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+            }
+        }
+        .zIndex(isHovered ? 10 : 0)
         .accessibilityLabel(accessibilityLabel)
         .accessibilityValue(isActive ? "Selected" : "")
         .onHover { hovering in
@@ -577,31 +562,22 @@ private struct SidebarNavItem: View {
     }
 
     private var rowLabel: some View {
-        HStack(spacing: 8) {
-            AirclipIcon(page.icon, size: 18, variant: .stroke)
+        HStack(spacing: 0) {
+            AirclipIcon(page.icon, size: MainWindowLayout.navIconSize, variant: isActive ? .automatic : .stroke)
                 .foregroundColor(navForegroundColor)
-                .frame(width: 18, height: 18)
-            Text(page.rawValue)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundColor(navForegroundColor)
-            Spacer(minLength: 0)
-            countBadge
+                .frame(width: MainWindowLayout.navIconSize, height: MainWindowLayout.navIconSize)
         }
-        .padding(.horizontal, 8)
-        .frame(width: MainWindowLayout.sidebarInnerWidth, height: MainWindowLayout.navItemHeight)
+        .frame(width: MainWindowLayout.navItemSize, height: MainWindowLayout.navItemSize)
         .background(navBackground)
         .scaleEffect(isPressed ? MainWindowMotion.navPressScale : 1)
         .contentShape(RoundedRectangle(cornerRadius: MainWindowLayout.navCornerRadius, style: .continuous))
+        .frame(width: MainWindowLayout.sidebarInnerWidth, height: MainWindowLayout.navItemSize)
     }
 
     private var navBackground: some View {
         ZStack {
             RoundedRectangle(cornerRadius: MainWindowLayout.navCornerRadius, style: .continuous)
                 .fill(backgroundColor)
-            if isActive {
-                RoundedRectangle(cornerRadius: MainWindowLayout.navCornerRadius, style: .continuous)
-                    .strokeBorder(MainWindowPalette.sidebarActiveBorder, lineWidth: 0.8)
-            }
         }
     }
 
@@ -622,14 +598,13 @@ private struct SidebarNavItem: View {
     }
 
     private var backgroundColor: Color {
-        if isPressed { return MainWindowPalette.pressedFill }
-        if isActive { return MainWindowPalette.sidebarActiveFill }
-        if isHovered { return MainWindowPalette.sidebarHoverFill }
+        if isPressed { return Color.black.opacity(0.10) }
+        if isHovered { return Color.black.opacity(0.06) }
         return .clear
     }
 
     private var navForegroundColor: Color {
-        if isActive { return Color.accent }
+        if isActive { return MainWindowPalette.primaryText }
         if isHovered { return MainWindowPalette.primaryText }
         return MainWindowPalette.sidebarText
     }
@@ -651,14 +626,6 @@ private struct SidebarNavItem: View {
 
     private func countLabel(_ count: Int) -> String {
         count > 99 ? "99+" : "\(count)"
-    }
-}
-
-private struct SidebarBrandMark: View {
-    var body: some View {
-        AirclipLogoMark()
-            .frame(width: 97, height: 24)
-        .accessibilityLabel("Airclip")
     }
 }
 
@@ -691,20 +658,69 @@ struct AirclipEmptyLogoMark: View {
 }
 
 struct AirclipFigmaEmptyState: View {
-    var text = "Copy something on either device. It will appear here automatically."
+    let icon: AirclipIconName
+    let title: String
+    let message: String
+    var badgeIcon: AirclipIconName? = nil
+    var actionTitle: String? = nil
+    var action: (() -> Void)? = nil
+    var compact = false
 
     var body: some View {
-        VStack(spacing: 12) {
-            AirclipEmptyLogoMark(size: 36, color: .textTertiary)
+        VStack(spacing: compact ? 10 : 16) {
+            ZStack(alignment: .bottomTrailing) {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(MainWindowPalette.searchFill)
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .strokeBorder(MainWindowPalette.divider, lineWidth: 0.5)
+                    }
+                    .overlay {
+                        AirclipIcon(icon, size: compact ? 20 : 28, variant: .stroke)
+                            .foregroundColor(MainWindowPalette.secondaryText)
+                    }
+                    .frame(width: compact ? 40 : 56, height: compact ? 40 : 56)
 
-            Text(text)
-                .font(.system(size: 14, weight: .regular))
-                .lineSpacing(7)
-                .foregroundColor(.textSecondary)
-                .multilineTextAlignment(.center)
-                .frame(width: 200)
+                if let badgeIcon {
+                    Circle()
+                        .fill(MainWindowPalette.card)
+                        .overlay {
+                            Circle()
+                                .strokeBorder(MainWindowPalette.divider, lineWidth: 0.5)
+                        }
+                        .overlay {
+                            AirclipIcon(badgeIcon, size: 13, variant: .stroke)
+                                .foregroundColor(MainWindowPalette.secondaryText)
+                        }
+                        .frame(width: 24, height: 24)
+                        .offset(x: 4, y: 4)
+                }
+            }
+
+            VStack(spacing: compact ? 4 : 6) {
+                Text(title)
+                    .font(.system(size: compact ? 13 : 15, weight: .semibold))
+                    .foregroundColor(MainWindowPalette.primaryText)
+                    .multilineTextAlignment(.center)
+
+                Text(message)
+                    .font(.system(size: compact ? 11 : 12))
+                    .lineSpacing(compact ? 2 : 3)
+                    .foregroundColor(MainWindowPalette.secondaryText)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if let actionTitle, let action {
+                Button(actionTitle, action: action)
+                    .font(.system(size: 12, weight: .medium))
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+            }
         }
-        .frame(width: 200, height: 90)
+        .frame(maxWidth: compact ? 220 : 260)
+        .padding(compact ? 10 : 20)
+        .accessibilityElement(children: .contain)
     }
 }
 
@@ -761,14 +777,16 @@ private struct ClipboardWorkspace: View {
     let filter: ClipFilter
     let workspaceWidth: CGFloat
     let workspaceHeight: CGFloat
-    @Binding var isNavigationCollapsed: Bool
     @State private var selectedItem: ClipboardItem?
+    @State private var selectedPreviewText = ""
+    @State private var selectedPreviewItemID: UUID?
     @State private var searchQuery = ""
     @State private var selectedTypeFilter: ClipTypeFilter = .all
     @State private var filtersVisible = false
     @State private var typeFilterScrollTarget: ClipTypeFilter? = .all
     @State private var canScrollFiltersLeft = false
     @State private var canScrollFiltersRight = false
+    @State private var hoveredFilterScrollDirection: Int?
     @State private var hoveredItemID: UUID?
     @State private var knownItemIDs = Set<UUID>()
     @State private var animateRemoteInsertion = false
@@ -780,14 +798,13 @@ private struct ClipboardWorkspace: View {
             items = items.filter(\.isSaved)
         }
         if let clipType = selectedTypeFilter.clipType {
-            items = items.filter { $0.clipType == clipType }
+            items = items.filter { $0.displayType == clipType }
         }
         let query = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return items }
         return items.filter { item in
             item.text.localizedCaseInsensitiveContains(query) ||
-                item.kindRaw.localizedCaseInsensitiveContains(query) ||
-                clipTypeLabel(for: item.clipType).localizedCaseInsensitiveContains(query) ||
+                clipTypeLabel(for: item.displayType).localizedCaseInsensitiveContains(query) ||
                 deviceLabel(for: item).localizedCaseInsensitiveContains(query)
         }
     }
@@ -833,6 +850,24 @@ private struct ClipboardWorkspace: View {
         .onChange(of: filter) { _, _ in ensureSelection() }
         .onChange(of: searchQuery) { _, _ in ensureSelection() }
         .onChange(of: selectedTypeFilter) { _, _ in ensureSelection() }
+        .onChange(of: selectedItem?.id) { _, _ in
+            selectedPreviewText = ""
+            selectedPreviewItemID = nil
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSTextView.didChangeSelectionNotification)) { notification in
+            guard let item = selectedItem,
+                  let textView = notification.object as? NSTextView,
+                  textView.string == item.text else { return }
+            let selection = textView.selectedRange()
+            guard selection.length > 0,
+                  NSMaxRange(selection) <= (textView.string as NSString).length else {
+                selectedPreviewText = ""
+                selectedPreviewItemID = nil
+                return
+            }
+            selectedPreviewText = (textView.string as NSString).substring(with: selection)
+            selectedPreviewItemID = item.id
+        }
         .onKeyPress(.space) {
             guard !searchFocused,
                   let selectedItem,
@@ -858,7 +893,7 @@ private struct ClipboardWorkspace: View {
                     .transition(.opacity)
             } else {
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
+                    LazyVStack(alignment: .leading, spacing: 8, pinnedViews: [.sectionHeaders]) {
                         ForEach(groupedItems) { group in
                             Section {
                                 ForEach(group.items) { item in
@@ -924,15 +959,14 @@ private struct ClipboardWorkspace: View {
                     prompt: Text("Search words or type")
                         .foregroundColor(MainWindowPalette.tertiaryText)
                 )
-                    .font(.system(size: 13))
+                    .font(.system(size: 14))
                     .foregroundColor(MainWindowPalette.primaryText)
                     .textFieldStyle(.plain)
                     .focused($searchFocused)
                 searchTrailingControl
             }
-            .padding(.leading, 13)
-            .padding(.trailing, 8)
-            .frame(maxWidth: .infinity, minHeight: 36, idealHeight: 36, maxHeight: 36)
+            .padding(.horizontal, MainWindowLayout.searchBarContentHorizontalInset)
+            .frame(maxWidth: .infinity, minHeight: 44, idealHeight: 44, maxHeight: 44)
             .background(searchBackground)
             .overlay(searchBorder)
             .contentShape(Capsule())
@@ -942,7 +976,7 @@ private struct ClipboardWorkspace: View {
             .animation(.easeOut(duration: 0.12), value: searchFocused)
         }
         .padding(.horizontal, MainWindowLayout.listSearchHorizontalInset)
-        .padding(.vertical, 12)
+        .padding(.top, 16)
         .frame(width: MainWindowLayout.listWidth, height: MainWindowLayout.listSearchHeight, alignment: .topLeading)
     }
 
@@ -983,7 +1017,7 @@ private struct ClipboardWorkspace: View {
             Group {
                 if filtersVisible {
                     AirclipIcon(.filterActive, size: 18)
-                        .foregroundColor(Color(hex: "#4C575C"))
+                        .foregroundColor(Color.textSecondary)
                 } else {
                     AirclipIcon(.filter, size: 18)
                         .foregroundColor(MainWindowPalette.secondaryText)
@@ -1008,7 +1042,9 @@ private struct ClipboardWorkspace: View {
                                 .id(typeFilter)
                         }
                     }
-                    .padding(.horizontal, 24)
+                    // Match the search glyph's inset within the search field so
+                    // the first filter starts on the same vertical guide.
+                    .padding(.horizontal, MainWindowLayout.searchBarContentHorizontalInset)
                     .scrollTargetLayout()
                 }
                 .scrollIndicators(.never)
@@ -1040,40 +1076,58 @@ private struct ClipboardWorkspace: View {
                 .animation(.easeOut(duration: 0.12), value: canScrollFiltersRight)
             }
         }
-        .frame(height: 24)
+        .frame(height: MainWindowLayout.filterScrollTargetSize)
         .padding(.horizontal, MainWindowLayout.listSearchHorizontalInset)
+        .padding(.top, MainWindowLayout.filterRowTopGap)
         .padding(.bottom, 16)
     }
 
     private func filterScrollButton(direction: Int, proxy: ScrollViewProxy) -> some View {
         let filters = ClipTypeFilter.allCases
-        let currentIndex = filters.firstIndex(of: typeFilterScrollTarget ?? selectedTypeFilter) ?? 0
         return Button {
             searchFocused = false
-            let target = filters[min(max(currentIndex + direction, 0), filters.count - 1)]
+            // Arrow controls are end stops, not paging controls. Direct
+            // dragging remains free to stop anywhere between these endpoints.
+            let target = direction < 0 ? filters[0] : filters[filters.count - 1]
+            let anchor: UnitPoint = direction < 0 ? .leading : .trailing
             if reduceMotion {
                 typeFilterScrollTarget = target
-                proxy.scrollTo(target, anchor: .center)
+                proxy.scrollTo(target, anchor: anchor)
             } else {
                 withAnimation(.timingCurve(0.77, 0, 0.175, 1, duration: 0.24)) {
                     typeFilterScrollTarget = target
-                    proxy.scrollTo(target, anchor: .center)
+                    proxy.scrollTo(target, anchor: anchor)
                 }
             }
         } label: {
             Image(systemName: direction < 0 ? "chevron.left" : "chevron.right")
-                .font(.system(size: 9, weight: .semibold))
+                .font(.system(size: 11, weight: .semibold))
                 .foregroundColor(MainWindowPalette.secondaryText)
-                .frame(width: 28, height: 24)
-                .background(
+                .frame(
+                    width: MainWindowLayout.filterScrollTargetSize,
+                    height: MainWindowLayout.filterScrollTargetSize
+                )
+                .background {
                     LinearGradient(
                         colors: [MainWindowPalette.card, MainWindowPalette.card.opacity(0)],
                         startPoint: direction < 0 ? .leading : .trailing,
                         endPoint: direction < 0 ? .trailing : .leading
                     )
-                )
+                    if hoveredFilterScrollDirection == direction {
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(MainWindowPalette.hoverFill)
+                            .padding(4)
+                    }
+                }
+                .contentShape(Rectangle())
         }
         .buttonStyle(FilterArrowPressStyle())
+        .onHover { hovering in
+            withAnimation(.easeOut(duration: MainWindowMotion.hoverDuration)) {
+                hoveredFilterScrollDirection = hovering ? direction : nil
+            }
+        }
+        .help(direction < 0 ? "Previous filters" : "Next filters")
         .accessibilityLabel(direction < 0 ? "Previous filters" : "Next filters")
     }
 
@@ -1111,7 +1165,7 @@ private struct ClipboardWorkspace: View {
             .font(.system(size: 12, weight: .medium))
             .foregroundColor(MainWindowLayout.sectionHeaderText)
             .padding(.horizontal, MainWindowLayout.listHeaderHorizontalInset)
-            .padding(.vertical, 8)
+            .padding(.vertical, 4)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(MainWindowPalette.card)
             .contentShape(Rectangle())
@@ -1125,9 +1179,9 @@ private struct ClipboardWorkspace: View {
             searchFocused = false
             selectedItem = item
         } label: {
-            HStack(alignment: .center, spacing: 8) {
+            HStack(alignment: .center, spacing: 10) {
                 clipTypeBadge(for: item)
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 4) {
                     if item.clipType == .url {
                         URLClipRowText(item: item)
                     } else {
@@ -1147,6 +1201,7 @@ private struct ClipboardWorkspace: View {
                 }
             }
             .padding(8)
+            .frame(height: MainWindowLayout.rowHeight)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -1222,59 +1277,52 @@ private struct ClipboardWorkspace: View {
     private var emptyListState: some View {
         Group {
             if usesDefaultEmptyState {
-                AirclipFigmaEmptyState()
+                AirclipFigmaEmptyState(
+                    icon: .clipboard,
+                    title: "Nothing copied yet",
+                    message: "Copy on this Mac or a connected device to get started.",
+                    badgeIcon: .deviceSync
+                )
             } else {
-                VStack(spacing: 10) {
-                    emptyListIcon
-                    Text(emptyListTitle)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(MainWindowPalette.secondaryText)
-                        .multilineTextAlignment(.center)
-                    Text(emptyListSubtitle)
-                        .font(.system(size: 11))
-                        .foregroundColor(MainWindowPalette.secondaryText)
-                        .multilineTextAlignment(.center)
-                        .lineLimit(2)
-                }
+                AirclipFigmaEmptyState(
+                    icon: emptyListIcon,
+                    title: emptyListTitle,
+                    message: emptyListSubtitle,
+                    actionTitle: searchQuery.isEmpty ? nil : "Clear search and type filter",
+                    action: searchQuery.isEmpty ? nil : clearSearchAndTypeFilter
+                )
             }
         }
         .frame(width: MainWindowLayout.rowWidth)
         .padding(.horizontal, 8)
         .padding(.top, 76)
         .frame(maxHeight: .infinity, alignment: .top)
-        .contentShape(Rectangle())
-        .onTapGesture { searchFocused = false }
     }
 
     private var usesDefaultEmptyState: Bool {
         searchQuery.isEmpty && selectedTypeFilter == .all && filter != .saved
     }
 
-    @ViewBuilder
-    private var emptyListIcon: some View {
-        if usesDefaultEmptyState {
-            AirclipEmptyLogoMark(size: 34, color: MainWindowPalette.tertiaryText.opacity(0.72))
-        } else {
-            AirclipIcon(filter == .saved ? .bookmark : .clipboard, size: 18)
-                .foregroundColor(MainWindowPalette.secondaryText)
-                .frame(width: 32, height: 32)
-                .background(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(MainWindowPalette.searchFill)
-                )
-        }
+    private var emptyListIcon: AirclipIconName {
+        filter == .saved ? .bookmark : .clipboard
     }
 
     private var emptyListTitle: String {
         if !searchQuery.isEmpty { return "No matches" }
-        if selectedTypeFilter != .all { return "No \(selectedTypeFilter.title.lowercased()) clips" }
-        return filter == .saved ? "No saved clips" : "Airclip is ready."
+        if selectedTypeFilter != .all { return "No \(selectedTypeFilter.title.lowercased()) clips yet" }
+        return filter == .saved ? "Nothing saved yet" : "Nothing here yet"
     }
 
     private var emptyListSubtitle: String {
-        if !searchQuery.isEmpty { return "Try a different search." }
-        if selectedTypeFilter != .all { return "Try another type filter." }
-        return filter == .saved ? "Saved clips appear here." : "Copy on one device, paste from another."
+        if !searchQuery.isEmpty { return "Try another search, or clear the search and type filter." }
+        if selectedTypeFilter != .all { return "Clips matching this type will appear here." }
+        return filter == .saved ? "Save a clip to keep it here." : "Copy on this Mac or a connected device to get started."
+    }
+
+    private func clearSearchAndTypeFilter() {
+        searchQuery = ""
+        selectedTypeFilter = .all
+        typeFilterScrollTarget = .all
     }
 
     @ViewBuilder
@@ -1453,8 +1501,12 @@ private struct ClipboardWorkspace: View {
     }
 
     private var emptyPreviewState: some View {
-        AirclipFigmaEmptyState(text: "Select a clip to preview it.")
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        AirclipFigmaEmptyState(
+            icon: .document,
+            title: "Choose a clip",
+            message: "Select an item in your history to preview its content."
+        )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private func ensureSelection() {
@@ -1464,18 +1516,38 @@ private struct ClipboardWorkspace: View {
     }
 
     private func copy(_ item: ClipboardItem) {
+        if let selectedText = selectedText(for: item) {
+            ClipboardMonitor.shared.suppressNextChange()
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(selectedText, forType: .string)
+            AirclipAlertCenter.shared.show("Selection copied", kind: .success)
+            return
+        }
+
         if item.clipType == .file {
             let copied = syncEngine.withAvailableFileURL(for: item) { url in
                 ClipboardMonitor.shared.suppressNextChange()
                 NSPasteboard.general.clearContents()
                 return NSPasteboard.general.writeObjects([url as NSURL])
             } ?? false
-            if copied { AirclipAlertCenter.shared.show("Copied to clipboard", kind: .success) }
+            if copied { AirclipAlertCenter.shared.show("Copied", kind: .success) }
             return
         }
         ClipboardMonitor.shared.suppressPacket(item.clipboardPacket)
         ClipboardCapture.write(item.clipboardPacket, to: NSPasteboard.general)
-        AirclipAlertCenter.shared.show("Copied to clipboard", kind: .success)
+        AirclipAlertCenter.shared.show("Copied", kind: .success)
+    }
+
+    private func selectedText(for item: ClipboardItem) -> String? {
+        if selectedPreviewItemID == item.id, !selectedPreviewText.isEmpty {
+            return selectedPreviewText
+        }
+        guard let textView = NSApp.keyWindow?.firstResponder as? NSTextView,
+              textView.string == item.text else { return nil }
+        let selection = textView.selectedRange()
+        guard selection.length > 0,
+              NSMaxRange(selection) <= (textView.string as NSString).length else { return nil }
+        return (textView.string as NSString).substring(with: selection)
     }
 
     private func fileAction(_ item: ClipboardItem) {
@@ -1490,8 +1562,14 @@ private struct ClipboardWorkspace: View {
         if syncEngine.availableFileURL(for: item) != nil {
             return item.fileMetadata?.isPlayableMedia == true ? "Play" : "Open"
         }
-        if let id = item.fileMetadata?.id,
-           syncEngine.fileTransfers[id]?.phase == .downloading { return "Downloading…" }
+        if let id = item.fileMetadata?.id, let transfer = syncEngine.fileTransfers[id] {
+            switch transfer.phase {
+            case .checking: return "Checking…"
+            case .downloading: return "Downloading…"
+            case .failed: return "Try Again"
+            case .downloaded: break
+            }
+        }
         return "Download"
     }
 
@@ -1510,7 +1588,8 @@ private struct ClipboardWorkspace: View {
 
     private func fileActionIsEnabled(_ item: ClipboardItem) -> Bool {
         guard let id = item.fileMetadata?.id else { return true }
-        return syncEngine.fileTransfers[id]?.phase != .downloading
+        guard let transfer = syncEngine.fileTransfers[id] else { return true }
+        return transfer.phase != .checking && transfer.phase != .downloading
     }
 
     private func openInBrowser(_ item: ClipboardItem) {
@@ -1524,6 +1603,8 @@ private struct ClipboardWorkspace: View {
         try? modelContext.save()
         if item.isSaved {
             AirclipAlertCenter.shared.show("Saved", kind: .success)
+        } else {
+            AirclipAlertCenter.shared.show("Removed from Saved")
         }
         if filter == .saved && !item.isSaved {
             selectedItem = filteredItems.first { $0.id != item.id }
@@ -1535,7 +1616,7 @@ private struct ClipboardWorkspace: View {
             selectedItem = filteredItems.first { $0.id != item.id }
         }
         SyncEngine.shared.deleteHistoryItem(item)
-        AirclipAlertCenter.shared.show("Deleted")
+        AirclipAlertCenter.shared.show("Clip deleted", kind: .success)
     }
 
     private func deviceLabel(for item: ClipboardItem) -> String {
@@ -1585,22 +1666,14 @@ private struct URLClipRowText: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(hasTitle ? metadata!.title : url)
-                .font(.system(size: 14, weight: .regular))
-                .lineSpacing(2.6)
-                .foregroundColor(.accent)
-                .underline(hasTitle)
-                .lineLimit(1)
-            if hasTitle {
-                Text(url)
-                    .font(.system(size: 11))
-                    .foregroundColor(MainWindowPalette.secondaryText)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        Text(hasTitle ? metadata!.title : url)
+            .font(.system(size: 14, weight: .regular))
+            .lineSpacing(2.6)
+            .foregroundColor(.accent)
+            .underline(hasTitle)
+            .lineLimit(1)
+            .truncationMode(.middle)
+            .frame(maxWidth: .infinity, alignment: .leading)
         .task(id: item.id) {
             metadata = await LinkPreviewLoader.preview(for: url, includeImage: false)
         }
@@ -1619,6 +1692,27 @@ private struct ColorCircleTypeIcon: View {
     }
 }
 
+private struct FileAvailabilityShimmer: View {
+    @State private var phase: CGFloat = -0.8
+
+    var body: some View {
+        GeometryReader { geometry in
+            LinearGradient(
+                colors: [.clear, Color.primary.opacity(0.10), .clear],
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+            .frame(width: geometry.size.width * 0.55)
+            .offset(x: phase * geometry.size.width)
+            .onAppear {
+                withAnimation(.linear(duration: 1.25).repeatForever(autoreverses: false)) {
+                    phase = 1.8
+                }
+            }
+        }
+    }
+}
+
 private struct PreviewContent: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let item: ClipboardItem
@@ -1632,6 +1726,15 @@ private struct PreviewContent: View {
 
     private var type: ClipType { item.clipType }
     private var parsedColor: Color? { Color.parseHex(item.text) }
+    private var fileTransfer: FileTransferProgress? {
+        guard let id = item.fileMetadata?.id else { return nil }
+        return syncEngine.fileTransfers[id]
+    }
+    private var isCheckingFileAvailability: Bool {
+        guard let transfer = fileTransfer else { return false }
+        if case .checking = transfer.phase { return true }
+        return false
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -1749,43 +1852,31 @@ private struct PreviewContent: View {
 
     private var filePreview: some View {
         VStack(spacing: 16) {
-            if let url = syncEngine.availablePreviewURL(for: item) {
-                EmbeddedFileQuickLookPreview(url: url)
-                    .frame(maxWidth: 520)
-                    .frame(height: 420)
-                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .strokeBorder(MainWindowPalette.divider, lineWidth: 0.5))
-            } else if let image = item.fileMetadata?.thumbnailImage {
-                Image(nsImage: image)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(maxWidth: 320, maxHeight: 220)
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
-            } else {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill((item.fileMetadata?.iconAccentColor ?? MainWindowLayout.fileIconFallbackColor).opacity(0.05))
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .strokeBorder(MainWindowLayout.badgeBorder, lineWidth: 0.5)
-                    Image(item.fileMetadata?.iconAssetName ?? "FileIconDocument")
-                        .resizable().interpolation(.high).frame(width: 104, height: 104)
-                }
-                .frame(width: 136, height: 136)
-                .frame(height: 160)
-            }
+            fileArtwork
             Text(item.fileMetadata?.name ?? item.text)
                 .font(.system(size: 18, weight: .medium))
                 .foregroundColor(MainWindowPalette.primaryText)
                 .lineLimit(2)
-            if let id = item.fileMetadata?.id, let transfer = syncEngine.fileTransfers[id] {
+            if let transfer = fileTransfer {
                 switch transfer.phase {
+                case .checking:
+                    Text("Checking file availability…")
+                        .foregroundColor(MainWindowPalette.secondaryText)
                 case .downloading:
                     ProgressView(value: Double(transfer.received), total: Double(max(transfer.total, 1)))
                     Text("\(transfer.temporaryPreview ? "Preparing preview" : "Downloading") \(Int(Double(transfer.received) / Double(max(transfer.total, 1)) * 100))%")
                         .foregroundColor(MainWindowPalette.secondaryText)
                 case .failed(let reason):
-                    Text(reason).foregroundColor(MainWindowPalette.secondaryText)
+                    VStack(spacing: 8) {
+                        Label(reason, systemImage: "exclamationmark.triangle")
+                            .font(.system(size: 13))
+                            .foregroundColor(MainWindowPalette.secondaryText)
+                            .multilineTextAlignment(.center)
+                        Button("Try Again") { syncEngine.downloadFile(item) }
+                            .buttonStyle(.plain)
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(.accent)
+                    }
                 case .downloaded:
                     EmptyView()
                 }
@@ -1798,6 +1889,47 @@ private struct PreviewContent: View {
     }
 
     @ViewBuilder
+    private var fileArtwork: some View {
+        if let url = syncEngine.availablePreviewURL(for: item) {
+            EmbeddedFileQuickLookPreview(url: url)
+                .frame(maxWidth: 520)
+                .frame(height: 420)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(MainWindowPalette.divider, lineWidth: 0.5))
+                .overlay { fileAvailabilityShimmer }
+        } else if let image = item.fileMetadata?.thumbnailImage {
+            Image(nsImage: image)
+                .resizable()
+                .scaledToFit()
+                .frame(maxWidth: 320, maxHeight: 220)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .overlay { fileAvailabilityShimmer }
+        } else {
+            ZStack {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill((item.fileMetadata?.iconAccentColor ?? MainWindowLayout.fileIconFallbackColor).opacity(0.05))
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .strokeBorder(MainWindowLayout.badgeBorder, lineWidth: 0.5)
+                Image(item.fileMetadata?.iconAssetName ?? "FileIconDocument")
+                    .resizable().interpolation(.high).frame(width: 104, height: 104)
+            }
+            .frame(width: 136, height: 136)
+            .frame(height: 160)
+            .overlay { fileAvailabilityShimmer }
+        }
+    }
+
+    @ViewBuilder
+    private var fileAvailabilityShimmer: some View {
+        if isCheckingFileAvailability && !reduceMotion {
+            FileAvailabilityShimmer()
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .allowsHitTesting(false)
+        }
+    }
+
+    @ViewBuilder
     private func colorCard(color: Color) -> some View {
         if let components = colorComponents {
             VStack(alignment: .leading, spacing: 16) {
@@ -1806,7 +1938,9 @@ private struct PreviewContent: View {
                     .frame(height: 140)
                     .overlay(Text(components.hex)
                         .font(.system(size: 24, weight: .medium))
-                        .foregroundColor(.white))
+                        .foregroundColor(.white)
+                        .padding(8)
+                        .background(Color.black.opacity(0.75), in: RoundedRectangle(cornerRadius: 8)))
                     .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous)
                         .strokeBorder(Color(hex: "#808080").opacity(0.5), lineWidth: 1))
 
@@ -1820,10 +1954,10 @@ private struct PreviewContent: View {
             }
             .padding(16)
             .frame(width: 286)
-            .background(Color(hex: "#F8F9F6"))
+            .background(Color.bgFloating)
             .clipShape(RoundedRectangle(cornerRadius: 40, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 40, style: .continuous)
-                .strokeBorder(Color(hex: "#EFEFEF"), lineWidth: 1))
+                .strokeBorder(Color.borderDefault, lineWidth: 1))
             .frame(maxWidth: .infinity)
         }
     }
@@ -1831,11 +1965,11 @@ private struct PreviewContent: View {
     private func colorCardRow(_ value: String, highlighted: Bool = false) -> some View {
         Text(value)
             .font(.system(size: 14))
-            .foregroundColor(Color(hex: "#60656C"))
+            .foregroundColor(Color.textSecondary)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 8)
             .padding(.vertical, 2)
-            .background(highlighted ? Color(hex: "#EBECE9") : .clear)
+            .background(highlighted ? Color.activeFill : .clear)
             .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
     }
 
@@ -1915,6 +2049,7 @@ private struct PreviewContent: View {
     }
 
     private var typeLabel: String {
+        if type == .file, item.fileMetadata?.isImage == true { return "Image" }
         switch type {
         case .url: return "Link"
         case .color: return "Color"
@@ -2295,7 +2430,7 @@ private struct FloatingActions: View {
             )
             .keyboardShortcut(.delete, modifiers: [])
         }
-        .padding(9)
+        .padding(6)
         .frame(minWidth: actionBarWidth)
         .frame(height: MainWindowLayout.actionBarHeight)
         .background(
@@ -2313,7 +2448,7 @@ private struct FloatingActions: View {
     private var actionBarWidth: CGFloat {
         let buttonCount = (isFile ? 2 : 3)
             + (onOpenBrowser == nil ? 0 : 1)
-        return CGFloat(18 + (40 * buttonCount) + (8 * max(buttonCount - 1, 0)))
+        return CGFloat(12 + (40 * buttonCount) + (8 * max(buttonCount - 1, 0)))
     }
 }
 
@@ -2687,6 +2822,7 @@ private struct DevicesPanel: View {
                     identity.removeDevice(deviceToRemove.deviceId)
                     if pinnedDeviceID == deviceToRemove.deviceId { pinnedDeviceID = nil }
                     if hoveredDeviceID == deviceToRemove.deviceId { hoveredDeviceID = nil }
+                    AirclipAlertCenter.shared.show("Device removed", kind: .success)
                 }
                 deviceToRemove = nil
             }
@@ -3422,14 +3558,14 @@ private struct OrbitDeviceTooltip: View {
 
                 Text(statusText)
                     .font(.system(size: 10))
-                    .foregroundColor(MainWindowPalette.secondaryText.opacity(0.72))
+                    .foregroundColor(MainWindowPalette.secondaryText)
                     .lineLimit(1)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
             Button(action: onRemove) {
                 AirclipIcon(.close, size: 16)
-                    .foregroundColor(MainWindowPalette.secondaryText.opacity(0.72))
+                    .foregroundColor(MainWindowPalette.secondaryText)
                     .frame(width: 16, height: 16)
                     .contentShape(Rectangle())
             }
@@ -3937,6 +4073,7 @@ private struct SettingsPanel: View {
                 onConfirm: {
                     showClearHistoryAlert = false
                     SyncEngine.shared.clearHistory()
+                    AirclipAlertCenter.shared.show("History cleared", kind: .success)
                 }
             )
         }
@@ -4265,7 +4402,7 @@ private struct SettingsPanel: View {
         do {
             try downloadLocation.setFolder(url)
         } catch {
-            AirclipAlertCenter.shared.show("Could not use that folder", kind: .danger)
+            AirclipAlertCenter.shared.show("Folder unavailable", kind: .danger)
         }
     }
 
@@ -4690,7 +4827,7 @@ private struct SettingsDestructiveConfirmationSheet: View {
                     title: actionTitle,
                     fill: .destructiveRed,
                     hoverFill: Color.destructiveRed.opacity(0.86),
-                    foreground: Color.white.opacity(0.96),
+                    foreground: Color.onDestructive,
                     action: onConfirm
                 )
 
@@ -4744,7 +4881,7 @@ private struct SettingsConfirmationButtonStyle: ButtonStyle {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(fill)
             )
-            .brightness(configuration.isPressed ? -0.08 : 0)
+            .scaleEffect(configuration.isPressed ? 0.98 : 1)
             .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
             .animation(.easeOut(duration: 0.12), value: fill)
     }

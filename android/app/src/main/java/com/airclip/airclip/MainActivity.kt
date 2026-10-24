@@ -60,17 +60,18 @@ class MainActivity : ComponentActivity() {
         setContent {
             val uiState by viewModel.uiState.collectAsState()
             val isPaired = uiState.pairingState == PairingState.Paired
-            SideEffect {
-                WindowCompat.setDecorFitsSystemWindows(window, false)
-                window.statusBarColor = AndroidColor.TRANSPARENT
-                window.navigationBarColor = if (isPaired) AndroidColor.WHITE else AndroidColor.TRANSPARENT
-                WindowCompat.getInsetsController(window, window.decorView).apply {
-                    isAppearanceLightStatusBars = true
-                    isAppearanceLightNavigationBars = true
-                }
-            }
-
             AirclipTheme(appearanceSetting = uiState.appearanceSetting) {
+                val darkTheme = com.airclip.airclip.ui.theme.LocalAirclipColors.current.isDark
+                SideEffect {
+                    WindowCompat.setDecorFitsSystemWindows(window, false)
+                    window.statusBarColor = AndroidColor.TRANSPARENT
+                    window.navigationBarColor = AndroidColor.TRANSPARENT
+                    WindowCompat.getInsetsController(window, window.decorView).apply {
+                        isAppearanceLightStatusBars = !darkTheme
+                        isAppearanceLightNavigationBars = !darkTheme
+                    }
+                }
+
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background,

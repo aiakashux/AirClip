@@ -3,6 +3,7 @@ package com.airclip.airclip.lan
 import android.util.Log
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import com.google.gson.Gson
 import com.airclip.airclip.AirclipIdentity
 import com.airclip.airclip.crypto.SealedBox
@@ -14,12 +15,23 @@ import java.util.concurrent.ConcurrentHashMap
 
 private const val TAG = "PeerManager"
 
+internal object PeerHeartbeatPolicy {
+    const val TIMEOUT_MS = 45_000L
+
+    fun hasTimedOut(lastAckMs: Long, nowMs: Long): Boolean =
+        nowMs - lastAckMs >= TIMEOUT_MS
+}
+
 internal fun isTrustedPeer(
     theirAirclipId: String,
     ourAirclipId: String?,
     deviceId: String,
     pairedDeviceIds: Set<String>,
 ): Boolean = theirAirclipId == ourAirclipId && deviceId in pairedDeviceIds
+
+// Pin reconnect encryption keys to pairing records; this is not proof of possession.
+internal fun matchesPairedKey(expected: String?, presented: String): Boolean =
+    !expected.isNullOrEmpty() && expected == presented
 
 /**
  * One authenticated LAN peer — either an incoming (server-role) or outgoing (client-role)
@@ -55,6 +67,7 @@ object PeerManager {
 
     private val peers        = ConcurrentHashMap<String, Peer>()
     private val pendingHints = ConcurrentHashMap.newKeySet<String>()
+    private val heartbeatAckTimes = ConcurrentHashMap<String, Long>()
 
     val gson = Gson()
 
@@ -107,7 +120,7 @@ object PeerManager {
      */
     @Synchronized
     fun registerPeer(peer: Peer) {
-        if (!AirclipIdentity.pairedDevices.containsKey(peer.deviceId)) {
+        if (!matchesPairedKey(AirclipIdentity.pairedDevices[peer.deviceId]?.publicKey, peer.publicKey)) {
             peer.close()
             return
         }
@@ -125,6 +138,7 @@ object PeerManager {
             existing.close()
         }
         peers[peer.deviceId] = peer
+        heartbeatAckTimes[peer.connectionId] = SystemClock.elapsedRealtime()
         pendingHints.remove(peer.deviceId)
         updateConnectedCount()
         onPeerRegistered?.invoke(peer)
@@ -133,12 +147,18 @@ object PeerManager {
 
     fun onPeerDisconnected(deviceId: String, connectionId: String? = null) {
         val current = peers[deviceId]
-        if (connectionId == null || current?.connectionId == connectionId) {
+        val removed = if (connectionId == null) {
             peers.remove(deviceId)
+        } else {
+            current?.takeIf { it.connectionId == connectionId }
+                ?.takeIf { peers.remove(deviceId, it) }
         }
+        if (removed != null) heartbeatAckTimes.remove(removed.connectionId)
         pendingHints.remove(deviceId)
-        updateConnectedCount()
-        Log.d(TAG, "Peer disconnected: ${deviceId.take(8)} remaining=${peers.size}")
+        if (removed != null) {
+            updateConnectedCount()
+            Log.d(TAG, "Peer disconnected: ${deviceId.take(8)} remaining=${peers.size}")
+        }
     }
 
     fun disconnectDevice(deviceId: String, notifyRemote: Boolean = false) {
@@ -221,8 +241,15 @@ object PeerManager {
         )
         wifiNetwork?.let { payload["ssid"] = it }
         val json = gson.toJson(payload)
-        peers.values.forEach { peer ->
-            runCatching { peer.send(json) }
+        val now = SystemClock.elapsedRealtime()
+        peers.values.toList().forEach { peer ->
+            val lastAck = heartbeatAckTimes[peer.connectionId] ?: now
+            if (PeerHeartbeatPolicy.hasTimedOut(lastAck, now)) {
+                onPeerDisconnected(peer.deviceId, peer.connectionId)
+                runCatching { peer.close() }
+            } else {
+                runCatching { peer.send(json) }
+            }
         }
     }
 
@@ -262,6 +289,11 @@ object PeerManager {
         onPeerSeen?.invoke(deviceId, wifiNetwork)
     }
 
+    fun markPeerHeartbeatAck(deviceId: String, wifiNetwork: String? = null) {
+        peers[deviceId]?.let { heartbeatAckTimes[it.connectionId] = SystemClock.elapsedRealtime() }
+        markPeerSeen(deviceId, wifiNetwork)
+    }
+
     fun markPeerActivity(deviceId: String, timestampMs: Long) {
         onPeerActivity?.invoke(deviceId, timestampMs)
     }
@@ -275,6 +307,7 @@ object PeerManager {
     fun disconnectAll() {
         peers.values.forEach { runCatching { it.close() } }
         peers.clear()
+        heartbeatAckTimes.clear()
         pendingHints.clear()
         updateConnectedCount()
     }

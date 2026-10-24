@@ -11,6 +11,7 @@ import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 import com.google.zxing.qrcode.encoder.Encoder
 import kotlinx.coroutines.*
 import java.util.concurrent.atomic.AtomicReference
+import java.security.SecureRandom
 
 /** Content encoded in the QR code / sent via pair_info. */
 data class PairingPayload(
@@ -41,6 +42,7 @@ object PairingSession {
 
     private data class PreviousCode(val value: String, val validUntilMs: Long)
 
+    private val random = SecureRandom()
     private val gson     = Gson()
     private val _current = AtomicReference<PairingPayload?>(null)
     private val _previous = AtomicReference<PreviousCode?>(null)
@@ -134,7 +136,7 @@ object PairingSession {
         _current.get()?.code?.let {
             _previous.set(PreviousCode(it, System.currentTimeMillis() + PREVIOUS_CODE_GRACE_MS))
         }
-        val code = (0..999_999).random().toString().padStart(PairingCode.LENGTH, '0')
+        val code = random.nextInt(1_000_000).toString().padStart(PairingCode.LENGTH, '0')
         val payload = PairingPayload(airClipId, deviceId, deviceName, spaceName, publicKey, code)
         _current.set(payload)
         onPayloadChanged?.invoke(payload)

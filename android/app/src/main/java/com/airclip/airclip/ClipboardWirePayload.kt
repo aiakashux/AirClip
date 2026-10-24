@@ -10,6 +10,12 @@ internal data class DecodedClipboardPayload(
     val file: FileClipMetadata? = null,
 )
 
+internal fun FileClipMetadata.isSafeForTransfer(): Boolean =
+    runCatching {
+        size >= 0 && id.matches(Regex("[A-Za-z0-9_-]{1,128}")) &&
+            name.isNotEmpty() && !name.contains('\u0000')
+    }.getOrDefault(false)
+
 internal object ClipboardWirePayload {
     private val gson = Gson()
 
@@ -37,6 +43,9 @@ internal object ClipboardWirePayload {
             runCatching { gson.fromJson(it, FileClipMetadata::class.java) }.getOrNull()
         }
 
+        if (file != null && !file.isSafeForTransfer() || kindRaw.equals("file", ignoreCase = true) && file == null) {
+            return DecodedClipboardPayload(text = text.orEmpty(), kind = ClipKind.TEXT)
+        }
         if (kindRaw != null && text != null) {
             val kind = runCatching { ClipKind.valueOf(kindRaw.uppercase()) }
                 .getOrDefault(detectClipKind(text))

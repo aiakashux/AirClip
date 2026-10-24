@@ -519,7 +519,7 @@ private fun HomeSearchPrompt(
             Icon(
                 painter = painterResource(if (filtersVisible) R.drawable.ic_home_filter_active else R.drawable.ic_home_filter),
                 contentDescription = "Show filters",
-                tint = if (filtersVisible) Color.Unspecified else c.textSecondary,
+                tint = if (filtersVisible) c.textPrimary else c.textSecondary,
                 modifier = Modifier.size(24.dp),
             )
         }
@@ -648,7 +648,7 @@ private fun FeedSearchBar(
             Icon(
                 painter = painterResource(if (filtersVisible) R.drawable.ic_home_filter_active else R.drawable.ic_home_filter),
                 contentDescription = "Show filters",
-                tint = if (filtersVisible) Color.Unspecified else c.textSecondary,
+                tint = if (filtersVisible) c.textPrimary else c.textSecondary,
                 modifier = Modifier.size(24.dp),
             )
         }

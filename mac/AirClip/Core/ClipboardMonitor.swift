@@ -89,8 +89,5 @@ final class ClipboardMonitor {
             syncEngine?.sendClipboard(packet: packet)
         }
 
-        if explicitShare, !packets.isEmpty {
-            StatusBarController.shared.showShareConfirmation()
-        }
     }
 }

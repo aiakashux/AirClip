@@ -12,6 +12,7 @@ final class ResolvedEndpointCache {
 
     func put(_ deviceId: String, endpoint: NWEndpoint) { cache[deviceId] = endpoint }
     func remove(_ deviceId: String)                     { cache.removeValue(forKey: deviceId) }
+    func clear()                                         { cache.removeAll() }
     var all: [String: NWEndpoint]                       { cache }
     var isEmpty: Bool                                   { cache.isEmpty }
 }

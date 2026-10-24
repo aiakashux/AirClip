@@ -27,6 +27,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
@@ -43,6 +44,8 @@ import com.airclip.airclip.SyncMode
 import com.airclip.airclip.lan.LanRuntimeDiagnostic
 import com.airclip.airclip.ui.theme.*
 import kotlinx.coroutines.delay
+import android.content.Intent
+import android.net.Uri
 
 private enum class Tab { HOME, DEVICES, SETTINGS }
 
@@ -90,6 +93,7 @@ data class SettingsTabUiState(
 @Composable
 fun MainScreen(viewModel: MainViewModel, uiState: MainViewModel.UiState) {
     val c = LocalAirclipColors.current
+    val context = LocalContext.current
     var showDeviceCodeInput by remember { mutableStateOf(false) }
     var currentTab by remember {
         mutableStateOf(if (uiState.openDevicesOnFirstLaunch) Tab.DEVICES else Tab.HOME)
@@ -196,6 +200,28 @@ fun MainScreen(viewModel: MainViewModel, uiState: MainViewModel.UiState) {
                 )
             }
         }
+    }
+
+    uiState.updateInfo?.let { info ->
+        AlertDialog(
+            onDismissRequest = viewModel::onUpdateLater,
+            title = { Text("Airclip ${info.versionName} is available") },
+            text = { Text(info.releaseNotes) },
+            confirmButton = {
+                TextButton(onClick = {
+                    runCatching {
+                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(info.downloadUrl)))
+                    }.onSuccess {
+                        viewModel.onUpdateOpened()
+                    }.onFailure {
+                        viewModel.onUpdateOpenFailed()
+                    }
+                }) { Text("Update") }
+            },
+            dismissButton = {
+                TextButton(onClick = viewModel::onUpdateLater) { Text("Later") }
+            },
+        )
     }
 
 }

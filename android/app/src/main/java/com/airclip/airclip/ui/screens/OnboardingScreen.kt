@@ -182,10 +182,11 @@ private fun LandingScreen(
     onCreateAirclip: () -> Unit,
     onJoinAirclip: () -> Unit,
 ) {
+    val c = LocalAirclipColors.current
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.White)
+            .background(c.bgBase)
             .navigationBarsPadding(),
     ) {
         var revealLogo by remember { mutableStateOf(false) }
@@ -260,7 +261,7 @@ private fun LandingScreen(
                     fontSize = 24.sp,
                     fontFamily = BearyFontFamily,
                     fontWeight = FontWeight.Normal,
-                    color = Color(0xFF202327),
+                    color = c.textPrimary,
                     textAlign = TextAlign.Center,
                     lineHeight = 36.sp,
                     modifier = Modifier
@@ -286,8 +287,8 @@ private fun LandingScreen(
                     LandingButton(
                         label = "Join a space",
                         icon = R.drawable.airclip_splash_link,
-                        containerColor = Color(0xFFF5F4F7),
-                        contentColor = Color(0xFF202327),
+                        containerColor = c.bgFloating,
+                        contentColor = c.textPrimary,
                         modifier = Modifier.fillMaxWidth(),
                         onClick = onJoinAirclip,
                     )
@@ -795,6 +796,7 @@ private fun JoinFlowScreen(
 
 @Composable
 private fun ScanQrTabContent(onScanQr: () -> Unit, scale: Float) {
+    val c = LocalAirclipColors.current
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     val pressScale by animateFloatAsState(
@@ -811,8 +813,8 @@ private fun ScanQrTabContent(onScanQr: () -> Unit, scale: Float) {
                 .size(s(240f))
                 .graphicsLayer { scaleX = pressScale; scaleY = pressScale }
                 .clip(RoundedCornerShape(s(32f)))
-                .background(color = Color(0xFFF5F5F5))
-                .border(s(1f), Color(0xFFE5E7EB), RoundedCornerShape(s(32f)))
+                .background(color = c.bgFloating)
+                .border(s(1f), c.borderDefault, RoundedCornerShape(s(32f)))
                 .clickable(
                     interactionSource = interactionSource,
                     indication = LocalIndication.current,
@@ -828,14 +830,14 @@ private fun ScanQrTabContent(onScanQr: () -> Unit, scale: Float) {
                 Icon(
                     painter = painterResource(R.drawable.ic_pair_qr),
                     contentDescription = null,
-                    tint = Color(0xFF101828),
+                    tint = c.textPrimary,
                     modifier = Modifier.size(s(40f)),
                 )
                 Text(
                     "Tap to open camera",
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Normal,
-                    color = Color(0xFF6F7785),
+                    color = c.textSecondary,
                 )
             }
         }
@@ -896,7 +898,7 @@ private fun ShowQrTabContent(
                 } else {
                     CircularProgressIndicator(
                         modifier = Modifier.size(32.dp),
-                        color = c.accent,
+                        color = c.accentDeep,
                         strokeWidth = 2.dp,
                     )
                 }
@@ -935,6 +937,7 @@ internal fun CodeInputTabContent(
     error: String?,
     scale: Float,
 ) {
+    val c = LocalAirclipColors.current
     var code by remember { mutableStateOf("") }
     var submittedCode by remember { mutableStateOf<String?>(null) }
     var isVerifyingCode by remember { mutableStateOf(false) }
@@ -1057,9 +1060,9 @@ internal fun CodeInputTabContent(
                     )
                     val bgColor by animateColorAsState(
                         targetValue = if (isDanger) {
-                            Color(0xFFDC2626).copy(alpha = 0.08f)
+                            c.destructive.copy(alpha = 0.08f)
                         } else {
-                            Color(0xFFD9E7FB)
+                            c.blue.copy(alpha = 0.12f)
                         },
                         animationSpec = tween(150),
                         label = "DigitBg$index",
@@ -1072,7 +1075,7 @@ internal fun CodeInputTabContent(
                             .background(color = bgColor)
                             .then(
                                 if (isDanger) {
-                                    Modifier.border(1.dp, Color(0xFFDC2626), CircleShape)
+                                    Modifier.border(1.dp, c.destructive, CircleShape)
                                 } else {
                                     Modifier
                                 },
@@ -1085,7 +1088,7 @@ internal fun CodeInputTabContent(
                                 fontSize = 28.sp,
                                 lineHeight = 39.sp,
                                 fontWeight = FontWeight.Normal,
-                                color = if (isDanger) Color(0xFFDC2626) else Color(0xFF3572CD),
+                                color = if (isDanger) c.destructive else c.blue,
                                 textAlign = TextAlign.Center,
                             )
                         }
@@ -1115,7 +1118,7 @@ internal fun CodeInputTabContent(
                                 modifier = Modifier
                                     .size(s(14f))
                                     .clip(CircleShape)
-                                    .background(Color(0xFFD9E7FB).copy(alpha = 0.9f)),
+                                    .background(c.textSecondary),
                             )
                         }
                     }
@@ -1136,7 +1139,7 @@ internal fun CodeInputTabContent(
                 modifier = Modifier.width(s(320f)),
                 fontSize = 13.sp,
                 lineHeight = 18.sp,
-                color = Color(0xFFDC2626),
+                color = c.destructive,
                 textAlign = TextAlign.Center,
             )
         }
@@ -1174,7 +1177,7 @@ private fun PairingCodeGroup(part: String, scale: Float, startIndex: Int) {
         modifier = Modifier
             .height((48f * scale).dp)
             .clip(RoundedCornerShape((16f * scale).dp))
-            .background(Color(0xFFF5F5F5))
+            .background(c.bgFloating)
             .padding(horizontal = (8f * scale).dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy((4f * scale).dp),
@@ -1218,6 +1221,7 @@ private fun JoinTabBar(
     onTabSelected: (JoinTab) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val c = LocalAirclipColors.current
     val tabs = listOf(JoinTab.SHOW_QR to "Show QR", JoinTab.SCAN_QR to "Scan QR", JoinTab.CODE_INPUT to "Code Input")
     val density = LocalDensity.current
     val tabMetrics = remember { mutableStateMapOf<JoinTab, Pair<Float, Int>>() }
@@ -1236,7 +1240,7 @@ private fun JoinTabBar(
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(16.dp))
-            .background(Color(0x0A151311))
+            .background(c.activeFill)
             .padding(10.dp),
     ) {
         if (activeMetric != null) {
@@ -1252,7 +1256,7 @@ private fun JoinTabBar(
                         spotColor = Color.Black.copy(alpha = 0.08f),
                     )
                     .clip(RoundedCornerShape(10.dp))
-                    .background(Color.White.copy(alpha = 0.9f)),
+                    .background(c.bgFloating),
             )
         }
 
@@ -1265,12 +1269,12 @@ private fun JoinTabBar(
                 val isPressed by interactionSource.collectIsPressedAsState()
                 val isActive = activeTab == tab
                 val textColor by animateColorAsState(
-                    targetValue = if (isActive) Color.Black else Color.Black.copy(alpha = 0.48f),
+                    targetValue = if (isActive) c.textPrimary else c.textSecondary,
                     animationSpec = tween(140, easing = CubicBezierEasing(0.23f, 1f, 0.32f, 1f)),
                     label = "TabTextColor",
                 )
                 val pressColor by animateColorAsState(
-                    targetValue = if (isPressed && !isActive) Color.Black.copy(alpha = 0.035f) else Color.Transparent,
+                    targetValue = if (isPressed && !isActive) c.activeFill else Color.Transparent,
                     animationSpec = tween(120, easing = CubicBezierEasing(0.23f, 1f, 0.32f, 1f)),
                     label = "TabPressColor",
                 )

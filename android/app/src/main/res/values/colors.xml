@@ -2,4 +2,5 @@
 <resources>
     <color name="ic_launcher_background">#1C1C1E</color>
     <color name="airclip_brand">#6740BF</color>
+    <color name="airclip_launch_background">#FFFFFF</color>
 </resources>

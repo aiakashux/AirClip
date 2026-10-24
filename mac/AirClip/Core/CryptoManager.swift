@@ -1,16 +1,19 @@
 import Foundation
 import Sodium
+import Security
 
 enum CryptoError: Error, LocalizedError {
     case encryptionFailed
     case decryptionFailed
     case invalidPublicKey
+    case keyStorageFailed
 
     var errorDescription: String? {
         switch self {
         case .encryptionFailed:  return "Encryption failed"
         case .decryptionFailed:  return "Decryption failed"
         case .invalidPublicKey:  return "Invalid public key"
+        case .keyStorageFailed: return "Could not access the device identity in Keychain"
         }
     }
 }
@@ -21,9 +24,8 @@ enum CryptoError: Error, LocalizedError {
 /// Sealed box uses an ephemeral sender keypair — no explicit nonce.
 /// We return/accept a sentinel nonce value to keep the wire protocol shape consistent.
 ///
-/// Key storage: UserDefaults (in the app's sandboxed container).
-/// This avoids macOS keychain access dialogs on every debug rebuild while keeping
-/// the key isolated to the app's own sandbox.
+/// Device keys live in Keychain. Existing preference-backed identities migrate
+/// only after a successful write and read-back, preserving paired-device identity.
 final class CryptoManager {
     static let shared = CryptoManager()
 
@@ -38,12 +40,12 @@ final class CryptoManager {
     private var keyPair: Box.KeyPair {
         get throws {
             if let cached = _cached { return cached }
-            if let stored = loadFromUserDefaults() {
+            if let stored = try loadFromKeychain() {
                 _cached = stored
                 return stored
             }
             guard let fresh = sodium.box.keyPair() else { throw CryptoError.encryptionFailed }
-            saveToUserDefaults(fresh)
+            try saveToKeychain(fresh)
             _cached = fresh
             return fresh
         }
@@ -54,6 +56,8 @@ final class CryptoManager {
     }
 
     func clearKeys() {
+        let status = SecItemDelete(keychainQuery as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else { return }
         _cached = nil
         UserDefaults.standard.removeObject(forKey: udKey)
     }
@@ -104,20 +108,73 @@ final class CryptoManager {
         return Data(plain)
     }
 
-    // MARK: - UserDefaults persistence (64 bytes: publicKey[32] + secretKey[32])
-
-    private func saveToUserDefaults(_ kp: Box.KeyPair) {
-        let data = Data(kp.publicKey + kp.secretKey)
-        UserDefaults.standard.set(data.base64EncodedString(), forKey: udKey)
+    /// Copy the current key material before dispatching a large history decrypt
+    /// away from the main actor. The background job never touches cached state.
+    func historyDecryptionKeys() throws -> (publicKey: [UInt8], secretKey: [UInt8]) {
+        let kp = try keyPair
+        return (kp.publicKey, kp.secretKey)
     }
 
-    private func loadFromUserDefaults() -> Box.KeyPair? {
-        guard let b64  = UserDefaults.standard.string(forKey: udKey),
-              let data = Data(base64Encoded: b64),
-              data.count == 64 else { return nil }
-        return Box.KeyPair(
-            publicKey: Bytes(data.prefix(32)),
-            secretKey: Bytes(data.suffix(32))
-        )
+    static func decryptHistoryData(
+        ciphertextBase64: String,
+        publicKey: [UInt8],
+        secretKey: [UInt8]
+    ) throws -> Data {
+        guard let ciphertext = Data(base64Encoded: ciphertextBase64),
+              let plaintext = Sodium().box.open(
+                anonymousCipherText: Bytes(ciphertext),
+                recipientPublicKey: publicKey,
+                recipientSecretKey: secretKey
+              ) else {
+            throw CryptoError.decryptionFailed
+        }
+        return Data(plaintext)
+    }
+
+    // MARK: - Keychain persistence (publicKey[32] + secretKey[32])
+
+    private var keychainQuery: [String: Any] {
+        [kSecClass as String: kSecClassGenericPassword,
+         kSecAttrService as String: AppConfig.keychainService,
+         kSecAttrAccount as String: udKey]
+    }
+
+    private func readKeychainData() throws -> Data? {
+        var query = keychainQuery
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+        var result: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        if status == errSecItemNotFound { return nil }
+        guard status == errSecSuccess, let data = result as? Data, data.count == 64 else {
+            throw CryptoError.keyStorageFailed
+        }
+        return data
+    }
+
+    private func saveToKeychain(_ kp: Box.KeyPair) throws {
+        let data = Data(kp.publicKey + kp.secretKey)
+        var attributes = keychainQuery
+        attributes[kSecValueData as String] = data
+        attributes[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        let status = SecItemAdd(attributes as CFDictionary, nil)
+        // Do not overwrite another identity if the item already exists.
+        guard status == errSecSuccess || status == errSecDuplicateItem,
+              try readKeychainData() == data else { throw CryptoError.keyStorageFailed }
+    }
+
+    private func loadFromKeychain() throws -> Box.KeyPair? {
+        if let data = try readKeychainData() {
+            UserDefaults.standard.removeObject(forKey: udKey)
+            return Box.KeyPair(publicKey: Bytes(data.prefix(32)), secretKey: Bytes(data.suffix(32)))
+        }
+        guard let stored = UserDefaults.standard.string(forKey: udKey) else { return nil }
+        guard let data = Data(base64Encoded: stored), data.count == 64 else {
+            throw CryptoError.keyStorageFailed
+        }
+        let pair = Box.KeyPair(publicKey: Bytes(data.prefix(32)), secretKey: Bytes(data.suffix(32)))
+        try saveToKeychain(pair)
+        UserDefaults.standard.removeObject(forKey: udKey)
+        return pair
     }
 }

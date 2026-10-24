@@ -35,7 +35,7 @@ struct OnboardingView: View {
             let heroHeight = isCompact ? max(292, size.height * 0.52) : min(620, size.height * 0.68)
 
             ZStack(alignment: .topLeading) {
-                Color.white
+                Color.bgBase
 
                 if step == .choice {
                     MacInitialSplashScreen(
@@ -118,7 +118,7 @@ struct OnboardingView: View {
         VStack(spacing: isCompact ? 20 : 28) {
             Text("Copy anywhere. Paste\neverywhere.")
                 .font(.system(size: isCompact ? 21 : 24, weight: .regular))
-                .foregroundStyle(Color(hex: "#202327"))
+                .foregroundStyle(Color.textPrimary)
                 .multilineTextAlignment(.center)
                 .lineSpacing(5)
                 .fixedSize(horizontal: false, vertical: true)
@@ -152,10 +152,10 @@ struct OnboardingView: View {
             VStack(spacing: 6) {
                 Text("Name this device")
                     .font(.system(size: 22, weight: .regular))
-                    .foregroundStyle(Color(hex: "#202327"))
+                    .foregroundStyle(Color.textPrimary)
                 Text(isCreating ? "This Mac will start your Airclip." : "This name appears on your other devices.")
                     .font(.system(size: 13))
-                    .foregroundStyle(Color(hex: "#6A7282"))
+                    .foregroundStyle(Color.textSecondary)
                     .multilineTextAlignment(.center)
             }
 
@@ -196,7 +196,7 @@ struct OnboardingView: View {
         VStack(spacing: isCompact ? 12 : 16) {
             Text("Add another device")
                 .font(.system(size: 22, weight: .regular))
-                .foregroundStyle(Color(hex: "#202327"))
+                .foregroundStyle(Color.textPrimary)
 
             MacJoinQRCodeCard(qrImage: pairing.qrImage, revision: pairing.qrRevision)
             MacJoinCodeView(code: pairing.currentCode)
@@ -215,10 +215,10 @@ struct OnboardingView: View {
             VStack(spacing: 6) {
                 Text("Join a space")
                     .font(.system(size: 22, weight: .regular))
-                    .foregroundStyle(Color(hex: "#202327"))
+                    .foregroundStyle(Color.textPrimary)
                 Text("Enter the 6-digit code from another device on the same Wi-Fi.")
                     .font(.system(size: 13))
-                    .foregroundStyle(Color(hex: "#6A7282"))
+                    .foregroundStyle(Color.textSecondary)
                     .multilineTextAlignment(.center)
             }
 
@@ -421,7 +421,7 @@ private struct MacInitialSplashScreen: View {
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            Color.white
+            Color.bgBase
 
             MacSplashArtwork()
                 .offset(y: -MacInitialSplashMetrics.titlebarArtworkCompensation)
@@ -429,7 +429,7 @@ private struct MacInitialSplashScreen: View {
             Text("Copy anywhere. Paste everywhere.")
                 .font(.custom("Beary", size: 24))
                 .lineSpacing(12)
-                .foregroundStyle(Color(hex: "#202327"))
+                .foregroundStyle(Color.textPrimary)
                 .multilineTextAlignment(.center)
                 .frame(width: 341, height: 72)
                 .position(x: 429.5, y: 488)
@@ -438,8 +438,8 @@ private struct MacInitialSplashScreen: View {
                 MacSplashButton(
                     title: "Join a space",
                     svg: MacSplashSVG.joinIcon,
-                    foreground: Color(hex: "#202327"),
-                    background: Color(hex: "#EFF0F1"),
+                    foreground: Color.textPrimary,
+                    background: Color.bgFloating,
                     width: 230,
                     action: onJoin
                 )
@@ -622,11 +622,11 @@ private struct MacCreateAirclipModal: View {
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            Color.white
+            Color.bgBase
 
             HStack {
                 Button(action: onBack) {
-                    MacSplashSVGImage(svg: MacSplashSVG.backArrowIcon)
+                    MacSplashSVGImage(svg: MacSplashSVG.backArrowIcon, tint: .textPrimary)
                         .frame(width: 32, height: 32)
                         .contentShape(Rectangle())
                 }
@@ -649,12 +649,12 @@ private struct MacCreateAirclipModal: View {
             VStack(spacing: 0) {
                 Text("Name your space")
                     .font(.custom("Beary", size: 32))
-                    .foregroundStyle(Color(hex: "#202327"))
+                    .foregroundStyle(Color.textPrimary)
                     .frame(width: 364, height: 35)
 
                 Text("A shared space for all your devices.")
                     .font(.system(size: 16, weight: .regular))
-                    .foregroundStyle(Color(hex: "#6A7282"))
+                    .foregroundStyle(Color.textSecondary)
                     .frame(width: 364, height: 24)
                     .padding(.top, 4)
 
@@ -706,11 +706,11 @@ private struct MacCreateDeviceNameField: View {
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color.white)
+                .fill(Color.bgElevated)
                 .overlay(
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .strokeBorder(
-                            isFocused ? Color(hex: "#202327").opacity(0.35) : Color(hex: "#D6D6D6"),
+                            isFocused ? Color.borderFocus : Color.borderDefault,
                             lineWidth: 1
                         )
                 )
@@ -718,7 +718,7 @@ private struct MacCreateDeviceNameField: View {
             HStack(spacing: 0) {
                 TextField("", text: $draftText)
                     .font(.system(size: 20, weight: .regular))
-                    .foregroundStyle(Color(hex: "#202327"))
+                    .foregroundStyle(Color.textPrimary)
                     .textFieldStyle(.plain)
                     .focused($isFocused)
                     .onChange(of: draftText) { _, newValue in
@@ -772,12 +772,12 @@ private struct MacCreateDeviceNameField: View {
                     }
                 } label: {
                     AirclipIcon(.refresh, size: 22)
-                        .foregroundStyle(Color(hex: "#43474E"))
+                        .foregroundStyle(Color.textSecondary)
                         .rotationEffect(.degrees(Double(refreshTurns) * 360))
                         .frame(width: 48, height: 48)
                         .background(
                             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .fill(isRefreshHovered ? Color(hex: "#F2F2F4") : .white)
+                                .fill(isRefreshHovered ? Color.hoverFill : Color.bgFloating)
                         )
                 }
                 .buttonStyle(.plain)
@@ -814,13 +814,13 @@ private struct MacCreateModalButton: View {
                         .tint(.white)
                         .frame(width: 20, height: 20)
                 } else {
-                    MacSplashSVGImage(svg: svg, tint: isDisabled ? Color(hex: "#43474E") : nil)
+                    MacSplashSVGImage(svg: svg, tint: isDisabled ? Color.textSecondary : nil)
                         .frame(width: 20, height: 20)
                 }
 
                 Text(title)
                     .font(.custom("Beary", size: 18))
-                    .foregroundStyle(isDisabled ? Color(hex: "#43474E") : .white)
+                    .foregroundStyle(isDisabled ? Color.textSecondary : .white)
                     .lineLimit(1)
                     .offset(y: 1.5)
             }
@@ -858,10 +858,10 @@ private struct MacJoinAirclipModal: View {
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            Color.white
+            Color.bgBase
 
             Button(action: onClose) {
-                MacSplashSVGImage(svg: MacSplashSVG.backArrowIcon)
+                MacSplashSVGImage(svg: MacSplashSVG.backArrowIcon, tint: .textPrimary)
                     .frame(width: 32, height: 32)
                     .contentShape(Rectangle())
             }
@@ -872,13 +872,13 @@ private struct MacJoinAirclipModal: View {
             VStack(spacing: 0) {
                 Text("Join a space")
                     .font(.custom("Beary", size: 32))
-                    .foregroundStyle(Color(hex: "#202327"))
+                    .foregroundStyle(Color.textPrimary)
                     .frame(width: 238, height: 35)
 
                 Text("Open Airclip on your other device. Choose Join a space, then scan or enter the code below.")
                     .font(.system(size: 16, weight: .regular))
                     .lineSpacing(4)
-                    .foregroundStyle(Color(hex: "#6F7785"))
+                    .foregroundStyle(Color.textSecondary)
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
                     .frame(width: 364, height: 48)
@@ -898,7 +898,7 @@ private struct MacJoinAirclipModal: View {
         }
         .frame(width: MacInitialSplashMetrics.width, height: MacInitialSplashMetrics.height)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(Color.white)
+        .background(Color.bgBase)
         .ignoresSafeArea()
     }
 }
@@ -992,7 +992,7 @@ private struct MacJoinCodeView: View {
             .frame(width: 138, height: 48)
             .background(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(Color(hex: "#F5F5F5"))
+                    .fill(Color.bgFloating)
             )
 
             Text("-")
@@ -1014,11 +1014,11 @@ private struct MacJoinCodeView: View {
             .frame(width: 138, height: 48)
             .background(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(Color(hex: "#F5F5F5"))
+                    .fill(Color.bgFloating)
             )
         }
         .font(.system(size: 28, weight: .semibold))
-        .foregroundStyle(Color(hex: "#202327"))
+        .foregroundStyle(Color.textPrimary)
         .frame(width: 314, height: 48)
         .accessibilityLabel(code.map { "Pairing code \($0)" } ?? "Pairing code loading")
     }
@@ -1033,10 +1033,10 @@ private struct MacPairingRefreshRow: View {
             let remaining = max(0, Int(ceil((expiresAt ?? context.date).timeIntervalSince(context.date))))
             HStack(spacing: 12) {
                 Text("Refreshes in \(remaining)s")
-                    .foregroundStyle(Color(hex: "#6A7282"))
+                    .foregroundStyle(Color.textSecondary)
                 Button("Refresh", action: onRefresh)
                     .buttonStyle(.plain)
-                    .foregroundStyle(Color(hex: "#6740BF"))
+                    .foregroundStyle(Color.accent)
             }
             .font(.system(size: 13, weight: .regular))
         }
@@ -1303,7 +1303,7 @@ private struct OnboardingSplashButton: View {
         case .primary:
             return Color.black
         case .secondary:
-            return Color(hex: "#F5F4F7")
+            return Color.bgFloating
         }
     }
 
@@ -1312,7 +1312,7 @@ private struct OnboardingSplashButton: View {
         case .primary:
             return Color.white
         case .secondary:
-            return Color(hex: "#202327")
+            return Color.textPrimary
         }
     }
 }
@@ -1326,20 +1326,20 @@ private struct OnboardingTextField: View {
         TextField(
             "",
             text: $text,
-            prompt: Text(placeholder).foregroundColor(Color(hex: "#99A1AF"))
+            prompt: Text(placeholder).foregroundColor(Color.textTertiary)
         )
         .font(.system(size: 18, weight: .regular))
-        .foregroundStyle(Color(hex: "#202327"))
+        .foregroundStyle(Color.textPrimary)
         .textFieldStyle(.plain)
         .focused($isFocused)
         .padding(.horizontal, 18)
         .frame(height: 56)
         .background(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color(hex: "#F5F4F7"))
+                .fill(Color.bgFloating)
                 .overlay(
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .strokeBorder(isFocused ? Color(hex: "#202327").opacity(0.22) : .clear, lineWidth: 1)
+                        .strokeBorder(isFocused ? Color.borderFocus : .clear, lineWidth: 1)
                 )
         )
     }
@@ -1352,7 +1352,7 @@ private struct OnboardingBackButton: View {
         Button(action: action) {
             Text("Back")
                 .font(.system(size: 13, weight: .regular))
-                .foregroundStyle(Color(hex: "#6A7282"))
+                .foregroundStyle(Color.textSecondary)
         }
         .buttonStyle(.plain)
     }

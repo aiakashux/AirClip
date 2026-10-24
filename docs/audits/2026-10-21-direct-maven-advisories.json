@@ -1,0 +1,86 @@
+{
+  "date": "2026-10-21",
+  "scope": "Explicitly versioned direct Maven dependencies only; OSV querybatch",
+  "dependencies": [
+    {
+      "dependency": "androidx.core:core-ktx:1.12.0",
+      "advisories": []
+    },
+    {
+      "dependency": "androidx.lifecycle:lifecycle-runtime-ktx:2.6.2",
+      "advisories": []
+    },
+    {
+      "dependency": "androidx.activity:activity-compose:1.8.0",
+      "advisories": []
+    },
+    {
+      "dependency": "androidx.lifecycle:lifecycle-viewmodel-compose:2.6.2",
+      "advisories": []
+    },
+    {
+      "dependency": "com.squareup.okhttp3:okhttp:4.12.0",
+      "advisories": []
+    },
+    {
+      "dependency": "org.java-websocket:Java-WebSocket:1.5.6",
+      "advisories": []
+    },
+    {
+      "dependency": "com.google.code.gson:gson:2.10.1",
+      "advisories": []
+    },
+    {
+      "dependency": "org.jsoup:jsoup:1.23.2",
+      "advisories": []
+    },
+    {
+      "dependency": "com.goterl:lazysodium-android:5.1.0@aar",
+      "advisories": []
+    },
+    {
+      "dependency": "net.java.dev.jna:jna:5.14.0@aar",
+      "advisories": []
+    },
+    {
+      "dependency": "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3",
+      "advisories": []
+    },
+    {
+      "dependency": "androidx.datastore:datastore-preferences:1.0.0",
+      "advisories": []
+    },
+    {
+      "dependency": "androidx.security:security-crypto:1.0.0",
+      "advisories": []
+    },
+    {
+      "dependency": "com.google.zxing:core:3.5.3",
+      "advisories": []
+    },
+    {
+      "dependency": "com.journeyapps:zxing-android-embedded:4.3.0",
+      "advisories": []
+    },
+    {
+      "dependency": "io.coil-kt:coil-compose:2.6.0",
+      "advisories": []
+    },
+    {
+      "dependency": "io.coil-kt:coil-svg:2.6.0",
+      "advisories": []
+    },
+    {
+      "dependency": "junit:junit:4.13.2",
+      "advisories": []
+    },
+    {
+      "dependency": "androidx.test:core:1.5.0",
+      "advisories": []
+    },
+    {
+      "dependency": "org.robolectric:robolectric:4.12.2",
+      "advisories": []
+    }
+  ]
+}

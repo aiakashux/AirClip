@@ -66,6 +66,7 @@ final class LanBrowser {
         visiblePeerCount = 0
         // Clear the endpoint cache so stale entries don't linger after disconnect.
         // (New entries are populated on next start/discovery.)
+        ResolvedEndpointCache.shared.clear()
     }
 
     // MARK: - Discovery

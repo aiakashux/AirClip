@@ -24,7 +24,7 @@ private enum PopoverMetrics {
 }
 
 struct PopoverView: View {
-    @Query(sort: \ClipboardItem.receivedAt, order: .reverse) private var allItems: [ClipboardItem]
+    @Query private var allItems: [ClipboardItem]
     @ObservedObject private var syncModeStore = SyncModeStore.shared
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -40,6 +40,14 @@ struct PopoverView: View {
     @FocusState private var isKeyboardFocused: Bool
 
     @State private var openAirclipHovered = false
+
+    init() {
+        var descriptor = FetchDescriptor<ClipboardItem>(
+            sortBy: [SortDescriptor(\.receivedAt, order: .reverse)]
+        )
+        descriptor.fetchLimit = 5
+        _allItems = Query(descriptor)
+    }
 
     private var recentItems: [ClipboardItem] { Array(allItems.prefix(5)) }
     private var contentIsVisible: Bool { isContentVisible && !isExiting }
@@ -151,7 +159,12 @@ struct PopoverView: View {
     // MARK: - Empty State
 
     private var emptyState: some View {
-        AirclipFigmaEmptyState(text: "Copy something to get started.")
+        AirclipFigmaEmptyState(
+            icon: .clipboard,
+            title: "Nothing copied yet",
+            message: "Copy something to get started.",
+            compact: true
+        )
         .frame(maxWidth: .infinity)
         .frame(height: PopoverMetrics.emptyHeight)
         .background(
@@ -419,7 +432,15 @@ private struct ClipCard: View {
     private var isFileDownloaded: Bool { syncEngine.availableFileURL(for: item) != nil }
     private var isFileDownloading: Bool {
         guard let id = item.fileMetadata?.id else { return false }
-        return syncEngine.fileTransfers[id]?.phase == .downloading
+        guard let transfer = syncEngine.fileTransfers[id] else { return false }
+        return transfer.phase == .checking || transfer.phase == .downloading
+    }
+
+    private var isFileChecking: Bool {
+        guard let id = item.fileMetadata?.id,
+              let transfer = syncEngine.fileTransfers[id] else { return false }
+        if case .checking = transfer.phase { return true }
+        return false
     }
 
     var body: some View {
@@ -536,7 +557,7 @@ private struct ClipCard: View {
         if isFileDownloading {
             HStack(spacing: 8) {
                 ProgressView().controlSize(.small)
-                Text("Downloading…")
+                Text(isFileChecking ? "Checking…" : "Downloading…")
             }
             .font(.system(size: 13, weight: .medium))
             .foregroundColor(.accent)
@@ -555,7 +576,13 @@ private struct ClipCard: View {
     }
 
     private var fileActionTitle: String {
-        guard isFileDownloaded else { return "Download" }
+        guard isFileDownloaded else {
+            if let id = item.fileMetadata?.id,
+               let transfer = syncEngine.fileTransfers[id], case .failed = transfer.phase {
+                return "Try Again"
+            }
+            return "Download"
+        }
         return item.fileMetadata?.isPlayableMedia == true ? "Play" : "Open"
     }
 
@@ -941,6 +968,5 @@ extension Notification.Name {
     static let openSettingsTab = Notification.Name("com.airclip.openSettingsTab")
     static let openHomeTab     = Notification.Name("com.airclip.openHomeTab")
     static let openDevicesTab  = Notification.Name("com.airclip.openDevicesTab")
-    static let toggleMainWindowSidebar = Notification.Name("com.airclip.toggleMainWindowSidebar")
     // authDidComplete is defined in OnboardingView.swift
 }

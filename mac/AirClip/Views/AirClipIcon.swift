@@ -142,6 +142,7 @@ enum AirclipIconRenderer {
     private static func canonicalAssetName(_ name: AirclipIconName, variant: AirclipIconVariant) -> String? {
         switch name {
         case .home: return variant == .stroke ? "UnifiedHomeStroke" : "UnifiedHomeSolid"
+        case .bookmark: return variant == .stroke ? "UnifiedBookmarkStroke" : "UnifiedBookmarkSolid"
         case .deviceSync: return variant == .stroke ? "UnifiedDevicesStroke" : "UnifiedDevicesSolid"
         case .settings: return variant == .stroke ? "UnifiedSettingsStroke" : "UnifiedSettingsSolid"
         case .search: return "UnifiedSearch"

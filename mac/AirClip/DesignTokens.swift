@@ -10,6 +10,10 @@ extension Color {
     static let bgBase     = adaptive("#101113", light: "#F4F5F7")
     static let bgElevated = adaptive("#1C1D20", light: "#FFFFFF")
     static let bgFloating = adaptive("#25262A", light: "#F8F9FB")
+    static let mainWindowShell = adaptive("#101113", light: "#F9FAFB")
+    static let mainWindowBrand = adaptive("#F2F3F5", light: "#232E43")
+    static let mainWindowMeta = adaptive("#ADB2BC", light: "#868C98")
+    static let mainWindowSearchFill = adaptive("#25262A", light: "#F7F8F9")
     static let bgOverlay  = adaptive("#161618", light: "#E8EAEE")  // modal scrim — use at 0.70 opacity
     static let glassTint  = adaptive("#FFFFFF", light: "#FFFFFF")
 
@@ -17,15 +21,15 @@ extension Color {
 
     static let textPrimary   = adaptive("#F2F3F5", light: "#15161A")  // titles, main content
     static let textSubtle    = adaptive("#CACDD3", light: "#30343B")  // toast, secondary labels
-    static let textSecondary = adaptive("#8F949D", light: "#5B6270")  // subtitles, captions
-    static let textTertiary  = adaptive("#626875", light: "#7A8392")  // section headers, placeholders
+    static let textSecondary = adaptive("#ADB2BC", light: "#5B6270")  // subtitles, captions
+    static let textTertiary  = adaptive("#A6ABB5", light: "#626B79")  // readable metadata and placeholders
     static let textLink      = adaptive("#A59DFF", light: "#6740BF")
 
     // MARK: Borders — 4 tiers
 
     static let borderSubtle  = adaptive("#FFFFFF", light: "#1C1D20").opacity(0.08)
     static let borderDefault = adaptive("#FFFFFF", light: "#1C1D20").opacity(0.14)
-    static let borderFocus   = adaptive("#FFFFFF", light: "#1C1D20").opacity(0.30)
+    static let borderFocus   = adaptive("#A59DFF", light: "#6740BF")
     static let borderDash    = adaptive("#FFFFFF", light: "#1C1D20").opacity(0.18)
 
     // MARK: Interactive fills
@@ -34,33 +38,20 @@ extension Color {
     static let hoverFill       = adaptive("#FFFFFF", light: "#1C1D20").opacity(0.06)
     static let activeFill      = adaptive("#FFFFFF", light: "#1C1D20").opacity(0.10)
     static let segmentSelected = adaptive("#36373A", light: "#E5E7EB")
-    static let sidebarHover    = adaptive("#FFFFFF", light: "#FAFAFA").opacity(0.40)
-    static let sidebarSelected = adaptive("#2A2B2E", light: "#FFFFFF")
+    static let sidebarHover    = adaptive("#FFFFFF", light: "#FAFAFA", darkAlpha: 0.06, lightAlpha: 0.40)
+    static let sidebarSelected = adaptive("#2A2B2E", light: "#E8E9EA")
     static let sidebarSelectedBorder = adaptive("#404248", light: "#EEF1F1")
-    static let listItemHover = adaptive(
-        "#FFFFFF",
-        light: "#1C1D20",
-        darkAlpha: 0.08,
-        lightAlpha: 0.045
-    )
-    static let listItemSelected = adaptive(
-        "#A59DFF",
-        light: "#6740BF",
-        darkAlpha: 0.14,
-        lightAlpha: 0.10
-    )
-    static let listItemSelectedBorder = adaptive(
-        "#A59DFF",
-        light: "#6740BF",
-        darkAlpha: 0.45,
-        lightAlpha: 0.32
-    )
+    static let listItemHover = adaptive("#26272B", light: "#F4F5F5")
+    static let listItemSelected = adaptive("#2A2B2E", light: "#FAFAFA")
+    static let listItemSelectedBorder = adaptive("#404248", light: "#E7E7E7")
 
     // MARK: Accent — signal only, not decoration
 
     static let accent         = adaptive("#A59DFF", light: "#6740BF")  // foreground / focus
     static let accentDeep     = Color(hex: "#6740BF")                   // filled controls
     static let primaryButtonFill = Color(hex: "#000000")                // filled primary buttons
+
+    static let onDestructive = adaptive("#101113", light: "#FFFFFF")
 
     // MARK: Semantic status
 
@@ -195,29 +186,29 @@ enum Radius {
 enum Layout {
     // Window
     static let windowCornerRadius:  CGFloat = Radius.lg      // 12
-    static let windowMinWidth:      CGFloat = 680
-    static let windowDefaultWidth:  CGFloat = 760
+    static let windowMinWidth:      CGFloat = 940
+    static let windowDefaultWidth:  CGFloat = 940
 
     // Search bar
-    static let searchBarHeight:     CGFloat = 48
+    static let searchBarHeight:     CGFloat = 44
     static let searchBarPadding:    CGFloat = 16
 
     // List rows
-    static let rowHeight:           CGFloat = 40
+    static let rowHeight:           CGFloat = 52
     static let rowPaddingH:         CGFloat = 16
-    static let rowIconSize:         CGFloat = 20
+    static let rowIconSize:         CGFloat = 28
     static let rowIconCornerRadius: CGFloat = Radius.sm       // 6
-    static let rowIconGap:          CGFloat = Spacing.xs      // 8
+    static let rowIconGap:          CGFloat = 10
 
     // Panels
-    static let sidebarWidth:        CGFloat = 220
+    static let sidebarWidth:        CGFloat = 56
     static let panelCornerRadius:   CGFloat = Radius.md       // 8
     static let popoverCornerRadius: CGFloat = Radius.md       // 8
 
     // Section headers
     static let sectionHeaderPaddingTop:    CGFloat = Spacing.lg   // 20
     static let sectionHeaderPaddingBottom: CGFloat = Spacing.xxs  // 4
-    static let sectionHeaderPaddingH:      CGFloat = Spacing.md   // 16
+    static let sectionHeaderPaddingH:      CGFloat = 24
 
     // Segmented control
     static let segmentCornerRadius: CGFloat = Radius.sm       // 6
@@ -225,7 +216,7 @@ enum Layout {
     static let segmentPaddingV:     CGFloat = Spacing.xxs     // 4
 
     // Action bar
-    static let actionBarHeight:     CGFloat = 40
+    static let actionBarHeight:     CGFloat = 44
     static let actionBarPaddingH:   CGFloat = Spacing.sm      // 12
 
     // Common component heights

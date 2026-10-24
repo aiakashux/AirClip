@@ -6,6 +6,21 @@ import org.junit.Assert.assertFalse
 import org.junit.Test
 
 class ClipboardWirePayloadTest {
+    @Test
+    fun `rejects file paths and invalid metadata from a peer`() {
+        for (id in listOf("../escape", "/absolute", "a/b", "a\\b", "", ".", "a".repeat(129))) {
+            val encoded = com.google.gson.Gson().toJson(mapOf(
+                "kindRaw" to "file", "text" to "unsafe",
+                "file" to mapOf("id" to id, "name" to "file.txt", "size" to 1, "mimeType" to "text/plain"),
+            ))
+            val decoded = ClipboardWirePayload.decode(encoded)
+            assertEquals(ClipKind.TEXT, decoded.kind)
+            assertNull(decoded.file)
+        }
+        assertNull(ClipboardWirePayload.decode("""{"kindRaw":"file","text":"missing","file":{"id":"safe","size":1}}""").file)
+        assertNull(ClipboardWirePayload.decode("""{"kindRaw":"file","text":"negative","file":{"id":"safe","name":"a","size":-1}}""").file)
+    }
+
 
     @Test
     fun `decodes mac clipboard packet`() {

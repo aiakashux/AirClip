@@ -16,7 +16,9 @@ Airclip copies whatever you copy on one device and pastes it on the other. No cl
 
 ## How It Works
 
-Airclip discovers devices on the same Wi-Fi network using Bonjour (Mac) and NSD (Android). Clipboard packets are encrypted with NaCl sealed boxes before leaving the device. Nothing touches a server.
+Airclip discovers devices on the same Wi-Fi network using Bonjour (Mac) and NSD (Android). Clipboard packets are encrypted with NaCl sealed boxes before leaving the device. Clipboard sync uses LAN peers. Automatic link previews contact the referenced websites; update checks and optional analytics also use internet services.
+
+**Pre-release:** the LAN authentication protocol still needs hardening before public distribution. See the [security and readiness audit](docs/audits/2026-10-21-security-readiness.md).
 
 ```
 Mac app                          Android app

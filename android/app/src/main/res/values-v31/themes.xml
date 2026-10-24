@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <style name="Theme.Airclip" parent="android:Theme.Material.Light.NoActionBar">
-        <item name="android:windowSplashScreenBackground">@android:color/white</item>
+        <item name="android:windowSplashScreenBackground">@color/airclip_launch_background</item>
         <item name="android:windowSplashScreenAnimatedIcon">@drawable/airclip_launch_logo_fixed</item>
         <item name="android:windowNoTitle">true</item>
         <item name="android:windowActionBar">false</item>

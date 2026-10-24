@@ -246,7 +246,6 @@ final class AirclipAlertCenter: ObservableObject {
 
 struct AirclipBottomAlert: View {
     let item: AirclipAlertItem
-    let onDismiss: () -> Void
     let onAction: () -> Void
 
     private var foreground: Color {
@@ -254,24 +253,24 @@ struct AirclipBottomAlert: View {
     }
 
     var body: some View {
-        HStack(spacing: 16) {
-            HStack(spacing: 12) {
+        HStack(spacing: 12) {
+            HStack(spacing: 8) {
                 if item.kind == .success {
                     Image("AlertCheck")
                         .renderingMode(.template)
                         .resizable()
                         .scaledToFit()
-                        .frame(width: 24, height: 24)
+                        .frame(width: 16, height: 16)
                 } else if item.kind == .danger {
                     Image("AlertWarning")
                         .renderingMode(.template)
                         .resizable()
                         .scaledToFit()
-                        .frame(width: 24, height: 24)
+                        .frame(width: 16, height: 16)
                 }
 
                 Text(item.message)
-                    .font(.system(size: 16, weight: .medium))
+                    .font(.system(size: 13, weight: .medium))
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
@@ -282,29 +281,18 @@ struct AirclipBottomAlert: View {
                     .buttonStyle(.plain)
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundColor(.accent)
-            } else {
-                Button(action: onDismiss) {
-                    Image("AlertClose")
-                        .renderingMode(.template)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 20, height: 20)
-                        .foregroundColor(.textSecondary)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Dismiss")
             }
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 14)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 9)
         .background(
-            Capsule()
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(Color.bgElevated)
-                .overlay(Capsule().strokeBorder(Color.borderSubtle, lineWidth: 1))
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(Color.borderSubtle, lineWidth: 0.5))
         )
-        .shadow(color: Color(hex: "#18274B").opacity(0.12), radius: 3, y: 4)
-        .shadow(color: Color(hex: "#18274B").opacity(0.08), radius: 4, y: 8)
-        .frame(maxWidth: 520)
+        .shadow(color: .black.opacity(0.12), radius: 10, y: 4)
+        .frame(maxWidth: 420)
         .accessibilityElement(children: .contain)
     }
 }

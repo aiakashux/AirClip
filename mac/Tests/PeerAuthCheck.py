@@ -7,6 +7,9 @@ source = (Path(__file__).parents[1] / "Airclip/Core/PeerConnection.swift").read_
 start = source.index("    private func handleAuth(")
 end = source.index("    // MARK: - Auth handshake (client side)", start)
 handler = source[start:end].replace("private func handleAuth", "func handleAuth")
+client_start = source.index("    private func handleAuthOk(")
+client_end = source.index("    // MARK: - Pairing: pair_request", client_start)
+handler += source[client_start:client_end].replace("private func handleAuthOk", "func handleAuthOk")
 harness = r'''
 import Foundation
 struct PairedDevice {
@@ -21,7 +24,7 @@ final class AirclipIdentity {
     var isPaired = false
     var deviceName = "Mac"
     var deviceId: String? = "mac"
-    var pairedDevices: [String: PairedDevice] = [:]
+    var pairedDevices: [String: PairedDevice] = ["phone": PairedDevice(deviceId: "phone", deviceName: "Phone", publicKey: "paired-key", platform: "android")]
     var joins = 0
     func joinAirclip(airClipId: String, myName: String, spaceName: String?, allDevices: [PairedDevice]) { joins += 1 }
     func addOrUpdateDevice(_ device: PairedDevice) {}
@@ -33,7 +36,7 @@ final class PairingSession {
 }
 final class CryptoManager {
     static let shared = CryptoManager()
-    var publicKeyBase64: String { "test-key" }
+    var publicKeyBase64: String { get throws { "test-key" } }
 }
 final class PeerManager {
     static let shared = PeerManager()
@@ -61,12 +64,21 @@ for pairing in [false, true] {
     for trusted in [false, true] {
         PairingSession.shared.currentCode = pairing ? "123456" : nil
         PeerManager.shared.trusted = trusted
+        for key in ["paired-key", "attacker-key"] {
+        let accepted = trusted && key == "paired-key"
         let peer = PeerConnection()
-        peer.handleAuth(["device_id": "phone", "airclip_id": "previous-space", "public_key": "test-key"])
-        precondition(peer.closed == !trusted, "Untrusted auth must be rejected even while pairing")
-        precondition(peer.replied == trusted)
+        peer.handleAuth(["device_id": "phone", "airclip_id": "previous-space", "public_key": key])
+        precondition(peer.closed == !accepted, "Untrusted auth must be rejected even while pairing")
+        precondition(peer.replied == accepted)
         precondition(AirclipIdentity.shared.joins == 0, "Ordinary auth must never join a space")
+        }
     }
+}
+for key in ["paired-key", "attacker-key", ""] {
+    let peer = PeerConnection()
+    peer.isIncoming = false
+    peer.handleAuthOk(["device_id": "phone", "public_key": key])
+    precondition(peer.closed == (key != "paired-key"), "Outgoing auth must reject substituted keys")
 }
 print("Peer auth checks passed")
 '''.replace("HANDLER", handler)

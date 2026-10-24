@@ -50,6 +50,7 @@
 		AA0200000000000000000039 /* PrivacyAnalytics.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000039 /* PrivacyAnalytics.swift */; };
 		AA0200000000000000000040 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000040 /* PrivacyInfo.xcprivacy */; };
 		AA0200000000000000000041 /* Beary.ttf in Resources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000041 /* Beary.ttf */; };
+		AA0200000000000000000042 /* PeerHeartbeatPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000042 /* PeerHeartbeatPolicy.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -98,6 +99,7 @@
 		AA0100000000000000000039 /* PrivacyAnalytics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivacyAnalytics.swift; sourceTree = "<group>"; };
 		AA0100000000000000000040 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		AA0100000000000000000041 /* Beary.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = ../Beary.ttf; sourceTree = SOURCE_ROOT; };
+		AA0100000000000000000042 /* PeerHeartbeatPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeerHeartbeatPolicy.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXContainerItemProxy section */
@@ -198,6 +200,7 @@
 				AA0100000000000000000035 /* DeviceDisplayText.swift */,
 				AA0100000000000000000038 /* AppUpdateController.swift */,
 				AA0100000000000000000039 /* PrivacyAnalytics.swift */,
+				AA0100000000000000000042 /* PeerHeartbeatPolicy.swift */,
 				AA0100000000000000000008 /* CryptoManager.swift */,
 				AA0100000000000000000009 /* SyncEngine.swift */,
 				AA010000000000000000000A /* LocalHistoryStore.swift */,
@@ -383,6 +386,7 @@
 				AA0200000000000000000035 /* DeviceDisplayText.swift in Sources */,
 				AA0200000000000000000038 /* AppUpdateController.swift in Sources */,
 				AA0200000000000000000039 /* PrivacyAnalytics.swift in Sources */,
+				AA0200000000000000000042 /* PeerHeartbeatPolicy.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

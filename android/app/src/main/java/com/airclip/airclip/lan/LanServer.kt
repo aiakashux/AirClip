@@ -140,7 +140,8 @@ object LanServer {
             val peerAirclipId = msg["airclip_id"]    ?: return reject(conn, "missing airclip_id")
             val peerPubKey = msg["public_key"] ?: return reject(conn, "missing public_key")
 
-            val isTrusted = PeerManager.isTrusted(peerAirclipId, peerId)
+            val isTrusted = PeerManager.isTrusted(peerAirclipId, peerId) &&
+                matchesPairedKey(AirclipIdentity.pairedDevices[peerId]?.publicKey, peerPubKey)
             if (!PairingCompletionPolicy.shouldAcceptAuth(isTrusted, PairingSession.current != null)) {
                 Log.w(TAG, "Auth rejected: untrusted peer ${peerId.take(8)}")
                 conn.close()
@@ -312,7 +313,7 @@ object LanServer {
                         conn.send(gson.toJson(ack))
                     }
                     "heartbeat_ack" -> {
-                        PeerManager.markPeerSeen(fromId, msg["ssid"])
+                        PeerManager.markPeerHeartbeatAck(fromId, msg["ssid"])
                     }
                     "app_activity" -> {
                         val ts = msg["ts"]?.toLongOrNull() ?: System.currentTimeMillis()

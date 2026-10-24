@@ -87,7 +87,7 @@
         </provider>
 
         <!-- Home-screen widget -->
-        <receiver android:name=".widget.AirclipWidget" android:exported="true">
+        <receiver android:name=".widget.AirclipWidget" android:exported="false">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
                 <action android:name="com.airclip.airclip.WIDGET_PASTE" />

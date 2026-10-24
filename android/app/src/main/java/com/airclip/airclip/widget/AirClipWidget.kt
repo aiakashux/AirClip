@@ -72,7 +72,7 @@ class AirclipWidget : AppWidgetProvider() {
         // Dot colours matching Airclip's design tokens
         private val COLOR_GREEN  = Color.parseColor("#59D499")
         private val COLOR_BLUE   = Color.parseColor("#56C2FF")
-        private val COLOR_ACCENT = Color.parseColor("#6740BF")
+        private val COLOR_ACCENT = Color.parseColor("#A59DFF")
         private val COLOR_GREY   = Color.parseColor("#848484")
         private val COLOR_YELLOW = Color.parseColor("#FFC531")
 

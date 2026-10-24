@@ -226,12 +226,48 @@ enum ClipboardSchemaV3: VersionedSchema {
             ClipType(rawValue: kindRaw) ?? ClipType.detect(text)
         }
 
+        // Image attachments still use the file transfer pipeline, but belong
+        // in the Images filter and should be presented as images in metadata.
+        var displayType: ClipType {
+            fileMetadata?.isImage == true ? .image : clipType
+        }
+
         var fileMetadata: FileClipMetadata? {
             fileMetadataData.flatMap { try? JSONDecoder().decode(FileClipMetadata.self, from: $0) }
         }
 
         var clipboardPacket: ClipboardPacket {
             ClipboardPacket(kind: clipType.clipboardKind, text: text, imageData: imageData, file: fileMetadata)
+        }
+
+        func hasSameContent(as packet: ClipboardPacket, imageData packetImageData: Data?) -> Bool {
+            guard clipType.clipboardKind == packet.kind else { return false }
+            switch packet.kind {
+            case .image:
+                return imageData == packetImageData
+            case .file:
+                if let fileMetadata, let file = packet.file {
+                    return fileMetadata.hasSameContent(as: file)
+                }
+                return text == packet.text
+            default:
+                return text == packet.text
+            }
+        }
+
+        func hasSameContent(as other: ClipboardItem) -> Bool {
+            guard clipType.clipboardKind == other.clipType.clipboardKind else { return false }
+            switch clipType.clipboardKind {
+            case .image:
+                return imageData == other.imageData
+            case .file:
+                if let fileMetadata, let otherMetadata = other.fileMetadata {
+                    return fileMetadata.hasSameContent(as: otherMetadata)
+                }
+                return text == other.text
+            default:
+                return text == other.text
+            }
         }
     }
 }
@@ -363,6 +399,19 @@ final class LocalHistoryStore {
         let resolvedID = UUID(uuidString: messageId)
         let matches = matchingItems(for: packet, id: resolvedID, in: ctx)
         if let existing = matches.max(by: { $0.receivedAt < $1.receivedAt }) {
+            // Reconnecting peers resend their entire history. An identical clip
+            // must not trigger a SwiftData save and refetch every visible list.
+            if matches.count == 1,
+               existing.id == resolvedID,
+               abs(existing.receivedAt.timeIntervalSince(receivedAt)) < 0.001,
+               existing.fromDeviceId == fromDeviceId,
+               existing.hasSameContent(
+                   as: packet,
+                   imageData: packet.kind == .image ? packet.imageData : nil
+               ),
+               existing.isLocal == (fromDeviceId == AirclipIdentity.shared.deviceId) {
+                return
+            }
             _ = promote(
                 existing,
                 with: packet,
@@ -462,8 +511,9 @@ final class LocalHistoryStore {
     ) -> [ClipboardItem] {
         let kind = packet.kind.rawValue
         let descriptor = FetchDescriptor<ClipboardItem>(predicate: #Predicate { $0.kindRaw == kind })
+        let packetImageData = packet.kind == .image ? packet.imageData : nil
         return (try? ctx.fetch(descriptor))?.filter { item in
-            item.id == id || item.clipboardPacket.hasSameContent(as: packet)
+            item.id == id || item.hasSameContent(as: packet, imageData: packetImageData)
         } ?? []
     }
 
@@ -476,7 +526,7 @@ final class LocalHistoryStore {
         var canonical: [ClipboardItem] = []
         for item in items {
             if let existing = canonical.first(where: {
-                $0.id == item.id || $0.clipboardPacket.hasSameContent(as: item.clipboardPacket)
+                $0.id == item.id || $0.hasSameContent(as: item)
             }) {
                 absorbStoredDetails(from: item, into: existing)
                 ctx.delete(item)
@@ -531,14 +581,15 @@ final class LocalHistoryStore {
 
     // Keep at most 500 items by deleting oldest unsaved clips first. Saved clips are protected.
     private func evictOldItems(ctx: ModelContext) {
-        let descriptor = FetchDescriptor<ClipboardItem>(
+        let countDescriptor = FetchDescriptor<ClipboardItem>()
+        guard let count = try? ctx.fetchCount(countDescriptor), count > Self.maxItems else { return }
+
+        var descriptor = FetchDescriptor<ClipboardItem>(
+            predicate: #Predicate { !$0.isSaved },
             sortBy: [SortDescriptor(\.receivedAt, order: .forward)]
         )
-        guard let all = try? ctx.fetch(descriptor), all.count > Self.maxItems else { return }
-        var remainingOverflow = all.count - Self.maxItems
-        for item in all where !item.isSaved && remainingOverflow > 0 {
-            ctx.delete(item)
-            remainingOverflow -= 1
-        }
+        descriptor.fetchLimit = count - Self.maxItems
+        guard let oldestUnsaved = try? ctx.fetch(descriptor) else { return }
+        oldestUnsaved.forEach { ctx.delete($0) }
     }
 }

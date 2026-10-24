@@ -15,7 +15,7 @@ func isTrustedPeer(
 ///
 /// Trust model: a peer is trusted if its airclip_id matches ours and its device_id
 /// is still in the local paired-device registry.
-/// Public keys are exchanged in the auth handshake and stored on the PeerConnection itself.
+/// Reconnect keys must match the pairing record. This pin does not prove private-key possession.
 @MainActor
 final class PeerManager: ObservableObject {
     static let shared = PeerManager()
@@ -68,12 +68,14 @@ final class PeerManager: ObservableObject {
 
     func registerPeer(_ peer: PeerConnection) {
         guard let deviceId = peer.deviceId else { return }
-        guard AirclipIdentity.shared.pairedDevices[deviceId] != nil else {
+        guard let key = peer.publicKey, !key.isEmpty,
+              AirclipIdentity.shared.pairedDevices[deviceId]?.publicKey == key else {
             peer.close()
             return
         }
         pending.removeValue(forKey: peer.id)
         pendingHints.removeValue(forKey: peer.id)
+        peer.resetHeartbeatLiveness()
 
         let device = AirclipIdentity.shared.pairedDevices[deviceId]
 
@@ -175,9 +177,23 @@ final class PeerManager: ObservableObject {
     }
 
     private func sendHeartbeats() {
-        for peer in peers.values {
-            peer.sendHeartbeat()
+        let now = ProcessInfo.processInfo.systemUptime
+        for peer in Array(peers.values) {
+            if PeerHeartbeatPolicy.hasTimedOut(lastAckAt: peer.lastHeartbeatAckAt, now: now) {
+                peer.close()
+            } else {
+                peer.sendHeartbeat()
+            }
         }
+    }
+
+    /// Refresh LAN discovery without dropping peer sockets that are still healthy.
+    func refreshDiscovery() {
+        guard AirclipIdentity.shared.isPaired,
+              SyncModeStore.shared.mode.keepsLanServiceRunning else { return }
+        LanServer.shared.start()
+        LanBrowser.shared.stop()
+        LanBrowser.shared.start()
     }
 
     // MARK: - Broadcast

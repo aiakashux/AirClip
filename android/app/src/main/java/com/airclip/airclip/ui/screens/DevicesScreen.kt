@@ -702,7 +702,7 @@ private fun DeviceFeedRow(
                 fontSize = 16.sp,
                 lineHeight = 24.sp,
                 fontWeight = FontWeight.Medium,
-                color = c.textPrimary.copy(alpha = contentAlpha),
+                color = c.textPrimary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -712,7 +712,7 @@ private fun DeviceFeedRow(
                 fontSize = 14.sp,
                 lineHeight = 16.sp,
                 fontWeight = FontWeight.Normal,
-                color = c.textSecondary.copy(alpha = contentAlpha),
+                color = c.textSecondary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             ) }

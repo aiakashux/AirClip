@@ -22,6 +22,7 @@ final class PeerConnection {
 
     private let connection: NWConnection
     private var isClosed = false
+    private(set) var lastHeartbeatAckAt = ProcessInfo.processInfo.systemUptime
 
     init(connection: NWConnection, isIncoming: Bool) {
         self.connection = connection
@@ -112,7 +113,9 @@ final class PeerConnection {
             let peerPubKey = json["public_key"] as? String
         else { close(); return }
 
-        guard PeerManager.shared.isTrusted(airClipId: peerAirclipId, deviceId: peerId) else {
+        guard PeerManager.shared.isTrusted(airClipId: peerAirclipId, deviceId: peerId),
+              !peerPubKey.isEmpty,
+              AirclipIdentity.shared.pairedDevices[peerId]?.publicKey == peerPubKey else {
             close()
             return
         }
@@ -160,7 +163,8 @@ final class PeerConnection {
         guard
             let peerId = json["device_id"]  as? String,
             let peerPk = json["public_key"] as? String,
-            AirclipIdentity.shared.pairedDevices[peerId] != nil
+            !peerPk.isEmpty,
+            AirclipIdentity.shared.pairedDevices[peerId]?.publicKey == peerPk
         else { close(); return }
         deviceId  = peerId
         publicKey = peerPk
@@ -361,7 +365,12 @@ final class PeerConnection {
 
     private func handleHeartbeatAck(_ json: [String: Any]) {
         guard let fromId = deviceId else { return }
+        lastHeartbeatAckAt = ProcessInfo.processInfo.systemUptime
         AirclipIdentity.shared.touchDevice(fromId, wifiNetwork: json["ssid"] as? String)
+    }
+
+    func resetHeartbeatLiveness() {
+        lastHeartbeatAckAt = ProcessInfo.processInfo.systemUptime
     }
 
     private func handleDeviceRemoved(_ json: [String: Any]) {

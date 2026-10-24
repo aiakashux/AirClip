@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.os.Bundle
 import android.view.View
+import androidx.core.view.WindowCompat
 import android.widget.ImageButton
 import com.airclip.airclip.R
 import com.journeyapps.barcodescanner.CaptureActivity
@@ -24,6 +25,11 @@ class AirclipCaptureActivity : CaptureActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         super.onCreate(savedInstanceState)
+        // Camera chrome is dark regardless of the app appearance.
+        WindowCompat.getInsetsController(window, window.decorView).apply {
+            isAppearanceLightStatusBars = false
+            isAppearanceLightNavigationBars = false
+        }
 
         findViewById<ImageButton>(R.id.airclip_scanner_back_button)?.setOnClickListener {
             finish()

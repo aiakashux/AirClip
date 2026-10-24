@@ -1,8 +1,9 @@
 import Foundation
 import AppKit
+import Network
 
 struct FileTransferProgress: Equatable {
-    enum Phase: Equatable { case downloading, downloaded, failed(String) }
+    enum Phase: Equatable { case checking, downloading, downloaded, failed(String) }
     var phase: Phase
     var received: Int64
     var total: Int64
@@ -11,6 +12,28 @@ struct FileTransferProgress: Equatable {
 
 private let filePreviewMaxBytes: Int64 = 3 * 1024 * 1024
 private let fileAutoDownloadMaxBytes: Int64 = 3 * 1024 * 1024
+
+/// Serializes large incoming decryptions on a background executor instead of
+/// flooding the main actor with image-sized base64 work during reconnects.
+private actor InboundClipDecryptor {
+    static let shared = InboundClipDecryptor()
+
+    func decrypt(
+        ciphertextBase64: String,
+        publicKey: [UInt8],
+        secretKey: [UInt8]
+    ) throws -> String {
+        let data = try CryptoManager.decryptHistoryData(
+            ciphertextBase64: ciphertextBase64,
+            publicKey: publicKey,
+            secretKey: secretKey
+        )
+        guard let plaintext = String(data: data, encoding: .utf8) else {
+            throw CryptoError.decryptionFailed
+        }
+        return plaintext
+    }
+}
 
 @MainActor
 final class DownloadLocationStore: ObservableObject {
@@ -68,6 +91,7 @@ final class DownloadLocationStore: ObservableObject {
     }
 
     func existingURL(for file: FileClipMetadata) -> URL? {
+        guard file.isSafeForTransfer else { return nil }
         if let bookmark = stringDictionary(forKey: fileBookmarksKey)[file.id]
             .flatMap({ Data(base64Encoded: $0) }),
            let url = Self.restoreURL(from: bookmark),
@@ -97,6 +121,7 @@ final class DownloadLocationStore: ObservableObject {
     }
 
     func destinationURL(for file: FileClipMetadata) -> URL? {
+        guard file.isSafeForTransfer else { return nil }
         var paths = stringDictionary(forKey: filePathsKey)
         if let path = paths[file.id] {
             activateTransferFolderScope(for: file.id)
@@ -171,6 +196,7 @@ final class DownloadLocationStore: ObservableObject {
     }
 
     private func legacyURL(for file: FileClipMetadata) -> URL? {
+        guard file.isSafeForTransfer else { return nil }
         guard let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else { return nil }
         let ext = URL(fileURLWithPath: file.name).pathExtension
         return support
@@ -218,9 +244,14 @@ final class SyncEngine: ObservableObject {
     @Published var isConnected = false
     @Published private(set) var fileTransfers: [String: FileTransferProgress] = [:]
 
+    private var fileTransferTimeouts: [String: Task<Void, Never>] = [:]
+
     weak var clipboardMonitor: ClipboardMonitor?
 
     private var peerCountObserver: Any?
+    private let pathMonitor = NWPathMonitor()
+    private var lastPathSatisfied: Bool?
+    private var pathRecoveryTask: Task<Void, Never>?
 
     private init() {
         peerCountObserver = NotificationCenter.default.addObserver(
@@ -230,6 +261,26 @@ final class SyncEngine: ObservableObject {
                 self?.isConnected = (note.object as? Int ?? 0) > 0
             }
         }
+        pathMonitor.pathUpdateHandler = { [weak self] path in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                let hadPathUpdate = self.lastPathSatisfied != nil
+                self.lastPathSatisfied = path.status == .satisfied
+                guard hadPathUpdate,
+                      path.status == .satisfied,
+                      AirclipIdentity.shared.isPaired,
+                      SyncModeStore.shared.mode.keepsLanServiceRunning else { return }
+                self.pathRecoveryTask?.cancel()
+                self.pathRecoveryTask = Task { @MainActor [weak self] in
+                    try? await Task.sleep(for: .seconds(2))
+                    guard !Task.isCancelled,
+                          AirclipIdentity.shared.isPaired,
+                          SyncModeStore.shared.mode.keepsLanServiceRunning else { return }
+                    self?.refreshDiscovery()
+                }
+            }
+        }
+        pathMonitor.start(queue: DispatchQueue(label: "com.airclip.network-path"))
     }
 
     // MARK: - Connection lifecycle
@@ -244,6 +295,8 @@ final class SyncEngine: ObservableObject {
     }
 
     func disconnect() {
+        pathRecoveryTask?.cancel()
+        pathRecoveryTask = nil
         LanServer.shared.stop()
         LanBrowser.shared.stop()
         PeerManager.shared.disconnectAll()
@@ -257,6 +310,10 @@ final class SyncEngine: ObservableObject {
 
         disconnect()
         connect()
+    }
+
+    private func refreshDiscovery() {
+        PeerManager.shared.refreshDiscovery()
     }
 
     // MARK: - Outbound
@@ -306,10 +363,11 @@ final class SyncEngine: ObservableObject {
     ) async {
         guard SyncModeStore.shared.mode.keepsLanServiceRunning else { return }
         do {
-            let plaintext = try CryptoManager.shared.decrypt(
+            let keys = try CryptoManager.shared.historyDecryptionKeys()
+            let plaintext = try await InboundClipDecryptor.shared.decrypt(
                 ciphertextBase64: ciphertextB64,
-                nonceBase64: nonceB64,
-                senderPublicKeyBase64: ""
+                publicKey: keys.publicKey,
+                secretKey: keys.secretKey
             )
 
             let packet = ClipboardPacket.decode(from: plaintext)
@@ -351,10 +409,11 @@ final class SyncEngine: ObservableObject {
     ) async {
         guard SyncModeStore.shared.mode.keepsLanServiceRunning else { return }
         do {
-            let plaintext = try CryptoManager.shared.decrypt(
+            let keys = try CryptoManager.shared.historyDecryptionKeys()
+            let plaintext = try await InboundClipDecryptor.shared.decrypt(
                 ciphertextBase64: ciphertextB64,
-                nonceBase64: nonceB64,
-                senderPublicKeyBase64: ""
+                publicKey: keys.publicKey,
+                secretKey: keys.secretKey
             )
 
             let packet = ClipboardPacket.decode(from: plaintext)
@@ -424,6 +483,7 @@ final class SyncEngine: ObservableObject {
     }
 
     private static func previewURL(for file: FileClipMetadata) -> URL? {
+        guard file.isSafeForTransfer else { return nil }
         guard let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first else { return nil }
         let directory = base.appendingPathComponent("AirclipFilePreviews", isDirectory: true)
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -456,8 +516,9 @@ final class SyncEngine: ObservableObject {
             offset = 0
         }
         fileTransfers[file.id] = FileTransferProgress(
-            phase: .downloading, received: offset, total: file.size, temporaryPreview: true
+            phase: .checking, received: offset, total: file.size, temporaryPreview: true
         )
+        armFileTransferTimeout(for: file.id, sourceDeviceId: item.fromDeviceId)
         peer.sendFileMessage([
             "type": "file_request", "file_id": file.id, "offset": "\(offset)",
             "preview_limit": "\(file.size)", "preview_only": "true"
@@ -466,6 +527,7 @@ final class SyncEngine: ObservableObject {
 
     func clearPreviewFile(for item: ClipboardItem) {
         guard let file = item.fileMetadata else { return }
+        cancelFileTransferTimeout(for: file.id)
         if !item.isLocal, let url = Self.previewURL(for: file) {
             try? FileManager.default.removeItem(at: url)
             try? FileManager.default.removeItem(at: url.appendingPathExtension("part"))
@@ -488,14 +550,26 @@ final class SyncEngine: ObservableObject {
     }
 
     func downloadFile(_ item: ClipboardItem) {
-        guard let file = item.fileMetadata,
-              item.fromDeviceId != AirclipIdentity.shared.deviceId,
-              let peer = PeerManager.shared.peers[item.fromDeviceId],
-              let destination = Self.downloadDestinationURL(for: file)
-        else {
-            if let file = item.fileMetadata {
-                fileTransfers[file.id] = FileTransferProgress(phase: .failed("Source device is offline"), received: 0, total: file.size)
-            }
+        guard let file = item.fileMetadata else { return }
+        let sourceName = AirclipIdentity.shared.pairedDevices[item.fromDeviceId]?.deviceName ?? "Source device"
+        guard item.fromDeviceId != AirclipIdentity.shared.deviceId else {
+            fileTransfers[file.id] = FileTransferProgress(
+                phase: .failed("Original file is no longer available on this Mac"),
+                received: 0,
+                total: file.size
+            )
+            return
+        }
+        guard let peer = PeerManager.shared.peers[item.fromDeviceId] else {
+            fileTransfers[file.id] = FileTransferProgress(
+                phase: .failed("\(sourceName) is offline"), received: 0, total: file.size
+            )
+            return
+        }
+        guard let destination = Self.downloadDestinationURL(for: file) else {
+            fileTransfers[file.id] = FileTransferProgress(
+                phase: .failed("Download location is unavailable"), received: 0, total: file.size
+            )
             return
         }
         let partial = destination.appendingPathExtension("part")
@@ -504,8 +578,35 @@ final class SyncEngine: ObservableObject {
             try? FileManager.default.removeItem(at: partial)
             offset = 0
         }
-        fileTransfers[file.id] = FileTransferProgress(phase: .downloading, received: offset, total: file.size)
+        fileTransfers[file.id] = FileTransferProgress(phase: .checking, received: offset, total: file.size)
+        armFileTransferTimeout(for: file.id, sourceDeviceId: item.fromDeviceId)
         peer.sendFileMessage(["type": "file_request", "file_id": file.id, "offset": "\(offset)"])
+    }
+
+    private func armFileTransferTimeout(for fileId: String, sourceDeviceId: String) {
+        cancelFileTransferTimeout(for: fileId)
+        let sourceName = AirclipIdentity.shared.pairedDevices[sourceDeviceId]?.deviceName ?? "Source device"
+        fileTransferTimeouts[fileId] = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(8))
+            guard !Task.isCancelled, let self,
+                  var transfer = self.fileTransfers[fileId]
+            else { return }
+            switch transfer.phase {
+            case .checking:
+                transfer.phase = .failed("No response from \(sourceName). Try again.")
+            case .downloading:
+                transfer.phase = .failed("Download from \(sourceName) was interrupted. Try again.")
+            case .downloaded, .failed(_):
+                self.fileTransferTimeouts.removeValue(forKey: fileId)
+                return
+            }
+            self.fileTransfers[fileId] = transfer
+            self.fileTransferTimeouts.removeValue(forKey: fileId)
+        }
+    }
+
+    private func cancelFileTransferTimeout(for fileId: String) {
+        fileTransferTimeouts.removeValue(forKey: fileId)?.cancel()
     }
 
     func handleFileRequest(_ json: [String: Any], peer: PeerConnection) {
@@ -560,7 +661,8 @@ final class SyncEngine: ObservableObject {
 
     func handleFileChunk(_ json: [String: Any], peer: PeerConnection) {
         guard let id = json["file_id"] as? String,
-              var state = fileTransfers[id], state.phase == .downloading,
+              var state = fileTransfers[id],
+              state.phase == .checking || state.phase == .downloading,
               let item = LocalHistoryStore.shared.fileItem(id: id),
               item.fromDeviceId == peer.deviceId,
               let file = item.fileMetadata
@@ -570,13 +672,20 @@ final class SyncEngine: ObservableObject {
               let destination = previewOnly ? Self.previewURL(for: file) : Self.downloadDestinationURL(for: file)
         else { return }
         if let error = json["error"] as? String {
-            state.phase = .failed(error)
+            cancelFileTransferTimeout(for: id)
+            if error == "File unavailable" {
+                let sourceName = AirclipIdentity.shared.pairedDevices[item.fromDeviceId]?.deviceName ?? "source device"
+                state.phase = .failed("File unavailable on \(sourceName)")
+            } else {
+                state.phase = .failed(error)
+            }
             fileTransfers[id] = state
             return
         }
         guard let offset = (json["offset"] as? String).flatMap(Int64.init), offset == state.received,
               let ciphertext = json["ciphertext"] as? String
         else {
+            cancelFileTransferTimeout(for: id)
             state.phase = .failed("Transfer interrupted")
             fileTransfers[id] = state
             return
@@ -584,7 +693,8 @@ final class SyncEngine: ObservableObject {
         let chunk = ciphertext.isEmpty && file.size == 0
             ? Data()
             : (try? CryptoManager.shared.decryptData(ciphertextBase64: ciphertext))
-        guard let chunk, offset + Int64(chunk.count) <= file.size else {
+        guard let chunk, offset >= 0, offset <= file.size, Int64(chunk.count) <= file.size - offset else {
+            cancelFileTransferTimeout(for: id)
             state.phase = .failed("Transfer interrupted")
             fileTransfers[id] = state
             return
@@ -599,6 +709,7 @@ final class SyncEngine: ObservableObject {
             try handle.seek(toOffset: UInt64(offset))
             try handle.write(contentsOf: chunk)
             state.received += Int64(chunk.count)
+            state.phase = .downloading
             if json["done"] as? Bool == true || json["done"] as? String == "true" {
                 guard state.received == file.size else { throw CocoaError(.fileReadCorruptFile) }
                 if FileManager.default.fileExists(atPath: destination.path) { try FileManager.default.removeItem(at: destination) }
@@ -608,15 +719,18 @@ final class SyncEngine: ObservableObject {
                 }
                 state.phase = .downloaded
                 state.temporaryPreview = previewOnly
+                cancelFileTransferTimeout(for: id)
             } else {
                 peer.sendFileMessage([
                     "type": "file_request", "file_id": id, "offset": "\(state.received)",
                     "preview_limit": previewOnly ? "\(file.size)" : "",
                     "preview_only": String(previewOnly)
                 ].filter { !$0.value.isEmpty })
+                armFileTransferTimeout(for: id, sourceDeviceId: item.fromDeviceId)
             }
             fileTransfers[id] = state
         } catch {
+            cancelFileTransferTimeout(for: id)
             state.phase = .failed("Could not save file")
             fileTransfers[id] = state
         }

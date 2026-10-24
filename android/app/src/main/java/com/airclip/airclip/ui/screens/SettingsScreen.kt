@@ -325,7 +325,7 @@ private fun AirclipDialogButton(
     ) {
         Text(
             text = label,
-            color = if (destructive) Color.White.copy(alpha = 0.96f) else c.textSecondary,
+            color = if (destructive) MaterialTheme.colorScheme.onError else c.textSecondary,
             fontWeight = FontWeight.SemiBold,
             fontSize = 15.sp,
         )

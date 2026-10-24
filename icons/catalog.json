@@ -3,6 +3,8 @@
   "icons": [
     {"id":"home","variant":"stroke","label":"Home","category":"Navigation","source":"svg/home-stroke.svg","mac":"UnifiedHomeStroke","android":{"kind":"drawable","name":"ic_nav_home_06_stroke"}},
     {"id":"home","variant":"solid","label":"Home selected","category":"Navigation","source":"svg/home-solid.svg","mac":"UnifiedHomeSolid","android":{"kind":"drawable","name":"ic_nav_home_06_solid"}},
+    {"id":"saved","variant":"stroke","label":"Saved","category":"Navigation","source":"svg/saved-stroke.svg","mac":"UnifiedBookmarkStroke","android":{"kind":"drawable","name":"ic_nav_bookmark_stroke"}},
+    {"id":"saved","variant":"solid","label":"Saved selected","category":"Navigation","source":"svg/saved-solid.svg","mac":"UnifiedBookmarkSolid","android":{"kind":"drawable","name":"ic_nav_bookmark_solid"}},
     {"id":"devices","variant":"stroke","label":"Devices","category":"Navigation","source":"svg/devices-stroke.svg","mac":"UnifiedDevicesStroke","android":{"kind":"drawable","name":"ic_nav_devices_sync_stroke"}},
     {"id":"devices","variant":"solid","label":"Devices selected","category":"Navigation","source":"svg/devices-solid.svg","mac":"UnifiedDevicesSolid","android":{"kind":"drawable","name":"ic_nav_devices_sync_solid"}},
     {"id":"settings","variant":"stroke","label":"Settings","category":"Navigation","source":"svg/settings-stroke.svg","mac":"UnifiedSettingsStroke","android":{"kind":"drawable","name":"ic_nav_settings_01_stroke"}},

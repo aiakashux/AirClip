@@ -11,6 +11,7 @@ import android.media.MediaMetadataRetriever
 import android.util.Size
 import android.net.Uri
 import android.os.Bundle
+import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.provider.OpenableColumns
 import android.util.Base64
@@ -153,10 +154,13 @@ class AirclipShareActivity : Activity() {
             runCatching { MediaMetadataRetriever().apply { setDataSource(destination.absolutePath) } }.getOrNull()
         } else null
         val sharedName = displayName(uri)
-        val thumbnail = runCatching {
-            val bitmap = contentResolver.loadThumbnail(uri, Size(320, 320), null)
-            encodeThumbnail(bitmap)
-        }.getOrNull() ?: imageThumbnail(destination, mimeType, sharedName)
+        val systemThumbnail = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            runCatching {
+                val bitmap = contentResolver.loadThumbnail(uri, Size(320, 320), null)
+                encodeThumbnail(bitmap)
+            }.getOrNull()
+        } else null
+        val thumbnail = systemThumbnail ?: imageThumbnail(destination, mimeType, sharedName)
             ?: pdfThumbnail(destination, mimeType, sharedName) ?: runCatching {
             val bitmap = media?.embeddedPicture?.let { BitmapFactory.decodeByteArray(it, 0, it.size) }
                 ?: if (mimeType.startsWith("video/")) media?.getFrameAtTime(0) else null

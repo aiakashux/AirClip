@@ -1,6 +1,8 @@
 package com.airclip.airclip
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
+import com.airclip.airclip.ui.theme.buildDarkM3
 import com.airclip.airclip.ui.theme.darkAirclipColors
 import com.airclip.airclip.ui.theme.lightAirclipColors
 import org.junit.Assert.assertTrue
@@ -14,6 +16,7 @@ class ColorContrastTest {
                 for (foreground in listOf(
                     colors.textPrimary,
                     colors.textSecondary,
+                    colors.textTertiary,
                     colors.accent,
                     colors.green,
                     colors.blue,
@@ -24,6 +27,31 @@ class ColorContrastTest {
                 }
             }
         }
+    }
+
+    @Test
+    fun darkMetadataRemainsReadableInInteractiveStates() {
+        val c = darkAirclipColors()
+        val surfaces = listOf(c.bgBase, c.bgElevated, c.bgFloating)
+        for (surface in surfaces) {
+            for (fill in listOf(c.activeFill, c.selectionFill)) {
+                val background = fill.compositeOver(surface)
+                for (text in listOf(c.textPrimary, c.textSecondary, c.textTertiary)) {
+                    assertTrue("Interactive contrast ${contrast(text, background)}", contrast(text, background) >= 4.5)
+                }
+            }
+        }
+    }
+
+    @Test
+    fun destructiveButtonTextRemainsReadableWhenPressed() {
+        val c = darkAirclipColors()
+        val m3 = buildDarkM3()
+        for (alpha in listOf(1f, 0.82f)) {
+            val fill = c.destructive.copy(alpha = alpha).compositeOver(c.bgFloating)
+            assertTrue(contrast(m3.onError, fill) >= 4.5)
+        }
+        assertTrue(contrast(m3.outline, c.bgFloating) >= 3.0)
     }
 
     private fun contrast(a: Color, b: Color): Double {

@@ -91,12 +91,13 @@ class KeyManager(private val app: Application) {
         RedactingLogger.info("KeyManager: keypair cleared")
     }
 
+    /** Base64 (NO_WRAP) encoded public key, or null while the keypair is unavailable. */
+    fun publicKeyBase64OrNull(): String? =
+        _publicKey?.let { Base64.encodeToString(it, Base64.NO_WRAP) }
+
     /** Base64 (NO_WRAP) encoded public key — safe to send to server. */
     fun getPublicKeyBase64(): String =
-        Base64.encodeToString(
-            _publicKey ?: error("KeyManager: keypair not initialised"),
-            Base64.NO_WRAP
-        )
+        publicKeyBase64OrNull() ?: error("KeyManager: keypair not initialised")
 
     /** Raw public key bytes. */
     fun getPublicKeyBytes(): ByteArray =

@@ -3,6 +3,10 @@ package com.airclip.airclip
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.Network
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import com.airclip.airclip.crypto.KeyManager
 import com.airclip.airclip.crypto.SealedBox
@@ -70,6 +74,8 @@ object SyncEngine {
     private var peerCountJob: Job? = null
     private var heartbeatJob: Job? = null
     private var discoveryRefreshJob: Job? = null
+    private var networkRefreshJob: Job? = null
+    private var networkCallback: ConnectivityManager.NetworkCallback? = null
     private var localActivityMs: Long = 0L
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
@@ -154,6 +160,7 @@ object SyncEngine {
             if (!lifecycleGate.runIfConnectRequested { LanBrowser.start(ctx, client, km) }) {
                 return@launch
             }
+            registerNetworkCallback(ctx)
 
             peerCountJob?.cancel()
             peerCountJob = scope.launch {
@@ -198,6 +205,9 @@ object SyncEngine {
         heartbeatJob = null
         discoveryRefreshJob?.cancel()
         discoveryRefreshJob = null
+        networkRefreshJob?.cancel()
+        networkRefreshJob = null
+        appContext?.let(::unregisterNetworkCallback)
         appContext?.let { LanBrowser.stop(it) }
         LanServer.stop()
         PeerManager.disconnectAll()
@@ -212,6 +222,48 @@ object SyncEngine {
         val km = keyManager ?: return
         discoveryRefreshJob?.cancel()
         discoveryRefreshJob = scope.launch { LanBrowser.start(ctx, client, km) }
+    }
+
+    private fun registerNetworkCallback(context: Context) {
+        if (networkCallback != null) return
+        val manager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return
+        var lastNetwork: Network? = manager.activeNetwork
+        var sawNetworkLoss = false
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                val changed = (lastNetwork != null && lastNetwork != network) || sawNetworkLoss
+                lastNetwork = network
+                sawNetworkLoss = false
+                if (changed) scheduleNetworkRefresh()
+            }
+
+            override fun onLost(network: Network) {
+                if (lastNetwork == network) {
+                    lastNetwork = null
+                    sawNetworkLoss = true
+                }
+            }
+        }
+        runCatching {
+            manager.registerDefaultNetworkCallback(callback, Handler(Looper.getMainLooper()))
+            networkCallback = callback
+        }.onFailure { Log.w(TAG, "Network-change monitor unavailable", it) }
+    }
+
+    private fun unregisterNetworkCallback(context: Context) {
+        val callback = networkCallback ?: return
+        val manager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+        runCatching { manager?.unregisterNetworkCallback(callback) }
+        networkCallback = null
+    }
+
+    private fun scheduleNetworkRefresh() {
+        networkRefreshJob?.cancel()
+        networkRefreshJob = scope.launch {
+            delay(2_000)
+            com.airclip.airclip.pairing.ResolvedHostCache.clear()
+            refreshConnections()
+        }
     }
 
     fun reconnect() {
@@ -382,7 +434,7 @@ object SyncEngine {
     }
 
     fun availableFile(record: ClipItemRecord): File? {
-        val file = record.file ?: return null
+        val file = record.file?.takeIf { it.isSafeForTransfer() } ?: return null
         val source = record.sourceFilePath?.let(::File)
         if (source?.isFile == true) return source
         val destination = downloadedFile(file)
@@ -404,14 +456,14 @@ object SyncEngine {
     }
 
     fun availablePreviewFile(record: ClipItemRecord): File? {
-        val file = record.file ?: return null
+        val file = record.file?.takeIf { it.isSafeForTransfer() } ?: return null
         if (file.size > FILE_PREVIEW_MAX_BYTES) return null
         if (record.sourceFilePath != null) return File(record.sourceFilePath).takeIf { it.isFile }
         return previewFile(file).takeIf { it.isFile && it.length() == file.size }
     }
 
     fun previewFile(record: ClipItemRecord) {
-        val file = record.file ?: return
+        val file = record.file?.takeIf { it.isSafeForTransfer() } ?: return
         if (file.size > FILE_PREVIEW_MAX_BYTES || record.sourceFilePath != null) return
         val peer = PeerManager.connectedPeersSnapshot().firstOrNull { it.deviceId == record.fromDeviceId }
         if (peer == null) {
@@ -431,7 +483,7 @@ object SyncEngine {
     }
 
     fun clearPreviewFile(record: ClipItemRecord) {
-        val file = record.file ?: return
+        val file = record.file?.takeIf { it.isSafeForTransfer() } ?: return
         if (record.sourceFilePath == null) {
             val destination = previewFile(file)
             destination.delete()
@@ -443,7 +495,7 @@ object SyncEngine {
     }
 
     fun downloadFile(record: ClipItemRecord) {
-        val file = record.file ?: return
+        val file = record.file?.takeIf { it.isSafeForTransfer() } ?: return
         val peer = PeerManager.connectedPeersSnapshot().firstOrNull { it.deviceId == record.fromDeviceId }
         if (peer == null) {
             _fileTransfers.value += file.id to FileTransferStatus("failed", 0, file.size, "Source device is offline")
@@ -513,7 +565,7 @@ object SyncEngine {
         val state = _fileTransfers.value[id] ?: return
         if (state.phase != "downloading") return
         val record = _clipHistory.value.firstOrNull { it.file?.id == id && it.fromDeviceId == deviceId } ?: return
-        val file = record.file ?: return
+        val file = record.file?.takeIf { it.isSafeForTransfer() } ?: return
         val failure = message["error"]
         if (failure != null) {
             _fileTransfers.value += id to state.copy(phase = "failed", error = failure)
@@ -527,7 +579,7 @@ object SyncEngine {
             if (ciphertext.isEmpty() && file.size == 0L) ByteArray(0) else
                 SealedBox.decryptForSelf(ciphertext, km.getPublicKeyBytes(), km.getPrivateKeyBytes())
         }.getOrNull() ?: return
-        if (offset + bytes.size > file.size) return
+        if (offset < 0 || offset > file.size || bytes.size.toLong() > file.size - offset) return
         val previewOnly = message["preview_only"] == "true" || state.temporaryPreview
         if (previewOnly && file.size > FILE_PREVIEW_MAX_BYTES) return
         val destination = if (previewOnly) previewFile(file) else downloadedFile(file)

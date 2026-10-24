@@ -33,6 +33,12 @@ struct FileClipMetadata: Codable, Hashable {
     var artist: String?
     var album: String?
 
+    // IDs are used as cache filenames; never allow peer-controlled path components.
+    var isSafeForTransfer: Bool {
+        size >= 0 && id.range(of: "^[A-Za-z0-9_-]{1,128}$", options: .regularExpression) != nil
+            && !name.isEmpty && !name.contains("\0")
+    }
+
     var iconAssetName: String {
         let ext = (name as NSString).pathExtension.lowercased()
         switch ext {
@@ -109,7 +115,9 @@ struct ClipboardPacket: Codable, Hashable {
     init(kind: ClipboardKind, text: String, imageData: Data? = nil, file: FileClipMetadata? = nil) {
         self.kindRaw = kind.rawValue
         self.text = text
-        let wireImageData = imageData.flatMap(Self.pngData) ?? imageData
+        // Stored and received images are commonly PNG already. Re-encoding them
+        // on the main actor for every history sync blocks scrolling and clicks.
+        let wireImageData = imageData.flatMap { Self.isPNG($0) ? $0 : (Self.pngData(from: $0) ?? $0) }
         self.imageDataBase64 = wireImageData?.base64EncodedString()
         self.file = file
     }
@@ -162,7 +170,10 @@ struct ClipboardPacket: Codable, Hashable {
 
     static func decode(from string: String) -> ClipboardPacket? {
         guard let data = string.data(using: .utf8) else { return nil }
-        return try? JSONDecoder().decode(ClipboardPacket.self, from: data)
+        guard let packet = try? JSONDecoder().decode(ClipboardPacket.self, from: data),
+              packet.file?.isSafeForTransfer != false,
+              packet.kind != .file || packet.file != nil else { return nil }
+        return packet
     }
 
     private static func pngData(from data: Data) -> Data? {
@@ -172,6 +183,10 @@ struct ClipboardPacket: Codable, Hashable {
             let bitmap = NSBitmapImageRep(data: tiff)
         else { return nil }
         return bitmap.representation(using: .png, properties: [:])
+    }
+
+    private static func isPNG(_ data: Data) -> Bool {
+        data.starts(with: [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])
     }
 }
 

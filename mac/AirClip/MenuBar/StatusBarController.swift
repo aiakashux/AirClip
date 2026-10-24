@@ -4,50 +4,48 @@ import SwiftData
 import Combine
 import Carbon
 
-private struct MenuBarConfirmationView: View {
-    let message: String
+private final class MainWindowTitlebarLogo: NSTitlebarAccessoryViewController {
+    override func loadView() {
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 80, height: 36))
+        let logo = NSImageView()
+        logo.image = NSImage(named: "TitlebarLogoWordmark")
+        logo.imageScaling = .scaleProportionallyDown
+        logo.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(logo)
 
-    var body: some View {
-        HStack(spacing: 5) {
-            AirclipIcon(.tick, size: 11)
-                .foregroundColor(.encryptedGreen)
-            Text(message)
-                .font(.airClipCaption)
-                .foregroundColor(.textSecondary)
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 5)
-        .background(
-            Capsule()
-                .fill(Color.bgFloating)
-                .overlay(Capsule().strokeBorder(Color.borderSubtle, lineWidth: 0.5))
-        )
-        .shadow(color: .black.opacity(0.10), radius: 6, x: 0, y: 2)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .allowsHitTesting(false)
+        NSLayoutConstraint.activate([
+            container.widthAnchor.constraint(equalToConstant: 80),
+            container.heightAnchor.constraint(equalToConstant: 36),
+            logo.widthAnchor.constraint(equalToConstant: 63),
+            logo.heightAnchor.constraint(equalToConstant: 16),
+            logo.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -14),
+            logo.centerYAnchor.constraint(equalTo: container.centerYAnchor)
+        ])
+
+        view = container
+        layoutAttribute = .right
     }
+}
+
+private final class MainWindowTitlebarSeparator: NSView {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
 /// Owns the NSStatusItem and a borderless NSPanel that contains the entire app UI.
 @MainActor
 final class StatusBarController: NSObject {
     static let shared = StatusBarController()
-    private static let mainWindowSize = NSSize(width: 860, height: 608)
+    private static let mainWindowSize = NSSize(width: 940, height: 674)
     private static let popoverPanelSize = NSSize(width: 372, height: 560)
-    private static let mainToolbarIdentifier = NSToolbar.Identifier("com.airclip.mainWindowToolbar")
-    private static let sidebarToolbarItemIdentifier = NSToolbarItem.Identifier("com.airclip.sidebarToggle")
 
     private var statusItem: NSStatusItem?
     private var panel: NSPanel?
-    private var confirmationPanel: NSPanel?
-    private var confirmationDismissWorkItem: DispatchWorkItem?
     private var mainWindow: NSWindow?
+    private var menuBarIconShowsUnread = false
     private var eventMonitor: GlobalEventMonitor?
     private var desktopOpenWorkItem: DispatchWorkItem?
     private var activeSpaceObserver: NSObjectProtocol?
     private var unreadObserver: AnyCancellable?
-    private var identityPairingObserver: AnyCancellable?
-    private var authCompletionObserver: NSObjectProtocol?
     private var openHotKey: EventHotKeyRef?
     private var popoverHotKey: EventHotKeyRef?
     private var hotKeyHandler: EventHandlerRef?
@@ -61,10 +59,12 @@ final class StatusBarController: NSObject {
     func setup() {
         // Status bar button
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        let defaultIcon = NSImage(named: "menubar-default")
-        defaultIcon?.isTemplate = true
-        item.button?.image = defaultIcon
-        item.button?.image?.accessibilityDescription = "Airclip"
+        let initiallyUnread = UnreadStore.shared.hasUnread
+        menuBarIconShowsUnread = initiallyUnread
+        let initialIcon = NSImage(named: initiallyUnread ? "menubar-unread" : "menubar-default")
+        initialIcon?.isTemplate = true
+        item.button?.image = initialIcon
+        item.button?.image?.accessibilityDescription = initiallyUnread ? "Airclip – New items" : "Airclip"
         item.button?.action = #selector(togglePanel)
         item.button?.target = self
         item.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
@@ -76,20 +76,8 @@ final class StatusBarController: NSObject {
             .sink { [weak self] _ in self?.updatePopoverHotKeyRegistration() }
 
         unreadObserver = UnreadStore.shared.$hasUnread.sink { [weak self] hasUnread in
-            guard let button = self?.statusItem?.button else { return }
-            let imageName = hasUnread ? "menubar-unread" : "menubar-default"
-            let image = NSImage(named: imageName)
-            image?.isTemplate = true
-            button.image = image
-            button.image?.accessibilityDescription = hasUnread ? "Airclip – New items" : "Airclip"
+            self?.updateMenuBarIcon(hasUnread: hasUnread)
         }
-
-        identityPairingObserver = AirclipIdentity.shared.$isPaired
-            .removeDuplicates()
-            .sink { [weak self] _ in
-                guard let window = self?.mainWindow else { return }
-                self?.syncMainWindowToolbar(for: window)
-            }
 
         // Root SwiftUI view with SwiftData container
         let rootView = RootView()
@@ -142,23 +130,33 @@ final class StatusBarController: NSObject {
             Task { @MainActor in self?.openMainWindow(onDesktopSpace: true) }
         }
 
-        authCompletionObserver = NotificationCenter.default.addObserver(
-            forName: .authDidComplete,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor in
-                guard let window = self?.mainWindow else { return }
-                self?.syncMainWindowToolbar(for: window)
-            }
-        }
-
         // Show onboarding if not yet paired; otherwise start sync.
         if !AirclipIdentity.shared.isPaired {
             openMainWindow()
         } else {
             SyncModeStore.shared.applyRuntimePolicy()
         }
+    }
+
+    private func updateMenuBarIcon(hasUnread: Bool) {
+        guard menuBarIconShowsUnread != hasUnread,
+              let button = statusItem?.button else { return }
+        menuBarIconShowsUnread = hasUnread
+
+        let image = NSImage(named: hasUnread ? "menubar-unread" : "menubar-default")
+        image?.isTemplate = true
+
+        if !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            button.wantsLayer = true
+            let transition = CATransition()
+            transition.type = .fade
+            transition.duration = 0.22
+            transition.timingFunction = CAMediaTimingFunction(controlPoints: 0.25, 0.46, 0.45, 0.94)
+            button.layer?.add(transition, forKey: "airclip.menuBarIconCrossfade")
+        }
+
+        button.image = image
+        button.image?.accessibilityDescription = hasUnread ? "Airclip – New items" : "Airclip"
     }
 
     private func openMainWindow(onDesktopSpace: Bool = false) {
@@ -280,7 +278,6 @@ final class StatusBarController: NSObject {
     private func presentMainWindow() {
         // Reusing the same window preserves its assignment to the regular desktop Space.
         if let existing = mainWindow {
-            syncMainWindowToolbar(for: existing)
             existing.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
             return
@@ -298,6 +295,7 @@ final class StatusBarController: NSObject {
         win.titleVisibility = .hidden
         win.titlebarAppearsTransparent = true
         win.toolbarStyle = .unifiedCompact
+        win.titlebarSeparatorStyle = .none
         win.backgroundColor = MainWindowChromePalette.nsShell
         win.isOpaque = false
         win.isMovableByWindowBackground = true
@@ -305,62 +303,50 @@ final class StatusBarController: NSObject {
         win.collectionBehavior = [.managed, .fullScreenNone]
         win.contentMinSize = windowSize
         win.contentMaxSize = windowSize
-        syncMainWindowToolbar(for: win)
+        for button in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
+            win.standardWindowButton(button)?.controlSize = .regular
+        }
         let hostingView = NSHostingView(
             rootView: WindowRootView(size: windowSize)
                 .modelContainer(LocalHistoryStore.shared.container)
         )
         hostingView.frame = NSRect(origin: .zero, size: windowSize)
         win.contentView = hostingView
+        let titlebarLogo = MainWindowTitlebarLogo()
+        win.addTitlebarAccessoryViewController(titlebarLogo)
         win.makeKeyAndOrderFront(nil)
+        positionMainWindowTrafficLights(in: win)
+        installMainWindowTitlebarSeparator(in: win)
         NSApp.activate(ignoringOtherApps: true)
         mainWindow = win
     }
 
-    private func configureMainWindowToolbar(for window: NSWindow) {
-        let toolbar = NSToolbar(identifier: Self.mainToolbarIdentifier)
-        toolbar.delegate = self
-        toolbar.displayMode = .iconOnly
-        toolbar.sizeMode = .regular
-        toolbar.allowsUserCustomization = false
-        toolbar.autosavesConfiguration = false
-        window.toolbar = toolbar
-        if !toolbar.items.contains(where: { $0.itemIdentifier == Self.sidebarToolbarItemIdentifier }) {
-            toolbar.insertItem(withItemIdentifier: Self.sidebarToolbarItemIdentifier, at: 0)
+    private func installMainWindowTitlebarSeparator(in window: NSWindow) {
+        guard let titlebar = window.standardWindowButton(.closeButton)?.superview else { return }
+        let separator = MainWindowTitlebarSeparator(
+            frame: NSRect(x: 0, y: 0, width: titlebar.bounds.width, height: 1)
+        )
+        separator.wantsLayer = true
+        separator.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.075).cgColor
+        separator.autoresizingMask = [.width, .maxYMargin]
+        titlebar.addSubview(separator, positioned: .above, relativeTo: nil)
+    }
+
+    private func positionMainWindowTrafficLights(in window: NSWindow) {
+        let buttonTypes: [NSWindow.ButtonType] = [.closeButton, .miniaturizeButton, .zoomButton]
+        let buttons = buttonTypes.compactMap(window.standardWindowButton)
+        guard buttons.count == buttonTypes.count else { return }
+
+        var leading: CGFloat = 12
+        for button in buttons {
+            var frame = button.frame
+            frame.origin.x = leading
+            if let titlebar = button.superview {
+                frame.origin.y = (titlebar.bounds.height - frame.height) / 2
+            }
+            button.setFrameOrigin(frame.origin)
+            leading += frame.width + 10
         }
-        updateMainWindowToolbarVisibility(for: window)
-    }
-
-    private func syncMainWindowToolbar(for window: NSWindow) {
-        guard AirclipIdentity.shared.isPaired else {
-            window.toolbar = nil
-            return
-        }
-        if mainWindowToolbarNeedsConfiguration(for: window) {
-            configureMainWindowToolbar(for: window)
-        }
-        updateMainWindowToolbarVisibility(for: window)
-    }
-
-    private func updateMainWindowToolbarVisibility(for window: NSWindow) {
-        guard let toolbar = window.toolbar else { return }
-        toolbar.isVisible = AirclipIdentity.shared.isPaired
-    }
-
-    private func mainWindowToolbarNeedsConfiguration(for window: NSWindow) -> Bool {
-        guard let toolbar = window.toolbar else { return true }
-        guard toolbar.identifier == Self.mainToolbarIdentifier else { return true }
-        return !toolbar.items.contains { $0.itemIdentifier == Self.sidebarToolbarItemIdentifier }
-    }
-
-    private func sidebarToolbarImage() -> NSImage {
-        let image = NSImage(
-            systemSymbolName: "sidebar.left",
-            accessibilityDescription: "Toggle Sidebar"
-        ) ?? NSImage(size: NSSize(width: 20, height: 20))
-        image.size = NSSize(width: 20, height: 20)
-        image.isTemplate = true
-        return image
     }
 
     @objc private func togglePanel() {
@@ -377,10 +363,6 @@ final class StatusBarController: NSObject {
             return
         }
         if isPanelVisible { closePopover() } else { openPopover() }
-    }
-
-    @objc private func toggleMainWindowSidebar() {
-        NotificationCenter.default.post(name: .toggleMainWindowSidebar, object: nil)
     }
 
     private func showContextMenu() {
@@ -495,111 +477,6 @@ final class StatusBarController: NSObject {
             panel?.orderOut(nil)
             panel?.alphaValue = 1   // restore for next open
         })
-    }
-}
-
-extension StatusBarController {
-    func showShareConfirmation() {
-        guard let button = statusItem?.button else { return }
-
-        confirmationDismissWorkItem?.cancel()
-        confirmationPanel?.orderOut(nil)
-
-        let hostingController = NSHostingController(
-            rootView: MenuBarConfirmationView(message: "Added to Airclip")
-        )
-        let panelSize = NSSize(width: 148, height: 34)
-        let toastPanel = NSPanel(
-            contentRect: NSRect(origin: .zero, size: panelSize),
-            styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered,
-            defer: false
-        )
-        toastPanel.backgroundColor = .clear
-        toastPanel.isOpaque = false
-        toastPanel.hasShadow = false
-        toastPanel.level = .popUpMenu
-        toastPanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        toastPanel.contentViewController = hostingController
-
-        let buttonInWindow = button.convert(button.bounds, to: nil)
-        let buttonOnScreen = button.window?.convertToScreen(buttonInWindow) ?? .zero
-        let screen = NSScreen.screens.first {
-            $0.frame.contains(NSPoint(x: buttonOnScreen.midX, y: buttonOnScreen.midY))
-        } ?? NSScreen.main
-        var x = (buttonOnScreen.midX - panelSize.width / 2).rounded()
-        if let screen {
-            x = max(screen.frame.minX + 8, min(x, screen.frame.maxX - panelSize.width - 8))
-        }
-        let y = (buttonOnScreen.minY - panelSize.height - 6).rounded()
-        toastPanel.setFrame(
-            NSRect(x: x, y: y, width: panelSize.width, height: panelSize.height),
-            display: false
-        )
-        toastPanel.alphaValue = 0
-        toastPanel.orderFrontRegardless()
-        confirmationPanel = toastPanel
-
-        let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = reduceMotion ? 0.01 : 0.16
-            context.timingFunction = CAMediaTimingFunction(controlPoints: 0.25, 0.46, 0.45, 0.94)
-            toastPanel.animator().alphaValue = 1
-        }
-
-        let workItem = DispatchWorkItem { [weak self, weak toastPanel] in
-            guard let self, let toastPanel, self.confirmationPanel === toastPanel else { return }
-            NSAnimationContext.runAnimationGroup({ context in
-                context.duration = reduceMotion ? 0.01 : 0.14
-                context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-                toastPanel.animator().alphaValue = 0
-            }, completionHandler: { [weak self, weak toastPanel] in
-                Task { @MainActor in
-                    toastPanel?.orderOut(nil)
-                    if self?.confirmationPanel === toastPanel {
-                        self?.confirmationPanel = nil
-                    }
-                }
-            })
-        }
-        confirmationDismissWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.8, execute: workItem)
-    }
-}
-
-extension StatusBarController: NSToolbarDelegate {
-    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [Self.sidebarToolbarItemIdentifier]
-    }
-
-    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [Self.sidebarToolbarItemIdentifier]
-    }
-
-    func toolbarSelectableItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        []
-    }
-
-    func toolbar(
-        _ toolbar: NSToolbar,
-        itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier,
-        willBeInsertedIntoToolbar flag: Bool
-    ) -> NSToolbarItem? {
-        guard itemIdentifier == Self.sidebarToolbarItemIdentifier else { return nil }
-
-        let item = NSToolbarItem(itemIdentifier: itemIdentifier)
-        item.label = "Toggle Sidebar"
-        item.paletteLabel = "Toggle Sidebar"
-        item.toolTip = "Show or hide sidebar"
-        item.target = self
-        item.action = #selector(toggleMainWindowSidebar)
-        item.image = sidebarToolbarImage()
-        item.isNavigational = true
-        return item
-    }
-
-    func validateToolbarItem(_ item: NSToolbarItem) -> Bool {
-        item.itemIdentifier == Self.sidebarToolbarItemIdentifier && AirclipIdentity.shared.isPaired
     }
 }
 
@@ -774,7 +651,7 @@ struct WindowRootView: View {
 private enum MainWindowChromePalette {
     static let shell = adaptiveColor(light: "#F4F6FA", dark: "#121418").opacity(0.88)
     static let primaryText = adaptiveColor(light: "#101828", dark: "#F2F3F5")
-    static let nsShell = adaptiveNSColor(light: "#F4F6FA", dark: "#121418", alpha: 0.88)
+    static let nsShell = adaptiveNSColor(light: "#F9FAFB", dark: "#101113", alpha: 1)
 
     private static func adaptiveColor(light: String, dark: String) -> Color {
         Color(adaptiveNSColor(light: light, dark: dark, alpha: 1))
